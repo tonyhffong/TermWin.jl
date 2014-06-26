@@ -154,6 +154,10 @@ function new_panel( win::Ptr{Void} )
     ccall( dlsym( libpanel, :new_panel ), Ptr{Void}, ( Ptr{Void}, ), win )
 end
 
+function move_panel( win, starty, startx )
+    ccall( dlsym( libpanel, :move_panel ), Ptr{Void}, ( Ptr{Void}, Int, Int ), win, starty, startx )
+end
+
 function del_panel( panel::Ptr{Void} )
     ccall(dlsym( libpanel, :del_panel ), Void, (Ptr{Void}, ), panel )
 end

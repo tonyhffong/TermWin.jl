@@ -2,4 +2,6 @@ using TermWin
 using Base.Test
 
 # write your own tests here
-@test 1 == 1
+using Lint
+
+@test isempty( lintpkg( "TermWin", returnMsgs = true ) )

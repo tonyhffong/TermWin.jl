@@ -161,7 +161,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         height, width = getwinmaxyx( win )
         npushed = 0
         for r in currentTop:min(currentTop+height-3, needy)
-            s = repeat( " ", 2 * length( datalist[ r][4] )) * datalist[r][1]
+            s = repeat( " |", length( datalist[ r][4] )) * datalist[r][1]
             s *= repeat( " ", max(0,needxs - length(s)) ) * "|"
             t =  @sprintf( "%-15s|", datalist[r][2] )
             v = datalist[r][3]
@@ -204,27 +204,47 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         end
     end
 
+    rebuildwindow = ()->begin
+        datalist = {}
+        tree_data( ex, title, datalist, openstatemap, {} )
+        local hold = height
+        local wold = width
+        werase( win )
+        update_dimensions()
+        if hold != height || wold != width
+            wresize( win, height, width )
+            move_panel( panel, int(floor( (maxy-height)/2)), int( floor( (maxx-width)/2)))
+        end
+    end
+
     while( (token = readtoken()) != :esc )
         dorefresh = false
-        if token == " "
+        if token == " " || token == symbol( "return" )
             stack = datalist[ currentLine ][4]
             if !haskey( openstatemap, stack ) || !openstatemap[ stack ]
                 openstatemap[ stack ] = true
             else
                 openstatemap[ stack ] = false
             end
-            datalist = {}
-            tree_data( ex, "Expr", datalist, openstatemap, {} )
-            update_dimensions()
+            rebuildwindow()
             dorefresh = true
-        elseif token == symbol( "return" )
+        elseif token == :F6
             stack = copy( datalist[ currentLine ][4] )
-            lastkey = stack[end]
+            if !isempty( stack )
+                lastkey = stack[end]
+            else
+                lastkey = title
+            end
             v = getvaluebypath( ex, stack )
             if !in( v, [ nothing, None, Any ] )
                 tshow_( v, title=string(lastkey) )
                 dorefresh = true
             end
+        elseif token == "-"
+            openstatemap = Dict{Any,Bool}()
+            openstatemap[ {} ] = true
+            rebuildwindow()
+            dorefresh = true
         elseif token == :up
             if currentLine > 1
                 currentLine -= 1
@@ -319,8 +339,9 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
             """
 PgUp/PgDn,
 Arrow keys : standard navigation
-<space>    : toggle leaf expansion
-<enter>    : popup window for value
+<spc>,<rtn>: toggle leaf expansion
+F6         : popup window for value
+-          : collapse all
 l          : move halfway toward the start
 L          : move halfway to the end
 <,0,g      : jump to the start
