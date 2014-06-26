@@ -27,8 +27,8 @@ function initsession()
         start_color()
         init_pair( 1, COLOR_BLACK, COLOR_WHITE )
         keypad( rootwin, true )
-        nodelay( rootwin, false )
-        notimeout( rootwin, true )
+        nodelay( rootwin, true )
+        notimeout( rootwin, false )
     end
 end
 
@@ -289,8 +289,9 @@ function winnewcenter( ysize, xsize )
     cbreak()
     noecho()
     keypad( win, true )
-    nodelay( win, false )
-    notimeout( win, true )
+    nodelay( win, true )
+    notimeout( win, false )
+    wtimeout( win, 5 )
     win
 end
 
@@ -331,6 +332,9 @@ function testkeydialog( remapkeypad::Bool = false )
     local token
     #while( (token = readtoken( remapkeypad )) != :esc )
     while( (token = readtoken( win )) != :esc )
+        if token == :nochar
+            continue
+        end
         k = ""
         if isa( token, String )
             for c in token

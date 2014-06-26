@@ -153,8 +153,6 @@ ncnummap = (Int=>Symbol) [
 function readtoken( win::Ptr{Void} )
     c = wgetch( win )
     if c == 27
-        nodelay( win, true )
-        notimeout( win, false )
         s = string( char( c ) )
         # This part gets around a MacOS ncurses bug, which hasn't been fixed
         # for quite some time...
@@ -174,9 +172,10 @@ function readtoken( win::Ptr{Void} )
                 ret = s
             end
         end
-        nodelay( win, false )
-        notimeout( win, true )
         return ret
+    end
+    if c == char(-1)
+        return :nochar
     end
     if haskey( ncnummap, c )
         return ncnummap[ c]

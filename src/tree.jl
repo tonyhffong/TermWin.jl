@@ -188,8 +188,8 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         else
             mvwprintw( win, 0, width-13, "%10s", @sprintf( "%9.2f%%", currentLine / needy * 100.0 ) )
         end
-        s = "F1:Help  Spc:Expand  Esc:exit"
-        mvwprintw( win, height-1, int((width-length(s))/2), "%s", s )
+        s = "F1:Help  Spc:Expand  Esc:exit" 
+        mvwprintw( win, height-1, 3, "%s", s )
         update_panels()
         doupdate()
     end
@@ -218,9 +218,9 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         end
     end
 
-    while( (token = readtoken()) != :esc )
+    while( (token = readtoken( win )) != :esc )
         dorefresh = false
-        if token == " " || token == symbol( "return" )
+        if token == " " || token == symbol( "return" ) || token == :enter
             stack = datalist[ currentLine ][4]
             if !haskey( openstatemap, stack ) || !openstatemap[ stack ]
                 openstatemap[ stack ] = true
@@ -337,6 +337,9 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
             else
                 flash()
             end
+        elseif token == :ctrl_r
+            wclear( win )
+            dorefresh = true
         elseif token == :F1
             tshow_(
             """
@@ -362,6 +365,9 @@ L          : move halfway to the end
         if dorefresh
             redrawviewer()
         end
+        ct = strftime( "%H:%M:%S", time() )
+        mvwprintw( win, height-1, width-10, "%s", ct )
+        wrefresh( win )
     end
     del_panel( panel )
     delwin( win )

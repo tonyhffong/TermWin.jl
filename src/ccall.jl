@@ -82,8 +82,12 @@ function notimeout( win, bf )
     ccall( dlsym( libncurses, :notimeout ), Int, (Ptr{Void}, Bool), win, bf )
 end
 
+function timeout( delay )
+    ccall( dlsym( libncurses, :timeout ), Void, (Int,), delay )
+end
+
 function wtimeout( win, delay )
-    ccall( dlsym( libncurses, :wtimeout ), Void, (Ptr{Void}, Int ), win, delay )
+    ccall( dlsym( libncurses, :wtimeout ), Void, (Ptr{Void}, Int), win, delay )
 end
 
 # not standard but convenient
