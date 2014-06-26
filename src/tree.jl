@@ -127,6 +127,7 @@ tshow_( x::Ptr; title="Ptr" ) = tshow_( string(x), title=title )
 tshow_( x; title=string(typeof(x)) ) = tshow_tree( x, title=title )
 
 function tshow_tree( ex; title = string(typeof( ex ) ) )
+    global rootwin, A_BOLD
     needy = needx = needxs = needxt = needxv = maxy= maxx= height= width= 0
     datalist = {}
 
