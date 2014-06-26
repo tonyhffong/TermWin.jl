@@ -133,14 +133,20 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
 
     openstatemap = Dict{ Any, Bool }()
     openstatemap[ {} ] = true
-    tree_data( ex, title, datalist, openstatemap, {} )
 
-    update_dimensions = ()-> begin
+    update_tree_data = ()-> begin
+        datalist = {}
+        tree_data( ex, title, datalist, openstatemap, {} )
         needy = length(datalist)
         needxs = maximum( map( x->length(x[1]) + 2 * length(x[4]) , datalist ) )
         needxt = max( 15, maximum( map( x->length(x[2]), datalist ) ) )
         needxv = min( 25, maximum( map( x->length(x[3]), datalist ) ) )
         needx = needxs + needxt + needxv
+    end
+
+    update_tree_data()
+
+    update_dimensions = ()-> begin
         (maxy, maxx) = getwinmaxyx( rootwin )
         height=min( maxy, max( 20, min( maxy-2, needy )+2 ) ) # including the borders
         width =min( maxx, max( 50, min( maxx-4, needx+2 )+4 ) ) # including the borders
@@ -159,7 +165,6 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         werase( win )
         box( win, 0, 0 )
         height, width = getwinmaxyx( win )
-        npushed = 0
         for r in currentTop:min(currentTop+height-3, needy)
             s = repeat( " |", length( datalist[ r][4] )) * datalist[r][1]
             s *= repeat( " ", max(0,needxs - length(s)) ) * "|"
@@ -174,21 +179,13 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
             if r == currentLine
                 wattroff( win, A_BOLD )
             end
-            npushed += length(line)
-            if npushed > 200
-                refresh()
-                wrefresh( win )
-                #update_panels()
-                #doupdate()
-                npushed = 0
-            end
         end
         if needy <= height-2
             mvwprintw( win, 0, width-13, "%10s", "ALL" )
         else
             mvwprintw( win, 0, width-13, "%10s", @sprintf( "%9.2f%%", currentLine / needy * 100.0 ) )
         end
-        s = "F1:Help  Spc:Expand  Esc:exit" 
+        s = "F1:Help  Spc:Expand  Esc:exit"
         mvwprintw( win, height-1, 3, "%s", s )
         update_panels()
         doupdate()
@@ -205,16 +202,20 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
     end
 
     rebuildwindow = ()->begin
-        datalist = {}
-        tree_data( ex, title, datalist, openstatemap, {} )
         local hold = height
         local wold = width
+        local maxyold = maxy
+        local maxxold = maxx
         wclear( win )
         wrefresh( win )
         update_dimensions()
         if hold != height || wold != width
             wresize( win, height, width )
             move_panel( panel, int(floor( (maxy-height)/2)), int( floor( (maxx-width)/2)))
+            checkTop()
+        elseif maxyold != maxy || maxxold != maxx
+            move_panel( panel, int(floor( (maxy-height)/2)), int( floor( (maxx-width)/2)))
+            checkTop()
         end
     end
 
@@ -227,6 +228,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
             else
                 openstatemap[ stack ] = false
             end
+            update_tree_data()
             rebuildwindow()
             dorefresh = true
         elseif token == :F6
@@ -246,6 +248,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
             openstatemap[ {} ] = true
             currentLine = 1
             currentTop = 1
+            update_tree_data()
             rebuildwindow()
             dorefresh = true
         elseif token == :up
@@ -254,7 +257,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
                 dorefresh = true
                 checkTop()
             else
-                flash()
+                beep()
             end
         elseif token == :down
             if currentLine < needy
@@ -262,21 +265,21 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
                 dorefresh= true
                 checkTop()
             else
-                flash()
+                beep()
             end
         elseif token == :left
             if currentLeft > 1
                 currentLeft -= 1
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif token == :right
             if currentLeft + width-4 < needx
                 currentLeft += 1
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif token == :pageup
             if currentLine > 1
@@ -284,14 +287,14 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
                 checkTop()
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif token == :pagedown
             if currentLine < needy
                 currentLine = min( needy, currentLine + height - 2 )
                 dorefresh= true
             else
-                flash()
+                beep()
             end
             checkTop()
         elseif  token == :home
@@ -301,7 +304,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
                 currentLeft = 1
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif in( token, [ "<", "0", "g" ] )
             if currentTop != 1 || currentLine != 1
@@ -309,7 +312,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
                 currentLine = 1
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif in( token, { ">", "G", symbol("end" ) } )
             if currentLine != needy
@@ -317,7 +320,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
                 dorefresh = true
                 checkTop()
             else
-                flash()
+                beep()
             end
         elseif token == "L" # move half-way toward the end
             target = min( int(ceil((currentTop + needy)/2)), needy )
@@ -326,7 +329,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
                 checkTop()
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif token == "l" # move half-way toward the beginning
             target = max( int(floor( currentLine /2)), 1)
@@ -335,7 +338,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
                 checkTop()
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif token == :ctrl_r
             wclear( win )
@@ -356,8 +359,7 @@ L          : move halfway to the end
             )
             dorefresh = true
         elseif token == :KEY_RESIZE || is_term_resized( maxy, maxx )
-            update_dimensions()
-            wresize( win, height, width )
+            rebuildwindow()
             dorefresh = true
             #TODO search, jump to line, etc.
         end

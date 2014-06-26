@@ -3,7 +3,6 @@ module TermWin
 include( "consts.jl")
 include( "ccall.jl" )
 include( "readtoken.jl" )
-include( "readtoken.orig.jl")
 include( "tree.jl" )
 
 export tshow
@@ -148,49 +147,49 @@ function tshow_( x::String; title = string(typeof( x )), showprogress=true, show
 
     redrawviewer()
     token = 0
-    while( (token = readtoken()) != :esc )
+    while( (token = readtoken(win )) != :esc )
         dorefresh = false
         if token == :up
             if currentTop > 1
                 currentTop -= 1
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif token == :down
             if currentTop + height-2 < needy
                 currentTop += 1
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif token == :left
             if currentLeft > 1
                 currentLeft -= 1
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif token == :right
             if currentLeft + width-4 < needx
                 currentLeft += 1
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif token == :pageup
             if currentTop > 1
                 currentTop = max( 1, currentTop - (height-2) )
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif token == :pagedown
             if currentTop + height-2 < needy
                 currentTop = min( needy - height + 2, currentTop + height - 2 )
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif  token == :home
             if currentTop != 1 || currentLeft != 1
@@ -198,21 +197,21 @@ function tshow_( x::String; title = string(typeof( x )), showprogress=true, show
                 currentLeft = 1
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif in( token, [ "<", "0", "g" ] )
             if currentTop != 1
                 currentTop = 1
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif in( token, { ">", "G", symbol("end") } )
             if currentTop + height-2 < needy
                 currentTop = needy - height+ 2
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif token == "L" # move half-way toward the end
             target = min( int(ceil((currentTop + needy - height+2)/2)), needy - height + 2 )
@@ -220,7 +219,7 @@ function tshow_( x::String; title = string(typeof( x )), showprogress=true, show
                 currentTop = target
                 dorefresh = true
             else
-                flash()
+                beep()
             end
         elseif token == "l" # move half-way toward the beginning
             target = max( int(floor( currentTop /2)), 1)
@@ -228,9 +227,9 @@ function tshow_( x::String; title = string(typeof( x )), showprogress=true, show
                 currentTop = target
                 dorefresh = true
             else
-                flash()
+                beep()
             end
-        elseif token == :F1
+        elseif token == :F1 && showkeyhelper
             tshow_(
             """
 PgUp/PgDn,
@@ -291,7 +290,7 @@ function winnewcenter( ysize, xsize )
     keypad( win, true )
     nodelay( win, true )
     notimeout( win, false )
-    wtimeout( win, 5 )
+    wtimeout( win, 10 )
     win
 end
 
