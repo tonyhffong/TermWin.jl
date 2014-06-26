@@ -111,6 +111,35 @@ function getcuryx( win )
     ( cury, curx )
 end
 
+function start_color()
+    ccall( dlsym( libncurses, :start_color), Void, () )
+end
+
+function init_pair( pair, f, b )
+    ccall( dlsym( libncurses, :init_pair ), Int, ( Int16, Int16, Int16 ), pair, f, b )
+end
+
+function init_color( color, r,g,b )
+    ccall( dlsym( libncurses, :init_color ), Int, ( Int16, Int16, Int16, Int16 ), 
+        color, r,g,b )
+end
+
+function has_colors()
+    ccall( dlsym( libncurses, :has_colors), Bool, () )
+end
+
+function wattroff( win, attrs )
+    ccall( dlsym(libncurses, :wattroff), Int, ( Ptr{Void}, Uint32 ), win, attrs )
+end
+
+function wattron( win, attrs )
+    ccall( dlsym(libncurses, :wattron), Int, ( Ptr{Void}, Uint32 ), win, attrs )
+end
+
+function wattrset( win, attrs )
+    ccall( dlsym(libncurses, :wattrset), Int, ( Ptr{Void}, Uint32 ), win, attrs )
+end
+
 #===== PANEL library ====#
 
 function update_panels()
