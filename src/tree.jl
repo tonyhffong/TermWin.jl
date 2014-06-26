@@ -209,7 +209,8 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         tree_data( ex, title, datalist, openstatemap, {} )
         local hold = height
         local wold = width
-        werase( win )
+        wclear( win )
+        wrefresh( win )
         update_dimensions()
         if hold != height || wold != width
             wresize( win, height, width )
@@ -243,6 +244,8 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         elseif token == "-"
             openstatemap = Dict{Any,Bool}()
             openstatemap[ {} ] = true
+            currentLine = 1
+            currentTop = 1
             rebuildwindow()
             dorefresh = true
         elseif token == :up

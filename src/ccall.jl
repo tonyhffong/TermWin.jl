@@ -34,6 +34,10 @@ function werase( win::Ptr{Void} )
     ccall( dlsym( libncurses, :werase ), Void, (Ptr{Void},), win )
 end
 
+function wclear( win::Ptr{Void} )
+    ccall( dlsym( libncurses, :wclear ), Void, (Ptr{Void},), win )
+end
+
 function box( win, vchr, hchr )
     ccall( dlsym( libncurses, :box ), Void, (Ptr{Void}, Char, Char), win, vchr, hchr )
 end
