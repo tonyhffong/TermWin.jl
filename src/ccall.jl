@@ -179,6 +179,10 @@ function del_panel( panel::Ptr{Void} )
     ccall(dlsym( libpanel, :del_panel ), Void, (Ptr{Void}, ), panel )
 end
 
+function replace_panel( panel::Ptr{Void}, window::Ptr{Void} )
+    ccall(dlsym( libpanel, :replace_panel ), Void, (Ptr{Void}, Ptr{Void} ), panel, window )
+end
+
 function set_panel_userptr( p1::Ptr{Void}, p2::Ptr{Void} )
     ccall(dlsym( libpanel, :set_panel_userptr), Void, (Ptr{Void}, Ptr{Void}), p1, p2 )
 end

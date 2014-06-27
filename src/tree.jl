@@ -256,7 +256,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
     checkTop = () -> begin
         if currentTop > currentLine
             currentTop = currentLine
-        elseif height-3 < currentLine - currentTop
+        elseif height-3 < currentLine - currentTop # if they are too far apart
             currentTop = currentLine - height + 3
         end
     end
@@ -266,19 +266,36 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         local wold = width
         local maxyold = maxy
         local maxxold = maxx
-        erase()
-        werase( win )
-        wrefresh( win )
-        refresh()
+        #=
+        from HOWTO:
+        Resizing a panel is slightly complex. There is no straight forward function just to resize 
+        the window associated with a panel. A solution to resize a panel is to create a new 
+        window with the desired sizes, change the window associated with the panel using 
+        replace_panel(). Don't forget to delete the old window. The window associated with a 
+        panel can be found by using the function panel_window().
+
+        Some testing shows it's a segfault magnet...
+
+        From man page:
+          replace_panel(pan,window)
+              replaces the current window of panel with window (useful, for  example  if
+              you  want  to  resize  a  panel;  if  you're  using  ncurses, you can call
+              replace_panel on the output of wresize(3X)).  It does not change the posi-
+              tion of the panel in the stack.
+        =#
+
         update_dimensions()
         if hold != height || wold != width
+            move_panel( panel, int(floor( (maxy-height-1)/2)), int( floor( (maxx-width-1)/2)))
+            wclear( win )
+            wrefresh( win )
             wresize( win, height, width )
-            move_panel( panel, int(floor( (maxy-height)/2)), int( floor( (maxx-width)/2)))
+            replace_panel( panel, win )
             checkTop()
             #update_panels()
             #doupdate()
         elseif maxyold != maxy || maxxold != maxx
-            move_panel( panel, int(floor( (maxy-height)/2)), int( floor( (maxx-width)/2)))
+            move_panel( panel, int(floor( (maxy-height-1)/2)), int( floor( (maxx-width-1)/2)))
             checkTop()
             #update_panels()
             #doupdate()
