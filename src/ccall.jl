@@ -12,8 +12,13 @@ function delwin( win::Ptr{Void} )
     ccall( dlsym( libncurses, :delwin ), Void, ( Ptr{Void}, ), win )
 end
 
+function mvwaddch( win, y, x, c )
+    ccall( dlsym( libncurses, :mvwaddch), Void,
+        ( Ptr{Void}, Int, Int, Int ), win, y, x, c )
+end
+
 function mvwprintw( win::Ptr{Void}, row::Int, height::Int, fmt::String, str::String )
-    ccall( dlsym( libncurses, :mvwprintw), Void, 
+    ccall( dlsym( libncurses, :mvwprintw), Void,
         ( Ptr{Void}, Int, Int, Ptr{Uint8}, Ptr{Uint8}),
         win, row, height, fmt, str )
 end
@@ -28,6 +33,10 @@ end
 
 function refresh()
     ccall( dlsym( libncurses, :refresh ), Void, ( ) )
+end
+
+function erase()
+    ccall( dlsym( libncurses, :erase ), Void, () )
 end
 
 function werase( win::Ptr{Void} )
@@ -128,7 +137,7 @@ function init_pair( pair, f, b )
 end
 
 function init_color( color, r,g,b )
-    ccall( dlsym( libncurses, :init_color ), Int, ( Int16, Int16, Int16, Int16 ), 
+    ccall( dlsym( libncurses, :init_color ), Int, ( Int16, Int16, Int16, Int16 ),
         color, r,g,b )
 end
 
@@ -168,4 +177,8 @@ end
 
 function del_panel( panel::Ptr{Void} )
     ccall(dlsym( libpanel, :del_panel ), Void, (Ptr{Void}, ), panel )
+end
+
+function set_panel_userptr( p1::Ptr{Void}, p2::Ptr{Void} )
+    ccall(dlsym( libpanel, :set_panel_userptr), Void, (Ptr{Void}, Ptr{Void}), p1, p2 )
 end

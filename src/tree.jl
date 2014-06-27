@@ -1,44 +1,48 @@
-function tree_data( x, name, list, openstatemap, stack )
+modulenames = Dict{ Module, Array{ Symbol, 1 } }()
+typefields  = Dict{ Any, Array{ Symbol, 1 } }()
+
+# x is the value, name is a pretty-print identifier
+# stack is the pathway to get to x so far
+# skiplines are hints where we should not draw the vertical lines to the left
+# because it corresponds the end of some list at a lower depth level
+
+function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
+    global modulenames, typefields
     isexp = haskey( openstatemap, stack ) && openstatemap[ stack ]
 
-    if typeof( x ) == Expr
-        s = " " * (isexp? "+" : "=")* string( name )
+    intern_tree_data = ( subx, subn, substack, islast )->begin
+        if islast
+            newskip = copy(skiplines)
+            push!( newskip, length(stack) +1)
+            tree_data( subx, subn, list, openstatemap, substack, newskip )
+        else
+            tree_data( subx, subn, list, openstatemap, substack, skiplines )
+        end
+    end
+    if typeof( x ) == Symbol || typeof( x ) <: Number || typeof( x ) == Any || typeof( x ) == DataType
+        s = string( name )
         t = string( typeof( x) )
         v = string( x )
         if length( v ) > 25
             v = string( SubString( v, 1, 23 ) ) * ".."
         end
-        push!( list, (s, t, v, stack ) )
-        if isexp
-            for f in [ :head, :args, :typ ]
-                newstack = copy( stack )
-                push!( newstack, f )
-                tree_data( getfield( x, f ), f, list, openstatemap, newstack)
-            end
-        end
-    elseif typeof( x ) == Symbol || typeof( x ) <: Number || typeof( x ) == Any
-        s = " +" * string( name )
-        t = string( typeof( x) )
-        v = string( x )
-        if length( v ) > 25
-            v = string( SubString( v, 1, 23 ) ) * ".."
-        end
-        push!( list, (s, t, v, stack ) )
+        push!( list, (s, t, v, stack, :single, skiplines ) )
     elseif typeof( x ) <: String
-        s = " +" * string( name )
+        s = string( name )
         t = string( typeof( x) )
         if length( x ) > 25
             v = string( SubString( x, 1, 23 ) ) * ".."
         else
             v = string( x )
         end
-        push!( list, (s, t, v, stack ) )
-    elseif typeof( x ) <: Array
-        s = " " * ( isexp ? "+" : "=" ) * string( name )
+        push!( list, (s, t, v, stack, :single, skiplines ) )
+    elseif typeof( x ) <: Array || typeof( x ) <: Tuple
+        s = string( name )
         t = string( typeof( x ))
-        szstr = string( length( x ) )
+        len = length(x)
+        szstr = string( len )
         v = "Size=" * szstr
-        push!( list, (s,t,v, stack ))
+        push!( list, (s,t,v, stack, (isexp? :open : :close), skiplines ))
         if isexp
             szdigits = length( szstr )
             for (i,a) in enumerate( x )
@@ -46,57 +50,88 @@ function tree_data( x, name, list, openstatemap, stack )
                 subname = "[" * repeat( " ", szdigits - length(istr)) * istr * "]"
                 newstack = copy( stack )
                 push!( newstack, i )
-                tree_data( a, subname, list, openstatemap, newstack )
+                intern_tree_data( a, subname, newstack, i==len )
             end
         end
     elseif typeof( x ) <: Dict
-        s = " " * ( isexp ? "+" : "=" ) * string( name )
+        s = string( name )
         t = string( typeof( x ))
-        szstr = string( length( x ) )
+        len = length(s)
+        szstr = string( len )
         v = "Size=" * szstr
-        push!( list, (s,t,v, stack ))
+        push!( list, (s,t,v, stack, (isexp ? :open : :close), skiplines ))
         if isexp
-            for (k,v) in x
+            ktype = eltype(x)[1]
+            ks = collect( keys( x ) )
+            if ktype <: Real || ktype <: String || ktype == Symbol
+                sort!(ks)
+            end
+            for (i,k) in enumerate( ks )
+                v = x[k]
                 subname = repr( k )
                 newstack = copy( stack )
                 push!( newstack, k )
-                tree_data( v, subname, list, openstatemap, newstack )
+                intern_tree_data( v, subname, newstack, i==len )
             end
         end
     elseif typeof( x ) == Function
-        s = " +" * string( name )
+        s = string( name )
         t = string( typeof( x) )
         if length( string(x) ) > 25
             v = string( SubString( x, 1, 23 ) ) * ".."
         else
             v = string( x )
         end
-        push!( list, (s, t, v, stack ) )
+        push!( list, (s, t, v, stack, :single, skiplines ) )
     else
         ns = Symbol[]
         if typeof(x) == Module
-            ns = names( x, true )
+            if haskey( modulenames, x )
+                ns = modulenames[ x ]
+            else
+                ns = names( x, true )
+                modulenames[ x ] = ns
+            end
         else
-            try
-                ns = names( x )
+            if haskey( typefields, typeof(x) )
+                ns = typefields[ typeof(x) ]
+            else
+                try
+                    ns = names( typeof(x) )
+                    if length(ns) > 20
+                        sort!(ns)
+                    end
+                end
+                typefields[ typeof(x) ] = ns
             end
         end
-        sort!(ns)
-        s = " " * (isempty(ns) || isexp ? "+" : "=") * string( name )
+        s = string( name )
+        expandhint = isempty(ns) ? :single : (isexp ? :open : :close )
         t = string( typeof( x) )
         v = string( x )
+        len = length(ns)
         if length( v ) > 25
             v = string( SubString( v, 1, 23 ) ) * ".."
         end
-        push!( list, (s, t, v, stack ) )
+        push!( list, (s, t, v, stack, expandhint, skiplines ) )
         if isexp && !isempty( ns )
-            for n in ns
-                subname = n
+            for (i,n) in enumerate(ns)
+                subname = string(n)
                 newstack = copy( stack )
                 push!( newstack, n )
                 try
-                    v = getfield( x, n )
-                    tree_data( getfield( x, n ), subname, list, openstatemap, newstack )
+                    v = getfield(x,n)
+                    intern_tree_data( v, subname, newstack, i==len )
+                catch err
+                    println(err)
+                    sleep(1)
+                    if typeof(x) == Module
+                        todel = find( y->y==n, modulenames[ x] )
+                        deleteat!( modulenames[x], todel[1] )
+                    else
+                        todel = find( y->y==n, typefields[ typeof(x) ] )
+                        deleteat!( typefields[ typeof(x) ], todel[1] )
+                    end
                 end
             end
         end
@@ -138,7 +173,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         datalist = {}
         tree_data( ex, title, datalist, openstatemap, {} )
         needy = length(datalist)
-        needxs = maximum( map( x->length(x[1]) + 2 * length(x[4]) , datalist ) )
+        needxs = maximum( map( x->length(x[1]) + 2 +2 * length(x[4]), datalist ) )
         needxt = max( 15, maximum( map( x->length(x[2]), datalist ) ) )
         needxv = min( 25, maximum( map( x->length(x[3]), datalist ) ) )
         needx = needxs + needxt + needxv
@@ -166,16 +201,41 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         box( win, 0, 0 )
         height, width = getwinmaxyx( win )
         for r in currentTop:min(currentTop+height-3, needy)
-            s = repeat( " |", length( datalist[ r][4] )) * datalist[r][1]
+            stacklen = length( datalist[r][4])
+            s = repeat( " ", 2*stacklen + 1) * datalist[r][1]
             s *= repeat( " ", max(0,needxs - length(s)) ) * "|"
-            t =  @sprintf( "%-15s|", datalist[r][2] )
+            t =  datalist[r][2]
+            t *= repeat( " ", max( 0, needxt - length(t))) * "|"
             v = datalist[r][3]
             line = string( SubString( s*t*v, currentLeft, currentLeft + width - 5 ) )
 
             if r == currentLine
                 wattron( win, A_BOLD )
             end
-            mvwprintw( win, 1 + r-currentTop, 2, "%s", line )
+            mvwprintw( win, 1+r-currentTop, 2, "%s", line )
+            for i in 1:stacklen - 1
+                if !in( i, datalist[r][6] ) # skiplines
+                    mvwaddch( win, 1+r-currentTop, 2*i, get_acs_val( 'x' ) ) # vertical line
+                end
+            end
+            if stacklen != 0
+                contchar = get_acs_val('t') # tee pointing right
+                if r == length( datalist ) ||  # end of the whole thing
+                    length(datalist[r+1][4]) < stacklen || # next one is going back in level
+                    ( length(datalist[r+1][4]) > stacklen && in( stacklen, datalist[r+1][6] ) ) # going deeping in level
+                    contchar = get_acs_val( 'm' ) # LL corner
+                end
+                mvwaddch( win, 1+r-currentTop, 2*stacklen, contchar )
+                mvwaddch( win, 1+r-currentTop, 2*stacklen+1, get_acs_val('q') ) # horizontal line
+            end
+            if datalist[r][5] == :single
+                mvwaddch( win, 1+r-currentTop, 2*stacklen+2, get_acs_val('q') ) # horizontal line
+            elseif datalist[r][5] == :close
+                mvwaddch( win, 1+r-currentTop, 2*stacklen+2, get_acs_val('+') ) # arrow pointing right
+            else
+                mvwaddch( win, 1+r-currentTop, 2*stacklen+2, get_acs_val('w') ) # arrow pointing down
+            end
+
             if r == currentLine
                 wattroff( win, A_BOLD )
             end
@@ -187,8 +247,8 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         end
         s = "F1:Help  Spc:Expand  Esc:exit"
         mvwprintw( win, height-1, 3, "%s", s )
-        update_panels()
-        doupdate()
+        #update_panels()
+        #doupdate()
     end
 
     redrawviewer()
@@ -206,16 +266,22 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         local wold = width
         local maxyold = maxy
         local maxxold = maxx
-        wclear( win )
+        erase()
+        werase( win )
         wrefresh( win )
+        refresh()
         update_dimensions()
         if hold != height || wold != width
             wresize( win, height, width )
             move_panel( panel, int(floor( (maxy-height)/2)), int( floor( (maxx-width)/2)))
             checkTop()
+            #update_panels()
+            #doupdate()
         elseif maxyold != maxy || maxxold != maxx
             move_panel( panel, int(floor( (maxy-height)/2)), int( floor( (maxx-width)/2)))
             checkTop()
+            #update_panels()
+            #doupdate()
         end
     end
 
@@ -369,7 +435,8 @@ L          : move halfway to the end
         end
         ct = strftime( "%H:%M:%S", time() )
         mvwprintw( win, height-1, width-10, "%s", ct )
-        wrefresh( win )
+        update_panels()
+        doupdate()
     end
     del_panel( panel )
     delwin( win )

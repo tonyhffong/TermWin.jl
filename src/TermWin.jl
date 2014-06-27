@@ -9,9 +9,12 @@ export tshow
 
 rootwin = nothing
 callcount = 0
+acs_map_ptr = nothing
+acs_map_arr = Uint8[]
 
 function initsession()
-    global rootwin, libncurses
+    global rootwin, libncurses, acs_map_ptr, acs_map_arr
+
     if rootwin == nothing || rootwin == C_NULL
         rootwin = ccall(dlsym(libncurses, :initscr), Ptr{Void}, ()) # rootwin is stdscr
         ccall( dlsym( libncurses, :keypad ), Void, (Ptr{Void}, Bool), rootwin, true );
@@ -23,6 +26,9 @@ function initsession()
             ccall( dlsym( libncurses, :endwin), Void, () )
             throw( "terminal doesn't support colors")
         end
+        acs_map_ptr = cglobal( (:acs_map, :libncurses ), Uint32 )
+        acs_map_arr = pointer_to_array( acs_map_ptr, 128)
+
         start_color()
         init_pair( 1, COLOR_BLACK, COLOR_WHITE )
         keypad( rootwin, true )
@@ -31,12 +37,49 @@ function initsession()
     end
 end
 
+function get_acs_val( c::Char )
+    #= This is what you should use
+
+        ACS_ULCORNER = get_acs_val('l') /* upper left corner */
+        ACS_LLCORNER = get_acs_val('m') /* lower left corner */
+        ACS_URCORNER = get_acs_val('k') /* upper right corner */
+        ACS_LRCORNER = get_acs_val('j') /* lower right corner */
+        ACS_LTEE = get_acs_val('t') /* tee pointing right */
+        ACS_RTEE = get_acs_val('u') /* tee pointing left */
+        ACS_BTEE = get_acs_val('v') /* tee pointing up */
+        ACS_TTEE = get_acs_val('w') /* tee pointing down */
+        ACS_HLINE = get_acs_val('q') /* horizontal line */
+        ACS_VLINE = get_acs_val('x') /* vertical line */
+        ACS_PLUS = get_acs_val('n') /* large plus or crossover */
+        ACS_S1  = get_acs_val('o') /* scan line 1 */
+        ACS_S9  = get_acs_val('s') /* scan line 9 */
+        ACS_DIAMOND = get_acs_val('`') /* diamond */
+        ACS_CKBOARD = get_acs_val('a') /* checker board (stipple) */
+        ACS_DEGREE = get_acs_val('f') /* degree symbol */
+        ACS_PLMINUS = get_acs_val('g') /* plus/minus */
+        ACS_BULLET = get_acs_val('~') /* bullet */
+        ACS_LARROW = get_acs_val(',') /* arrow pointing left */
+        ACS_RARROW = get_acs_val('+') /* arrow pointing right */
+        ACS_DARROW = get_acs_val('.') /* arrow pointing down */
+        ACS_UARROW = get_acs_val('-') /* arrow pointing up */
+        ACS_BOARD = get_acs_val('h') /* board of squares */
+        ACS_LANTERN = get_acs_val('i') /* lantern symbol */
+        ACS_BLOCK = get_acs_val('0') /* solid square block */
+    =#
+    acs_map_arr[ int( uint8( c ) ) + 1 ]
+end
+
 function endsession()
     global rootwin, libncurses
     if rootwin != nothing
         ccall( dlsym( libncurses, :endwin), Void, () )
         rootwin = nothing
     end
+    #=
+    for (i,c) in enumerate(acs_map_arr)
+        println( i, " ", @sprintf( "%4x", c ) )
+    end
+    =#
 end
 
 function wordwrap( x::String, width::Int )
@@ -256,7 +299,7 @@ L          : move halfway to the end
     delwin( win )
 end
 
-function winnewcenter( ysize, xsize )
+function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
     global rootwin
     (maxy, maxx) = getwinmaxyx( rootwin )
     local cols, lines, origx, origy
@@ -282,8 +325,21 @@ function winnewcenter( ysize, xsize )
         throw( "illegal xsize " * string( ysize ) )
     end
 
-    origx = int( floor( (maxx-cols )/2 ) )
-    origy = int( floor( (maxy-lines)/2 ) )
+    if isa( locy, Int )
+        origy = max( 0, min( locy, maxy-lines-1 ) )
+    elseif isa( locy, Float64 ) && 0.0 <= locy <= 1.0
+        origy = int( floor( locy * ( maxy - lines -1 ) ) )
+    else
+        throw( "illegal locy " * string( locy) )
+    end
+
+    if isa( locx, Int )
+        origx = max( 0, min( locx, maxx-cols-1 ) )
+    elseif isa( locx, Float64 ) && 0.0 <= locx <= 1.0
+        origx = int( floor( locx * ( maxx - cols -1 ) ) )
+    else
+        throw( "illegal locx " * string( locx) )
+    end
     win = newwin( lines, cols, origy, origx )
     cbreak()
     noecho()
@@ -318,14 +374,14 @@ end
 function testkeydialog( remapkeypad::Bool = false )
     width = 25
     initsession()
-    win = winnewcenter( 3, width )
+    win = winnewcenter( 4, width )
     panel = new_panel( win )
     box( win, 0, 0 )
     title = "Key Test"
     keyhint = "[Esc to continue]"
 
     mvwprintw( win, 0, int( (width-length(title))/2), "%s", title )
-    mvwprintw( win, 2, int( (width-length(keyhint))/2), "%s", keyhint )
+    mvwprintw( win, 3, int( (width-length(keyhint))/2), "%s", keyhint )
     update_panels()
     doupdate()
     local token
@@ -343,8 +399,15 @@ function testkeydialog( remapkeypad::Bool = false )
                     k *= @sprintf( "{%x}", uint(c))
                 end
             end
+            if 1 <= uint8(token[1]) <= 127
+                mvwprintw( win, 2, 2, "%s", "acs_val:        " )
+                mvwaddch( win, 2,11, get_acs_val( token[1] ) )
+            else
+                mvwprintw( win, 2, 2, "%s", "acs_val: <none> " )
+            end
         elseif isa( token, Symbol )
             k = ":" * string(token)
+            mvwprintw( win, 2, 2, "%s", "                " )
         end
         k = k * repeat( " ", 21-length(k) )
         mvwprintw( win, 1, 2, "%s", k)
