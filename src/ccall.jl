@@ -101,8 +101,8 @@ end
 
 # not standard but convenient
 function getwinmaxyx( win )
-    maxy = ccall( dlsym(libncurses, :getmaxy), Cint, ( Ptr{Void}, ), win )
-    maxx = ccall( dlsym(libncurses, :getmaxx), Cint, ( Ptr{Void}, ), win )
+    maxy = ccall( dlsym(libncurses, :getmaxy), Int, ( Ptr{Void}, ), win )
+    maxx = ccall( dlsym(libncurses, :getmaxx), Int, ( Ptr{Void}, ), win )
     ( maxy, maxx )
 end
 
@@ -155,6 +155,10 @@ end
 
 function wattrset( win, attrs )
     ccall( dlsym(libncurses, :wattrset), Int, ( Ptr{Void}, Uint32 ), win, attrs )
+end
+
+function curs_set( vis )
+    ccall( dlsym(libncurses, :curs_set), Int, ( Int, ), vis )
 end
 
 #===== PANEL library ====#

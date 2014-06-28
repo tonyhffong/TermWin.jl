@@ -4,6 +4,7 @@ include( "consts.jl")
 include( "ccall.jl" )
 include( "readtoken.jl" )
 include( "tree.jl" )
+include( "func.jl" )
 
 export tshow
 
@@ -16,6 +17,7 @@ function initsession()
     global rootwin, libncurses, acs_map_ptr, acs_map_arr
 
     if rootwin == nothing || rootwin == C_NULL
+        ENV["ESCDELAY"] = "25"
         rootwin = ccall(dlsym(libncurses, :initscr), Ptr{Void}, ()) # rootwin is stdscr
         ccall( dlsym( libncurses, :keypad ), Void, (Ptr{Void}, Bool), rootwin, true );
         if rootwin == C_NULL
@@ -34,6 +36,7 @@ function initsession()
         keypad( rootwin, true )
         nodelay( rootwin, true )
         notimeout( rootwin, false )
+        curs_set( 0 )
     end
 end
 
@@ -75,11 +78,6 @@ function endsession()
         ccall( dlsym( libncurses, :endwin), Void, () )
         rootwin = nothing
     end
-    #=
-    for (i,c) in enumerate(acs_map_arr)
-        println( i, " ", @sprintf( "%4x", c ) )
-    end
-    =#
 end
 
 function wordwrap( x::String, width::Int )
@@ -127,6 +125,9 @@ function tshow_( x::Number; title = string(typeof( x )) )
     del_panel( panel )
     delwin( win )
 end
+
+tshow_( x::Symbol; title="Symbol" ) = tshow_( ":"*string(x), title=title )
+tshow_( x::Ptr; title="Ptr" ) = tshow_( string(x), title=title )
 
 function tshow_( x::String; title = string(typeof( x )), showprogress=true, showkeyhelper=true )
     msgs = map( x->replace(x, "\t", "    "), split( x, "\n" ) )
@@ -328,7 +329,7 @@ function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
     if isa( locy, Int )
         origy = max( 0, min( locy, maxy-lines-1 ) )
     elseif isa( locy, Float64 ) && 0.0 <= locy <= 1.0
-        origy = int( floor( locy * ( maxy - lines -1 ) ) )
+        origy = int( floor( locy * ( maxy - lines ) ) )
     else
         throw( "illegal locy " * string( locy) )
     end
@@ -336,7 +337,7 @@ function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
     if isa( locx, Int )
         origx = max( 0, min( locx, maxx-cols-1 ) )
     elseif isa( locx, Float64 ) && 0.0 <= locx <= 1.0
-        origx = int( floor( locx * ( maxx - cols -1 ) ) )
+        origx = int( floor( locx * ( maxx - cols ) ) )
     else
         throw( "illegal locx " * string( locx) )
     end

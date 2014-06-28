@@ -1,5 +1,8 @@
 modulenames = Dict{ Module, Array{ Symbol, 1 } }()
 typefields  = Dict{ Any, Array{ Symbol, 1 } }()
+typefields[ Function ] = []
+typefields[ Method ] = [ :sig ]
+typefields[ LambdaStaticData ] = [ :name, :module, :file ]
 
 # x is the value, name is a pretty-print identifier
 # stack is the pathway to get to x so far
@@ -42,7 +45,8 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
         len = length(x)
         szstr = string( len )
         v = "Size=" * szstr
-        push!( list, (s,t,v, stack, (isexp? :open : :close), skiplines ))
+        expandhint = isempty(x) ? :single : (isexp ? :open : :close )
+        push!( list, (s,t,v, stack, expandhint, skiplines ))
         if isexp
             szdigits = length( szstr )
             for (i,a) in enumerate( x )
@@ -59,7 +63,8 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
         len = length(s)
         szstr = string( len )
         v = "Size=" * szstr
-        push!( list, (s,t,v, stack, (isexp ? :open : :close), skiplines ))
+        expandhint = isempty(x) ? :single : (isexp ? :open : :close )
+        push!( list, (s,t,v, stack, expandhint, skiplines ))
         if isexp
             ktype = eltype(x)[1]
             ks = collect( keys( x ) )
@@ -74,6 +79,15 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
                 intern_tree_data( v, subname, newstack, i==len )
             end
         end
+    elseif typeof(x) == Module && !isempty( stack ) # don't want to recursively descend
+        s = string( name )
+        t = string( typeof( x) )
+        v = string( x )
+        if length( v ) > 25
+            v = string( SubString( v, 1, 23 ) ) * ".."
+        end
+        push!( list, (s, t, v, stack, :single, skiplines ) )
+    #=
     elseif typeof( x ) == Function
         s = string( name )
         t = string( typeof( x) )
@@ -83,6 +97,7 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
             v = string( x )
         end
         push!( list, (s, t, v, stack, :single, skiplines ) )
+    =#
     else
         ns = Symbol[]
         if typeof(x) == Module
@@ -90,6 +105,7 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
                 ns = modulenames[ x ]
             else
                 ns = names( x, true )
+                sort!( ns )
                 modulenames[ x ] = ns
             end
         else
@@ -123,7 +139,7 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
                     v = getfield(x,n)
                     intern_tree_data( v, subname, newstack, i==len )
                 catch err
-                    println(err)
+                    println(n, ":", err)
                     sleep(1)
                     if typeof(x) == Module
                         todel = find( y->y==n, modulenames[ x] )
@@ -150,18 +166,13 @@ function getvaluebypath( x, path )
     end
 end
 
-tshow_( x::Symbol; title="Symbol" ) = tshow_( ":"*string(x), title=title )
-function tshow_( x::Function; title="Function" )
-    funloc = "(anonymous)"
-    try
-        funloc = string( functionloc( x ) )
-    end
-    tshow_( string(x) * ":" * funloc, title=title )
-end
-tshow_( x::Ptr; title="Ptr" ) = tshow_( string(x), title=title )
 tshow_( x; title=string(typeof(x)) ) = tshow_tree( x, title=title )
 
 function tshow_tree( ex; title = string(typeof( ex ) ) )
+    if typeof(ex) == Array{ Method, 1 }
+        tshow_methods( ex, title = title )
+        return
+    end
     global rootwin, A_BOLD
     needy = needx = needxs = needxt = needxv = maxy= maxx= height= width= 0
     datalist = {}
@@ -183,14 +194,17 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
 
     update_dimensions = ()-> begin
         (maxy, maxx) = getwinmaxyx( rootwin )
-        height=min( maxy, max( 20, min( maxy-2, needy )+2 ) ) # including the borders
-        width =min( maxx, max( 50, min( maxx-4, needx+2 )+4 ) ) # including the borders
+        height = maxy
+        width = maxx
+        #height=min( maxy, max( 20, min( maxy-2, needy )+2 ) ) # including the borders
+        #width =min( maxx, max( 50, min( maxx-4, needx+2 )+4 ) ) # including the borders
     end
 
     update_dimensions()
 
-    win = winnewcenter( height, width )
-    panel = new_panel( win )
+    #win = winnewcenter( height, width )
+    win = rootwin
+    #panel = new_panel( win )
 
     currentTop = 1
     currentLeft = 1
@@ -208,6 +222,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
             t *= repeat( " ", max( 0, needxt - length(t))) * "|"
             v = datalist[r][3]
             line = string( SubString( s*t*v, currentLeft, currentLeft + width - 5 ) )
+            line *= repeat( " ", max( 0, width-4 - length(line) ) )
 
             if r == currentLine
                 wattron( win, A_BOLD )
@@ -286,16 +301,18 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
 
         update_dimensions()
         if hold != height || wold != width
-            move_panel( panel, int(floor( (maxy-height-1)/2)), int( floor( (maxx-width-1)/2)))
+            #move_panel( panel, int(floor( (maxy-height-1)/2)), int( floor( (maxx-width)/2)))
             wclear( win )
             wrefresh( win )
             wresize( win, height, width )
-            replace_panel( panel, win )
+            #replace_panel( panel, win )
             checkTop()
             #update_panels()
             #doupdate()
         elseif maxyold != maxy || maxxold != maxx
-            move_panel( panel, int(floor( (maxy-height-1)/2)), int( floor( (maxx-width-1)/2)))
+            wclear( win )
+            touchwin( win )
+            #move_panel( panel, int(floor( (maxy-height)/2)), int( floor( (maxx-width)/2)))
             checkTop()
             #update_panels()
             #doupdate()
@@ -306,14 +323,17 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
         dorefresh = false
         if token == " " || token == symbol( "return" ) || token == :enter
             stack = datalist[ currentLine ][4]
-            if !haskey( openstatemap, stack ) || !openstatemap[ stack ]
-                openstatemap[ stack ] = true
-            else
-                openstatemap[ stack ] = false
+            expandhint = datalist[ currentLine ][5]
+            if expandhint != :single
+                if !haskey( openstatemap, stack ) || !openstatemap[ stack ]
+                    openstatemap[ stack ] = true
+                else
+                    openstatemap[ stack ] = false
+                end
+                update_tree_data()
+                rebuildwindow()
+                dorefresh = true
             end
-            update_tree_data()
-            rebuildwindow()
-            dorefresh = true
         elseif token == :F6
             stack = copy( datalist[ currentLine ][4] )
             if !isempty( stack )
@@ -322,7 +342,13 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
                 lastkey = title
             end
             v = getvaluebypath( ex, stack )
-            if !in( v, [ nothing, None, Any ] )
+            if typeof( v ) == Method
+                try
+                    f = eval( v.func.code.name )
+                    edit( f, v.sig )
+                    dorefresh = true
+                end
+            elseif !in( v, [ nothing, None, Any ] )
                 tshow_( v, title=string(lastkey) )
                 dorefresh = true
             end
@@ -406,7 +432,7 @@ function tshow_tree( ex; title = string(typeof( ex ) ) )
                 beep()
             end
         elseif token == "L" # move half-way toward the end
-            target = min( int(ceil((currentTop + needy)/2)), needy )
+            target = min( int(ceil((currentLine + needy)/2)), needy )
             if target != currentLine
                 currentLine = target
                 checkTop()
@@ -452,9 +478,10 @@ L          : move halfway to the end
         end
         ct = strftime( "%H:%M:%S", time() )
         mvwprintw( win, height-1, width-10, "%s", ct )
-        update_panels()
-        doupdate()
+        #update_panels()
+        #doupdate()
+        wrefresh( win )
     end
-    del_panel( panel )
-    delwin( win )
+    #del_panel( panel )
+    #delwin( win )
 end
