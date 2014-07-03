@@ -2,24 +2,30 @@ module TermWin
 
 include( "consts.jl")
 include( "ccall.jl" )
+include( "twtypes.jl")
+include( "twobj.jl")
+include( "twscreen.jl")
+include( "twviewer.jl")
+include( "twentry.jl")
 include( "readtoken.jl" )
 include( "tree.jl" )
 include( "func.jl" )
 
-export tshow
+export tshow, newTwViewer, newTwScreen, activateTwObj, newTwEntry, unregisterTwObj
 
 rootwin = nothing
 callcount = 0
 acs_map_ptr = nothing
 acs_map_arr = Uint8[]
+COLORS = 8
+COLOR_PAIRS = 16
 
 function initsession()
-    global rootwin, libncurses, acs_map_ptr, acs_map_arr
+    global rootwin, libncurses, acs_map_ptr, acs_map_arr, COLORS
 
     if rootwin == nothing || rootwin == C_NULL
         ENV["ESCDELAY"] = "25"
         rootwin = ccall(dlsym(libncurses, :initscr), Ptr{Void}, ()) # rootwin is stdscr
-        ccall( dlsym( libncurses, :keypad ), Void, (Ptr{Void}, Bool), rootwin, true );
         if rootwin == C_NULL
             println( "cannot create root win in ncurses")
             return
@@ -28,11 +34,47 @@ function initsession()
             ccall( dlsym( libncurses, :endwin), Void, () )
             throw( "terminal doesn't support colors")
         end
+        mousemask( BUTTON1_PRESSED | REPORT_MOUSE_POSITION )
         acs_map_ptr = cglobal( (:acs_map, :libncurses ), Uint32 )
         acs_map_arr = pointer_to_array( acs_map_ptr, 128)
 
         start_color()
-        init_pair( 1, COLOR_BLACK, COLOR_WHITE )
+        # figure out how many colors are supported
+        colorsptr = cglobal( (:COLORS, :libncurses ), Int16 )
+        colorsarr = pointer_to_array( colorsptr, 1 )
+        COLORS = colorsarr[1]
+
+        colorsptr = cglobal( (:COLOR_PAIRS, :libncurses ), Int16 )
+        colorsarr = pointer_to_array( colorsptr, 1 )
+        COLOR_PAIRS = colorsarr[1]
+
+        init_pair( 1, COLOR_RED,    COLOR_BLACK )
+        init_pair( 2, COLOR_GREEN,  COLOR_BLACK )
+        init_pair( 3, COLOR_YELLOW, COLOR_BLACK )
+        init_pair( 4, COLOR_BLUE,   COLOR_BLACK )
+        init_pair( 5, COLOR_MAGENTA, COLOR_BLACK )
+        init_pair( 6, COLOR_CYAN,   COLOR_BLACK )
+        init_pair( 7, COLOR_WHITE,  COLOR_BLACK )
+        if COLOR_PAIRS >= 16 && COLORS >= 64 # dark blue background
+            init_pair( 8, COLOR_BLACK,  21 ) # black on BRIGHT blue
+            init_pair( 9, COLOR_RED,    17 ) # red on dark blue
+            init_pair( 10, COLOR_GREEN,  17 ) # green on dark blue
+            init_pair( 11, COLOR_YELLOW, 17 ) # yellow on dark blue
+            init_pair( 12, COLOR_WHITE,   52 ) # white on dark RED
+            init_pair( 13, COLOR_WHITE,  8 ) # white on dark gray
+            init_pair( 14, COLOR_CYAN,   17 ) # cyan on dark blue
+            init_pair( 15, COLOR_WHITE,  17 ) # white on dark blue
+        end
+        if COLOR_PAIRS >= 24 && COLORS >= 64 # dark red background
+            init_pair( 16, COLOR_BLACK,  52 )
+            init_pair( 17, COLOR_RED,    52 )
+            init_pair( 18, COLOR_GREEN,  52 )
+            init_pair( 19, COLOR_YELLOW, 52 )
+            init_pair( 20, COLOR_BLUE,   52 )
+            init_pair( 21, COLOR_MAGENTA, 52)
+            init_pair( 22, COLOR_CYAN,   52 )
+            init_pair( 23, COLOR_WHITE,  52 )
+        end
         keypad( rootwin, true )
         nodelay( rootwin, true )
         notimeout( rootwin, false )
@@ -373,7 +415,7 @@ function tshow( x::Any )
 end
 
 function testkeydialog( remapkeypad::Bool = false )
-    width = 25
+    width = 42
     initsession()
     win = winnewcenter( 4, width )
     panel = new_panel( win )
@@ -400,18 +442,33 @@ function testkeydialog( remapkeypad::Bool = false )
                     k *= @sprintf( "{%x}", uint(c))
                 end
             end
-            if 1 <= uint8(token[1]) <= 127
+            k = k * repeat( " ", 21-length(k) )
+            mvwprintw( win, 1, 2, "%s", k)
+            if 1 <= uint64(token[1]) <= 127
                 mvwprintw( win, 2, 2, "%s", "acs_val:        " )
                 mvwaddch( win, 2,11, get_acs_val( token[1] ) )
             else
-                mvwprintw( win, 2, 2, "%s", "acs_val: <none> " )
+                mvwprintw( win, 2, 2, "%s        ", "print  :" * string(token[1]) )
             end
+        elseif token == :KEY_MOUSE
+            ( state, x, y, bs ) = getmouse()
+            mvwprintw( win, 1,2, "%s", @sprintf( "x:%d y:%d   ", x,y ))
+            mvwprintw( win, 2,2, ":%s      ", string(state))
+            #=
+            for j = 1:2
+                k = ""
+                for i = 1:16
+                    k *= @sprintf( "%02x", bs[i+(j-1)*16] )
+                end
+                mvwprintw( win, j, 2, "%s", k )
+            end
+            =#
         elseif isa( token, Symbol )
             k = ":" * string(token)
             mvwprintw( win, 2, 2, "%s", "                " )
+            k = k * repeat( " ", 21-length(k) )
+            mvwprintw( win, 1, 2, "%s", k)
         end
-        k = k * repeat( " ", 21-length(k) )
-        mvwprintw( win, 1, 2, "%s", k)
         update_panels()
         doupdate()
     end

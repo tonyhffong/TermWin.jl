@@ -3,21 +3,25 @@ const keymap = (String=>Symbol)[
     "\e[1;2A" => :shift_up,
     "\e[1;5A" => :ctrl_up,
     "\e[1;6A" => :ctrlshift_up,
+    "\e[1;9A" => :alt_up,
     "\e[1;10A" => :altshift_up,
     "\eOB"    => :down,
     "\e[1;2B" => :shift_down,
     "\e[1;5B" => :ctrl_down,
     "\e[1;6B" => :ctrlshift_down,
+    "\e[1;9B" => :alt_down,
     "\e[1;10B" => :altshift_down,
     "\eOC"    => :right,
     "\e[1;2C" => :shift_right,
     "\e[1;5C" => :ctrl_right,
     "\e[1;6C" => :ctrlshift_right,
+    "\e[1;9C" => :alt_right,
     "\e[1;10C" => :altshift_right,
     "\eOD"    => :left,
     "\e[1;2D" => :shift_left,
     "\e[1;5D" => :ctrl_left,
     "\e[1;6D" => :ctrlshift_left,
+    "\e[1;9D" => :alt_left,
     "\e[1;10D" => :altshift_left,
 
     "\e[A"    => :up,
@@ -31,15 +35,19 @@ const keymap = (String=>Symbol)[
 
     "\eOH"    => :home,
     "\e[1;2H" => :shift_home,
+    "\e[H"    => :shift_home,
     "\e[1;5H" => :ctrl_home,
     "\e[1;9H" => :alt_home,
     "\e[1;10H" => :altshift_home,
+    "\e[1;13H" => :altctrl_home,
 
     "\eOF"    => symbol("end"),
     "\e[1;2F" => :shift_end,
+    "\e[F"    => :shift_end,
     "\e[1;5F" => :ctrl_end,
     "\e[1;9F" => :alt_end,
     "\e[1;10F" => :altshift_end,
+    "\e[1;13F" => :altctrl_end,
 
     "\eOP"    => :F1,
     "\eOQ"    => :F2,
@@ -86,9 +94,11 @@ const keymap = (String=>Symbol)[
 
     "\e[3~"   => :delete,
     "\e[5~"   => :pageup,
-    "\e\e[5~"   => :alt_pageup,
+    "\e\e[5~" => :alt_pageup,
     "\e[6~"   => :pagedown,
-    "\e\e[6~"   => :alt_pagedown
+    "\e\e[6~" => :alt_pagedown,
+    "\e"*string(char(0x153)) => :alt_pageup,
+    "\e"*string(char(0x152)) => :alt_pagedown
 ]
 
 ncnummap = (Int=>Symbol) [
@@ -128,6 +138,10 @@ ncnummap = (Int=>Symbol) [
     int( 0x21e ) => :ctrlshift_left,
     int( 0x22c ) => :ctrl_right,
     int( 0x22d ) => :ctrlshift_right,
+    int( 0x213 ) => :ctrl_home,
+    int( 0x214 ) => :ctrlshift_home,
+    int( 0x20e ) => :ctrl_end,
+    int( 0x20f ) => :ctrlshift_end,
     int(0o0402) => :down,
     int(0o0403) => :up,
     int(0o0404) => :left,
@@ -296,9 +310,46 @@ function readtoken( win::Ptr{Void} )
     if c == char(-1)
         return :nochar
     end
-    if haskey( ncnummap, c )
-        return ncnummap[ c]
-    else
-        return string( char( c ) )
+    if c < 192 || c > 253
+        if haskey( ncnummap, c )
+            return ncnummap[ c]
+        else
+            return string( char( c ) )
+        end
+    elseif 192 <= c <= 223 # utf8 based logic starts here
+        bs = Array( Uint8, 2 )
+        bs[1] = uint8( c )
+        bs[2] = uint8( wgetch( win ) )
+        return convert( UTF8String, bs )
+    elseif  224 <= c <= 239
+        bs = Array( Uint8, 3 )
+        bs[1] = uint8( c )
+        bs[2] = uint8( wgetch( win ) )
+        bs[3] = uint8( wgetch( win ) )
+        return convert( UTF8String, bs )
+    elseif  240 <= c <= 247
+        bs = Array( Uint8, 4 )
+        bs[1] = uint8( c )
+        bs[2] = uint8( wgetch( win ) )
+        bs[3] = uint8( wgetch( win ) )
+        bs[4] = uint8( wgetch( win ) )
+        return convert( UTF8String, bs )
+    elseif  248 <= c <= 251
+        bs = Array( Uint8, 5 )
+        bs[1] = uint8( c )
+        bs[2] = uint8( wgetch( win ) )
+        bs[3] = uint8( wgetch( win ) )
+        bs[4] = uint8( wgetch( win ) )
+        bs[5] = uint8( wgetch( win ) )
+        return convert( UTF8String, bs )
+    elseif  252 <= c <= 253
+        bs = Array( Uint8, 6 )
+        bs[1] = uint8( c )
+        bs[2] = uint8( wgetch( win ) )
+        bs[3] = uint8( wgetch( win ) )
+        bs[4] = uint8( wgetch( win ) )
+        bs[5] = uint8( wgetch( win ) )
+        bs[6] = uint8( wgetch( win ) )
+        return convert( UTF8String, bs )
     end
 end

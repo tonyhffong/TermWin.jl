@@ -8,6 +8,11 @@ function newwin( lines, cols, origy, origx )
         lines, cols, origy, origx )
 end
 
+function subwin( win, lines, cols, origy, origx )
+    ccall( dlsym( libncurses, :subwin ), Ptr{Void}, ( Ptr{Void}, Int, Int, Int, Int ),
+        win, lines, cols, origy, origx )
+end
+
 function delwin( win::Ptr{Void} )
     ccall( dlsym( libncurses, :delwin ), Void, ( Ptr{Void}, ), win )
 end
@@ -21,6 +26,10 @@ function mvwprintw( win::Ptr{Void}, row::Int, height::Int, fmt::String, str::Str
     ccall( dlsym( libncurses, :mvwprintw), Void,
         ( Ptr{Void}, Int, Int, Ptr{Uint8}, Ptr{Uint8}),
         win, row, height, fmt, str )
+end
+
+function wmove( win, y, x )
+    ccall( dlsym( libncurses, :wmove), Int, ( Ptr{Void}, Int, Int ), win, y, x )
 end
 
 function wrefresh( win::Ptr{Void} )
@@ -106,6 +115,16 @@ function getwinmaxyx( win )
     ( maxy, maxx )
 end
 
+function getwinbegyx( win )
+    maxy = ccall( dlsym(libncurses, :getbegy), Int, ( Ptr{Void}, ), win )
+    maxx = ccall( dlsym(libncurses, :getbegx), Int, ( Ptr{Void}, ), win )
+    ( maxy, maxx )
+end
+
+function mvwin( win, y, x )
+    ccall( dlsym( libncurses, :mvwin), Int, ( Ptr{Void}, Int, Int ), win, y, x )
+end
+
 function beep()
     ccall( dlsym( libncurses, :beep ), Void, () )
 end
@@ -157,8 +176,74 @@ function wattrset( win, attrs )
     ccall( dlsym(libncurses, :wattrset), Int, ( Ptr{Void}, Uint32 ), win, attrs )
 end
 
+function wbkgdset( win, ch )
+    ccall( dlsym(libncurses, :wbkgdset ), Void, ( Ptr{Void}, Uint32 ), win, ch )
+end
+
+function wbkgd( win, ch )
+    ccall( dlsym(libncurses, :wbkgd ), Void, ( Ptr{Void}, Uint32 ), win, ch )
+end
+
 function curs_set( vis )
     ccall( dlsym(libncurses, :curs_set), Int, ( Int, ), vis )
+end
+
+function has_mouse()
+    ccall( dlsym(libncurses, :has_mouse), Bool, () )
+end
+
+function mousemask( mask )
+    oldmm = Array( Uint64, 1 )
+    resultmm = ccall( dlsym( libncurses, :mousemask), Uint64, (Uint64, Ptr{Uint64}), mask, oldmm )
+    ( resultmm, oldmm[1])
+end
+
+#hack!
+const mouseByteString = bytestring( Array( Uint8, 64 ) )
+function getmouse()
+    #=
+    type Mouse_Event_t
+        id::Int8 # short
+        x::Int32 # int
+        y::Int32 # int
+        z::Int32 # int
+        bstate::Uint64 # unsigned long
+    end
+    =#
+    # the 5th byte is x, 9th byte is y
+    # 19th byte is x08 if scroll up, 20th byte is x08 if scroll down
+    # 17th byte is x02 if button 1 pressed
+    # 17th byte is x01 if button 1 released
+    # 17-18th is 0xfffd if mousewheel is pressed down
+    ccall( dlsym( libncurses, :getmouse), Int, (Ptr{Uint8}, ), mouseByteString )
+    bs = mouseByteString
+    x = uint8(bs[5])
+    y = uint8(bs[9])
+    state=:unknown
+    if bs[17] & 0x02 != 0
+        state = :button1_pressed
+    elseif bs[19] & 0x08 != 0
+        state = :scroll_up
+    elseif bs[20] & 0x08 != 0
+        state = :scroll_down
+    end
+    ( state, x, y, bs )
+end
+
+function baudrate()
+    ccall( dlsym( libncurses, :baudrate), Int, () )
+end
+
+function clearok( win, bf )
+    ccall( dlsym( libncurses, :clearok), Int, ( Ptr{Void}, Bool ), win, bf )
+end
+
+function immedok( win, bf )
+    ccall( dlsym( libncurses, :immedok), Int, ( Ptr{Void}, Bool ), win, bf )
+end
+
+function napms( ms )
+    ccall( dlsym( libncurses, :napms), Int, (Int, ), ms )
 end
 
 #===== PANEL library ====#
@@ -175,12 +260,24 @@ function new_panel( win::Ptr{Void} )
     ccall( dlsym( libpanel, :new_panel ), Ptr{Void}, ( Ptr{Void}, ), win )
 end
 
-function move_panel( win, starty, startx )
-    ccall( dlsym( libpanel, :move_panel ), Ptr{Void}, ( Ptr{Void}, Int, Int ), win, starty, startx )
+function top_panel( pan::Ptr{Void} )
+    ccall( dlsym( libpanel, :top_panel ), Ptr{Void}, ( Ptr{Void}, ), pan )
+end
+
+function move_panel( pan, starty, startx )
+    ccall( dlsym( libpanel, :move_panel ), Ptr{Void}, ( Ptr{Void}, Int, Int ), pan, starty, startx )
 end
 
 function del_panel( panel::Ptr{Void} )
     ccall(dlsym( libpanel, :del_panel ), Void, (Ptr{Void}, ), panel )
+end
+
+function hide_panel( panel::Ptr{Void} )
+    ccall(dlsym( libpanel, :hide_panel ), Void, (Ptr{Void}, ), panel )
+end
+
+function panel_hidden( panel::Ptr{Void } )
+    ccall(dlsym( libpanel, :panel_hidden ), Int, (Ptr{Void}, ), panel ) != 0
 end
 
 function replace_panel( panel::Ptr{Void}, window::Ptr{Void} )
