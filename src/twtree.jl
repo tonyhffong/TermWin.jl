@@ -4,6 +4,7 @@ Arrow keys : standard navigation
 <spc>,<rtn>: toggle leaf expansion
 Home       : jump to the start
 End        : jump to the end
+ctrl_arrow : jump to the start/end of the line
 -          : collapse all
 F6         : popup window for value
 """
@@ -14,6 +15,9 @@ typefields  = Dict{ Any, Array{ Symbol, 1 } }()
 typefields[ Function ] = []
 typefields[ Method ] = [ :sig ]
 typefields[ LambdaStaticData ] = [ :name, :module, :file ]
+
+treeTypeMaxWidth = 40
+treeValueMaxWidth = 40
 
 type TwTreeData
     openstatemap::Dict{ Any, Bool }
@@ -42,11 +46,13 @@ function newTwTree( scr::TwScreen, ex, h::Real,w::Real,y::Any,x::Any; title = st
     obj.borderSizeH= box ? 2 : 0
     obj.data = TwTreeData()
     obj.data.openstatemap[ {} ] = true
-    tree_data( ex, title, obj.data.datalist, o.data.openstatemap, {} )
+    tree_data( ex, title, obj.data.datalist, obj.data.openstatemap, {} )
+    updateTreeDimensions( obj )
     obj.data.showLineInfo = showLineInfo
     obj.data.showHelp = showHelp
     obj.data.bottomText = bottomText
-    configure_newwinpanel!( obj, h, w, y, x )
+    alignxy!( obj, h, w, x, y )
+    configure_newwinpanel!( obj )
     obj
 end
 
@@ -58,6 +64,7 @@ end
 function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
     global modulenames, typefields
     isexp = haskey( openstatemap, stack ) && openstatemap[ stack ]
+    typx = typeof( x )
 
     intern_tree_data = ( subx, subn, substack, islast )->begin
         if islast
@@ -68,29 +75,28 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
             tree_data( subx, subn, list, openstatemap, substack, skiplines )
         end
     end
-    if typeof( x ) == Symbol || typeof( x ) <: Number || typeof( x ) == Any || typeof( x ) == DataType
+    if typx == Symbol || typx <: Number ||
+        typx == Any || typx == DataType ||
+        typx <: Ptr || typx <: String
         s = string( name )
-        t = string( typeof( x) )
-        v = string( x )
-        if length( v ) > 25
-            v = string( SubString( v, 1, 23 ) ) * ".."
-        end
-        push!( list, (s, t, v, stack, :single, skiplines ) )
-    elseif typeof( x ) <: String
-        s = string( name )
-        t = string( typeof( x) )
-        if length( x ) > 25
-            v = string( SubString( x, 1, 23 ) ) * ".."
+        t = string( typx )
+        if typx <: Integer && typx <: Unsigned
+            v = @sprintf( "0x%x", x )
         else
-            v = string( x )
+            v = ensure_length( string( x ), treeValueMaxWidth, false )
         end
         push!( list, (s, t, v, stack, :single, skiplines ) )
-    elseif typeof( x ) <: Array || typeof( x ) <: Tuple
+    elseif typx == WeakRef
         s = string( name )
-        t = string( typeof( x ))
+        t = string( typx )
+        v = x.value == nothing? "<nothing>" : @sprintf( "id:0x%x", object_id( x.value ) )
+        push!( list, (s, t, v, stack, :single, skiplines ) )
+    elseif typx <: Array || typx <: Tuple
+        s = string( name )
+        t = string( typx)
         len = length(x)
         szstr = string( len )
-        v = "Size=" * szstr
+        v = "size=" * szstr
         expandhint = isempty(x) ? :single : (isexp ? :open : :close )
         push!( list, (s,t,v, stack, expandhint, skiplines ))
         if isexp
@@ -103,12 +109,12 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
                 intern_tree_data( a, subname, newstack, i==len )
             end
         end
-    elseif typeof( x ) <: Dict
+    elseif typx <: Dict
         s = string( name )
-        t = string( typeof( x ))
-        len = length(s)
+        t = string( typx)
+        len = length(x)
         szstr = string( len )
-        v = "Size=" * szstr
+        v = "size=" * szstr
         expandhint = isempty(x) ? :single : (isexp ? :open : :close )
         push!( list, (s,t,v, stack, expandhint, skiplines ))
         if isexp
@@ -125,28 +131,14 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
                 intern_tree_data( v, subname, newstack, i==len )
             end
         end
-    elseif typeof(x) == Module && !isempty( stack ) # don't want to recursively descend
+    elseif typx == Module && !isempty( stack ) # don't want to recursively descend
         s = string( name )
-        t = string( typeof( x) )
-        v = string( x )
-        if length( v ) > 25
-            v = string( SubString( v, 1, 23 ) ) * ".."
-        end
+        t = string( typx )
+        v = ensure_length( string( x ), treeValueMaxWidth, false )
         push!( list, (s, t, v, stack, :single, skiplines ) )
-    #=
-    elseif typeof( x ) == Function
-        s = string( name )
-        t = string( typeof( x) )
-        if length( string(x) ) > 25
-            v = string( SubString( x, 1, 23 ) ) * ".."
-        else
-            v = string( x )
-        end
-        push!( list, (s, t, v, stack, :single, skiplines ) )
-    =#
     else
         ns = Symbol[]
-        if typeof(x) == Module
+        if typx == Module
             if haskey( modulenames, x )
                 ns = modulenames[ x ]
             else
@@ -155,26 +147,23 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
                 modulenames[ x ] = ns
             end
         else
-            if haskey( typefields, typeof(x) )
-                ns = typefields[ typeof(x) ]
+            if haskey( typefields, typx )
+                ns = typefields[ typx ]
             else
                 try
-                    ns = names( typeof(x) )
+                    ns = names( typx )
                     if length(ns) > 20
                         sort!(ns)
                     end
                 end
-                typefields[ typeof(x) ] = ns
+                typefields[ typx ] = ns
             end
         end
         s = string( name )
         expandhint = isempty(ns) ? :single : (isexp ? :open : :close )
-        t = string( typeof( x) )
-        v = string( x )
+        t = string( typx )
+        v = ensure_length( string( x ), treeValueMaxWidth, false )
         len = length(ns)
-        if length( v ) > 25
-            v = string( SubString( v, 1, 23 ) ) * ".."
-        end
         push!( list, (s, t, v, stack, expandhint, skiplines ) )
         if isexp && !isempty( ns )
             for (i,n) in enumerate(ns)
@@ -185,14 +174,13 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
                     v = getfield(x,n)
                     intern_tree_data( v, subname, newstack, i==len )
                 catch err
-                    println(n, ":", err)
-                    sleep(1)
-                    if typeof(x) == Module
+                    intern_tree_data( ErrorException(string(err)), subname, newstack, i==len )
+                    if typx == Module
                         todel = find( y->y==n, modulenames[ x] )
                         deleteat!( modulenames[x], todel[1] )
                     else
-                        todel = find( y->y==n, typefields[ typeof(x) ] )
-                        deleteat!( typefields[ typeof(x) ], todel[1] )
+                        todel = find( y->y==n, typefields[ typx ] )
+                        deleteat!( typefields[ typx ], todel[1] )
                     end
                 end
             end
@@ -212,55 +200,78 @@ function getvaluebypath( x, path )
     end
 end
 
-function updateContentDimensions( o::TwObj )
+function updateTreeDimensions( o::TwObj )
+    global treeTypeMaxWidth, treeValueMaxWidth
+
     o.data.datalistlen = length( o.data.datalist )
     o.data.datatreewidth = maximum( map( x->length(x[1]) + 2 +2 * length(x[4]), o.data.datalist ) )
-    o.data.datatypewidth = min( 40, max( 15, maximum( map( x->length(x[2]), datalist ) ) ) )
-    o.data.datavaluewidth= min( 40, maximum( map( x->length(x[3]), datalist ) ) )
+    o.data.datatypewidth = min( treeTypeMaxWidth, max( 15, maximum( map( x->length(x[2]), o.data.datalist ) ) ) )
+    o.data.datavaluewidth= min( treeValueMaxWidth, maximum( map( x->length(x[3]), o.data.datalist ) ) )
+    nothing
 end
 
 function drawTwTree( o::TwObj )
-    viewContentHeight, viewContentWidth, viewStartRow = viewContentDimensions( o )
+    updateTreeDimensions( o )
+    viewContentHeight = o.height - 2 * o.borderSizeV
 
     if o.box
         box( o.window, 0,0 )
     end
-    if !isempty( o.title )
-        mvwprintw( o.window, 0, int( ( o.width - length(o.title) )/2 ), "%s", title )
+    if !isempty( o.title ) && o.box
+        mvwprintw( o.window, 0, int( ( o.width - length(o.title) )/2 ), "%s", o.title )
     end
-    if o.data.showLineInfo
-        if o.data.msglen <= o.height - 2 * o.borderSizeV
+    if o.data.showLineInfo && o.box
+        if o.data.datalistlen <= viewContentHeight
             info = "ALL"
             mvwprintw( o.window, 0, o.width - 13, "%10s", "ALL" )
         else
-            if o.data.trackLine
-                info = @sprintf( "%d/%d %5.1f%%", o.data.currentTop, o.data.msglen,
-                    o.data.currentLine / o.data.msglen * 100 )
-            else
-                info = @sprintf( "%d/%d %5.1f%%", o.data.currentTop, o.data.msglen,
-                    o.data.currentTop / (o.data.msglen - o.height + 2 * o.borderSizeV ) * 100 )
-            end
+           info = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.datalistlen,
+                o.data.currentLine / o.data.datalistlen * 100 )
         end
         mvwprintw( o.window, 0, o.width - length(info)-3, "%s", info )
     end
-    for r in o.data.currentTop:min( o.data.currentTop + viewContentHeight - 1, o.data.msglen )
-        s = o.data.messages[r]
-        endpos=o.data.currentLeft + o.width - 2 * o.borderSizeH - 1
-        if endpos < length(s)
-            s = s[o.data.currentLeft:endpos]
-        else
-            s = s[o.data.currentLeft:end]
-        end
-        if o.data.trackLine && r == o.data.currentLine
+    for r in o.data.currentTop:min( o.data.currentTop + viewContentHeight - 1, o.data.datalistlen )
+        stacklen = length( o.data.datalist[r][4])
+        s = ensure_length( repeat( " ", 2*stacklen + 1) * o.data.datalist[r][1], o.data.datatreewidth ) * "|"
+        t = ensure_length( o.data.datalist[r][2], o.data.datatypewidth ) * "|"
+        v = ensure_length( o.data.datalist[r][3], o.data.datavaluewidth )
+        rest = t*v
+        rest = rest[ chr2ind( rest, o.data.currentLeft ) : end ]
+        rest = ensure_length( rest, o.width - o.borderSizeH * 2 - o.data.datatreewidth  -1, false )
+        line = s * rest
+
+        if r == o.data.currentLine
             wattron( o.window, A_BOLD | COLOR_PAIR(15) )
-            s *= repeat( " ", max(0,viewContentWidth - length(s) ) )
         end
-        mvwprintw( o.window, r - o.data.currentTop + viewStartRow, o.borderSizeH, "%s", s )
-        if o.data.trackLine && r == o.data.currentLine
+        mvwprintw( o.window, 1+r-o.data.currentTop, 2, "%s", line )
+        for i in 1:stacklen - 1
+            if !in( i, o.data.datalist[r][6] ) # skiplines
+                mvwaddch( o.window, 1+r-o.data.currentTop, 2*i, get_acs_val( 'x' ) ) # vertical line
+            end
+        end
+        if stacklen != 0
+            contchar = get_acs_val('t') # tee pointing right
+            if r == o.data.datalistlen ||  # end of the whole thing
+                length(o.data.datalist[r+1][4]) < stacklen || # next one is going back in level
+                ( length(o.data.datalist[r+1][4]) > stacklen && in( stacklen, o.data.datalist[r+1][6] ) ) # going deeping in level
+                contchar = get_acs_val( 'm' ) # LL corner
+            end
+            mvwaddch( o.window, 1+r-o.data.currentTop, 2*stacklen, contchar )
+            mvwaddch( o.window, 1+r-o.data.currentTop, 2*stacklen+1, get_acs_val('q') ) # horizontal line
+        end
+        if o.data.datalist[r][5] == :single
+            mvwaddch( o.window, 1+r-o.data.currentTop, 2*stacklen+2, get_acs_val('q') ) # horizontal line
+        elseif o.data.datalist[r][5] == :close
+            mvwaddch( o.window, 1+r-o.data.currentTop, 2*stacklen+2, get_acs_val('+') ) # arrow pointing right
+        else
+            mvwaddch( o.window, 1+r-o.data.currentTop, 2*stacklen+2, get_acs_val('w') ) # arrow pointing down
+        end
+
+        if r == o.data.currentLine
             wattroff( o.window, A_BOLD | COLOR_PAIR(15) )
         end
     end
-    if length( o.data.bottomText ) != 0
+    if length( o.data.bottomText ) != 0 && o.box
         mvwprintw( o.window, o.height-1, int( (o.width - length(o.data.bottomText))/2 ), "%s", o.data.bottomText )
     end
 end
@@ -268,27 +279,74 @@ end
 function injectTwTree( o::TwObj, token )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
-    viewContentHeight, viewContentWidth, viewStartRow = viewContentDimensions( o )
+    viewContentHeight = o.height - 2 * o.borderSizeV
+    viewContentWidth = o.data.datatreewidth + o.data.datavaluewidth+o.data.datavaluewidth
+
+    update_tree_data = ()->begin
+        o.data.datalist = {}
+        tree_data( o.value, o.title, o.data.datalist, o.data.openstatemap, {} )
+        updateTreeDimensions(o)
+        viewContentWidth = o.data.datatreewidth + o.data.datavaluewidth+o.data.datavaluewidth
+    end
 
     checkTop = () -> begin
         if o.data.currentTop > o.data.currentLine
             o.data.currentTop = o.data.currentLine
-        elseif o.data.currentLine - o.data.currentTop > viewContentHeight - 1
-            o.data.currentTop = o.data.currentLine - viewContentHeight + 1
+        elseif o.data.currentLine - o.data.currentTop > viewContentHeight-1
+            o.data.currentTop = o.data.currentLine - viewContentHeight+1
         end
     end
     moveby = n -> begin
-        if o.data.trackLine
-            o.data.currentLine = max(1, min( o.data.msglen, o.data.currentLine + n) )
+        oldline = o.data.currentLine
+        o.data.currentLine = max(1, min( o.data.datalistlen, o.data.currentLine + n) )
+        if oldline != o.data.currentLine
             checkTop()
+            return true
         else
-            o.data.currentTop = max( 1, min( o.data.msglen - viewContentHeight, o.data.currentTop + n ) )
+            beep()
+            return false
         end
-        true
     end
 
     if token == :esc
         retcode = :exit_nothing
+    elseif token == " " || token == symbol( "return" ) || token == :enter
+        stack = o.data.datalist[ o.data.currentLine ][4]
+        expandhint = o.data.datalist[ o.data.currentLine ][5]
+        if expandhint != :single
+            if !haskey( o.data.openstatemap, stack ) || !o.data.openstatemap[ stack ]
+                o.data.openstatemap[ stack ] = true
+            else
+                o.data.openstatemap[ stack ] = false
+            end
+            update_tree_data()
+            dorefresh = true
+        end
+    elseif token == :F6
+        stack = copy( o.data.datalist[ o.data.currentLine ][4] )
+        if !isempty( stack )
+            lastkey = stack[end]
+        else
+            lastkey = o.title
+        end
+        v = getvaluebypath( o.value, stack )
+        if typeof( v ) == Method
+            try
+                f = eval( v.func.code.name )
+                edit( f, v.sig )
+                dorefresh = true
+            end
+        elseif !in( v, [ nothing, None, Any ] )
+            tshow( v, title=string(lastkey) )
+            dorefresh = true
+        end
+    elseif token == "-"
+        o.data.openstatemap = Dict{Any,Bool}()
+        o.data.openstatemap[ {} ] = true
+        o.data.currentLine = 1
+        o.data.currentTop = 1
+        update_tree_data()
+        dorefresh = true
     elseif token == :up
         dorefresh = moveby(-1)
     elseif token == :down
@@ -300,9 +358,23 @@ function injectTwTree( o::TwObj, token )
         else
             beep()
         end
+    elseif token == :ctrl_left
+        if o.data.currentLeft > 1
+            o.data.currentLeft = 1
+            dorefresh = true
+        else
+            beep()
+        end
     elseif token == :right
-        if o.data.currentLeft + viewContentWidth < o.data.msgwidth
+        if o.data.currentLeft + o.width - 2*o.borderSizeH < viewContentWidth
             o.data.currentLeft += 1
+            dorefresh = true
+        else
+            beep()
+        end
+    elseif token == :ctrl_right
+        if o.data.currentLeft + o.width - 2*o.borderSizeH < viewContentWidth
+            o.data.currentLeft = viewContentWidth - o.width + 2*o.borderSizeH
             dorefresh = true
         else
             beep()
@@ -317,7 +389,7 @@ function injectTwTree( o::TwObj, token )
             dorefresh = moveby( -int( viewContentHeight/5 ) )
         elseif mstate == :scroll_down
             dorefresh = moveby( int( viewContentHeight/5 ) )
-        elseif mstate == :button1_pressed && o.data.trackLine
+        elseif mstate == :button1_pressed
             begy,begx = getwinbegyx( o.window )
             relx = x - begx
             rely = y - begy
@@ -336,59 +408,33 @@ function injectTwTree( o::TwObj, token )
             beep()
         end
     elseif in( token, { symbol("end") } )
-        if o.data.currentTop + o.height-2 < o.data.msglen
-            o.data.currentTop = o.data.msglen - o.height+ 2
+        if o.data.currentTop + viewContentHeight -1 < o.data.datalistlen
+            o.data.currentTop = o.data.datalistlen - viewContentHeight + 1
+            o.data.currentLine = o.data.datalistlen
             dorefresh = true
         else
             beep()
         end
-    elseif (token == :enter || token== symbol( "return" )) && o.data.trackLine
-        if haskey( o.listeners, :select )
-            for f in o.listeners[ :select ]
-                retcode = f( :select, o )
-            end
-        end
-        dorefresh = true
     elseif token == "L" # move half-way toward the end
-        if o.data.trackLine
-            target = min( int(ceil((o.data.currentLine + o.data.msglen)/2)), o.data.msglen )
-            if target != o.data.currentLine
-                o.data.currentLine = target
-                checkTop()
-                dorefresh = true
-            else
-                beep()
-            end
+        target = min( int(ceil((o.data.currentLine + o.data.datalistlen)/2)), o.data.datalistlen )
+        if target != o.data.currentLine
+            o.data.currentLine = target
+            checkTop()
+            dorefresh = true
         else
-            target = min( int(ceil((o.data.currentTop + o.data.msglen - o.height+2)/2)), o.data.msglen - o.height + 2 )
-            if target != o.data.currentTop
-                o.data.currentTop = target
-                dorefresh = true
-            else
-                beep()
-            end
+            beep()
         end
     elseif token == "l" # move half-way toward the beginning
-        if o.data.trackLine
-            target = max( int(floor( o.data.currentLine /2)), 1)
-            if target != o.data.currentLine
-                o.data.currentLine = target
-                checkTop()
-                dorefresh = true
-            else
-                beep()
-            end
+        target = max( int(floor( o.data.currentLine /2)), 1)
+        if target != o.data.currentLine
+            o.data.currentLine = target
+            checkTop()
+            dorefresh = true
         else
-            target = max( int(floor( o.data.currentTop /2)), 1)
-            if target != o.data.currentTop
-                o.data.currentTop = target
-                dorefresh = true
-            else
-                beep()
-            end
+            beep()
         end
     elseif token == :F1 && o.data.showHelp
-        helper = newTwTree( o.screen.value, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+        helper = newTwViewer( o.screen.value, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
         dorefresh = true
@@ -403,10 +449,3 @@ function injectTwTree( o::TwObj, token )
 
     return retcode
 end
-
-function setTwTreeMsgs( o::TwObj, msgs::Array )
-    o.data.messages = msgs
-    o.data.msglen = length(msgs)
-    o.data.msgwidth = maximum( map( x->length(x), msgs ) )
-end
-

@@ -3,6 +3,18 @@
 libncurses = dlopen("libncurses")
 libpanel = dlopen("libpanel")
 
+function initscr()
+    ccall( dlsym( libncurses, :initscr), Ptr{Void}, () )
+end
+
+function endwin()
+    ccall( dlsym( libncurses, :endwin), Int, () )
+end
+
+function isendwin()
+    ccall( dlsym( libncurses, :isendwin), Bool, () )
+end
+
 function newwin( lines, cols, origy, origx )
     ccall( dlsym( libncurses, :newwin ), Ptr{Void}, ( Int, Int, Int, Int ),
         lines, cols, origy, origx )
@@ -10,6 +22,11 @@ end
 
 function subwin( win, lines, cols, origy, origx )
     ccall( dlsym( libncurses, :subwin ), Ptr{Void}, ( Ptr{Void}, Int, Int, Int, Int ),
+        win, lines, cols, origy, origx )
+end
+
+function derwin( win, lines, cols, origy, origx )
+    ccall( dlsym( libncurses, :derwin ), Ptr{Void}, ( Ptr{Void}, Int, Int, Int, Int ),
         win, lines, cols, origy, origx )
 end
 
@@ -196,6 +213,10 @@ function mousemask( mask )
     oldmm = Array( Uint64, 1 )
     resultmm = ccall( dlsym( libncurses, :mousemask), Uint64, (Uint64, Ptr{Uint64}), mask, oldmm )
     ( resultmm, oldmm[1])
+end
+
+function mouseinterval( n )
+    ccall( dlsym(libncurses, :mouseinterval), Int, (Int, ) , n)
 end
 
 #hack!

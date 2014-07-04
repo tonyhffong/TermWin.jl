@@ -47,8 +47,8 @@ function twFuncFactory( widgetname::Symbol )
     widgetTwFuncCache[ widgetname ] = apply( TwFunc, args )
 end
 
-function configure_newwinpanel!( obj::TwObj, h, w, y, x )
-    obj.window = newwin( h,w,y,x )
+function configure_newwinpanel!( obj::TwObj )
+    obj.window = newwin( obj.height,obj.width,obj.ypos,obj.xpos )
     obj.panel = new_panel( obj.window )
     cbreak()
     noecho()
@@ -56,25 +56,54 @@ function configure_newwinpanel!( obj::TwObj, h, w, y, x )
     nodelay( obj.window, true )
     wtimeout( obj.window, 10 )
     curs_set( 0 )
-    obj.height = h
-    obj.width = w
-    obj.ypos = y
-    obj.xpos = x
 end
 
-function alignxy( o::TwObj, x::Any, y::Any, relative::Bool=false )
-    xpos = x
-    ypos = y
-    xdiff = ydiff = 0
-    if relative
-        (begy, begx) = getwinbegyx( o.window )
-        xpos += begx
-        ypos += begy
+function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any; 
+    relative::Bool=false, # if true, o.xpos = parent.x + x
+    derwin::Bool=false, # if true, o.xpos will be set relative to parentwin
+    parentwin = o.screen.value.window )
+
+    if derwin
+        parbegx = parbegy = 0
+    else
+        ( parbegy, parbegx ) = getwinbegyx( parentwin )
+    end
+    ( parmaxy, parmaxx ) = getwinmaxyx( parentwin )
+    if typeof( h ) <: Integer
+        o.height = min( h, parmaxy )
+    elseif typeof( h ) <: FloatingPoint && 0.0 < h <= 1.0
+        o.height = int( parmaxy * h )
+        if o.height == 0
+            throw( "height is too small")
+        end
+    else
+        throw( "Illegal ysize " * string( h ) )
     end
 
-    parentwin = o.screen.value.window
-    ( parbegy, parbegx ) = getwinbegyx( parentwin )
-    ( parmaxy, parmaxx ) = getwinmaxyx( parentwin )
+    if typeof( w ) <: Integer
+        o.width = min( w, parmaxx )
+    elseif typeof( w ) <: FloatingPoint && 0.0 < w <= 1.0
+        o.width = int( parmaxx * w )
+        if o.width == 0
+            throw( "width is too small")
+        end
+    else
+        throw( "Illegal xsize " * string( w ) )
+    end
+
+    if relative
+        if typeof( x ) <: Integer && typeof( y ) <: Integer
+            (begy, begx) = getwinbegyx( o.window )
+            xpos = x+begx
+            ypos = y+begy
+        else
+            throw( "Illegal relative position" )
+        end
+    else
+        xpos = x
+        ypos = y
+    end
+
     gapx = max( 0, parmaxx - o.width )
     gapy = max( 0, parmaxy - o.height )
     lastx = parbegx + gapx
@@ -85,7 +114,7 @@ function alignxy( o::TwObj, x::Any, y::Any, relative::Bool=false )
         xpos = parbegx + gapx
     elseif x == :center
         xpos = int( parbegx + gapx / 2 )
-    elseif typeof( x ) == Float64 && 0.0 <= x <= 1.0
+    elseif typeof( x ) <: FloatingPoint && 0.0 <= x <= 1.0
         xpos = int( parbegx + gapx * x )
     end
     xpos = max( min( xpos, lastx ), parbegx )
@@ -96,11 +125,12 @@ function alignxy( o::TwObj, x::Any, y::Any, relative::Bool=false )
         ypos = parbegy + gapy
     elseif y == :center
         ypos = int( parbegy + gapy / 2 )
-    elseif typeof( y ) == Float64  && 0.0 <= y <= 1.0
+    elseif typeof( y ) <: FloatingPoint  && 0.0 <= y <= 1.0
         ypos = int( parbegy + gapy * y )
     end
     ypos = max( min( ypos, lasty ), parbegy )
-    (xpos, ypos)
+    o.xpos = xpos
+    o.ypos = ypos
 end
 
 #=
@@ -172,20 +202,18 @@ eraseTwObj( o::TwObj ) = werase( o.window )
 
 function moveTwObj( o::TwObj, x, y, relative::Bool, refresh::Bool=false )
     begy, begx = getwinbegyx( o.window )
-    xpos, ypos = alignxy( o, x, y, relative, refresh )
+    alignxy!( o, o.height, o.width, x, y, relative=relative )
 
-    xdiff = xpos - begx
-    ydiff = ypos - begy
+    xdiff = o.xpos - begx
+    ydiff = o.ypos - begy
 
     if xdiff == 0 && ydiff == 0
         return
     end
-    move_panel( o.panel, ypos, xpos )
+    move_panel( o.panel, o.ypos, o.xpos )
     touchwin( o.screen.value )
     if refresh
         draw(o)
-        #update_panels()
-        #doupdate()
     end
 end
 

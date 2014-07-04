@@ -58,6 +58,7 @@ function unregisterTwObj( scr::TwScreen, o::TwObj )
     if scr.data.focus == idx
         setTwFocusNext( scr )
     end
+    o.screen = WeakRef()
 end
 
 function setTwFocusNext( scr::TwScreen )
@@ -132,6 +133,10 @@ function raiseTwObject( o::TwObj )
     scr = o.screen.value
     if scr != nothing
         swapTwObjIndices( scr, o.screenIndex, length(scr.data.objects) )
+        if o.acceptsFocus
+            o.hasFocus = true
+            scr.data.focus = length( scr.data.objects )
+        end
         top_panel( o.panel )
     end
 end
@@ -144,38 +149,99 @@ function lowerTwObject( o::TwObj )
     end
 end
 
+#=
+Blocking call. it doesn't use inject directly, because
+    * it needs to wait for populating of widgets
+    * once there are widgets, get the topmost focused widget (TFW) and
+    * inject tokens into the TFW
+    * if TFW returns exit, get the next in line that accepts focus
+    * otherwise, exit
+
+This is some UGLY code. To be streamlined...
+=#
 function activateTwScreen( scr::TwScreen, tokens::Any=nothing )
-    #draw( scr )
     refresh(scr)
+    focusObj = nothing
+    focusIdx = scr.data.focus
+    retvalue = nothing
+
+    if focusIdx > 0 && focusIdx <= length( scr.data.objects )
+        focusObj = scr.data.objects[ focusIdx ]
+    end
+
+    handleStatus = (st, tok)->begin
+        focusIdx = scr.data.focus
+        if focusIdx > 0 && focusIdx <= length( scr.data.objects )
+            focusObj = scr.data.objects[ focusIdx ]
+        else
+            focusObj = nothing
+        end
+        if st== :exit_ok || st== :exit_nothing
+            if st== :exit_ok
+                retvalue = scr.value
+            end
+            if focusObj != nothing
+                unregisterTwObj( scr, focusObj )
+                # find the next focusObj, if not found, just return
+                # otherwise, make it the new focus and continue
+                focusObj = nothing
+                for i in length( scr.data.objects ) :-1: 1
+                    o = scr.data.objects[i]
+                    if o.isVisible && o.acceptsFocus
+                        focusObj = o
+                        o.hasFocus = true
+                        scr.data.focus = i
+                    end
+                end
+            end
+            if focusObj == nothing
+                return :really_exit
+            end
+        elseif st == :pass
+            if focusObj != nothing
+                i = length( scr.data.objects )
+                while( st == :pass && i >= 1 )
+                    o = scr.data.objects[i]
+                    if o!=focusObj && o.isVisible && o.grabUnusedKey
+                        st = inject( o, tok )
+                    end
+                    i -= 1
+                end
+                if st == :exit_ok || st == :exit_nothing
+                    return :really_exit
+                end
+            end
+        end
+    end
+
     if tokens == nothing
         while true
             update_panels()
             doupdate()
-            napms( 10 )
-            if scr.data.focus == 0
+            if focusObj == nothing
                 token = readtoken( scr.window )
                 status = inject( scr, token )
             else
-                o = scr.data.objects[ scr.data.focus ]
-                token = readtoken( o.window )
-                #token = readtoken( scr.window )
-                status = inject( o, token )
+                token = readtoken( focusObj.window )
+                status = inject( focusObj, token )
             end
-            if status == :exit_ok
-                return scr.value
-            elseif status == :exit_nothing
-                return nothing
+            if handleStatus( status, token ) == :really_exit
+                return retvalue
             end
         end
     else
         for token in tokens
             update_panels()
             doupdate()
-            status = inject( o, token )
-            if status == :exit_ok
-                return o.value
-            elseif status == :exit_nothing # most likely a cancel
-                return nothing
+            if focusObj == nothing
+                token = readtoken( scr.window )
+                status = inject( scr, token )
+            else
+                token = readtoken( focusObj.window )
+                status = inject( focusObj, token )
+            end
+            if handleStatus( status, token ) == :really_exit
+                return retvalue
             end
         end
         # exhausted all the tokens, no obvious response
@@ -207,12 +273,15 @@ end
 
 function drawTwScreen( scr::TwScreen )
     focused = 0
-    for (i,o) in enumerate( scr.data.objects )
+    i = length( scr.data.objects )
+    while i>=1
+        o = scr.data.objects[i]
         if o.isVisible
             if o.hasFocus && focused < 1
                 focused = i
             end
         end
+        i-=1
     end
     scr.data.focus = focused
     for (i,o) in enumerate( scr.data.objects )
@@ -233,7 +302,9 @@ end
 
 function refreshTwScreen( scr::TwScreen )
     focused = 0
-    for (i,o) in enumerate( scr.data.objects )
+    i = length( scr.data.objects )
+    while i>=1
+        o = scr.data.objects[i]
         if o.isVisible
             if o.hasFocus && focused < 1
                 focused = i
@@ -241,6 +312,7 @@ function refreshTwScreen( scr::TwScreen )
         else
             erase( o )
         end
+        i -= 1
     end
     scr.data.focus = focused
     for (i,o) in enumerate( scr.data.objects )

@@ -40,7 +40,8 @@ function newTwViewer( scr::TwScreen, h::Real,w::Real,y::Any,x::Any; box=true, sh
     obj.data.viewContentHeight = h - ( box? obj.borderSizeV *2 : 1 )
     obj.data.bottomText = bottomText
     obj.data.trackLine = trackLine
-    configure_newwinpanel!( obj, h, w, y, x )
+    alignxy!( obj, h, w, y, x )
+    configure_newwinpanel!( obj )
     obj
 end
 
@@ -60,15 +61,11 @@ function newTwViewer( scr::TwScreen, msgs::Array, y::Any,x::Any; box=true, showL
     obj.data.bottomText = bottomText
     obj.data.trackLine = trackLine
 
-    scrh = scr.height
-    scrw = scr.width
-    h = min( scrh, obj.data.msglen + obj.borderSizeV * 2 + (!box && !isempty( obj.data.bottomText )? 1 : 0 ) )
-    w = min( scrw, obj.data.msgwidth + obj.borderSizeH * 2 )
-    obj.height = h
-    obj.width = w
+    h = obj.data.msglen + obj.borderSizeV * 2 + (!box && !isempty( obj.data.bottomText )? 1 : 0 )
+    w = obj.data.msgwidth + obj.borderSizeH * 2
 
-    obj.xpos, obj.ypos = alignxy( obj, x, y )
-    configure_newwinpanel!( obj, h, w, obj.ypos, obj.xpos )
+    alignxy!( obj, h, w, x, y )
+    configure_newwinpanel!( obj )
     obj
 end
 
@@ -103,7 +100,7 @@ function drawTwViewer( o::TwObj )
         box( o.window, 0,0 )
     end
     if !isempty( o.title )
-        mvwprintw( o.window, 0, int( ( o.width - length(o.title) )/2 ), "%s", title )
+        mvwprintw( o.window, 0, int( ( o.width - length(o.title) )/2 ), "%s", o.title )
     end
     if o.data.showLineInfo
         if o.data.msglen <= o.height - 2 * o.borderSizeV
@@ -111,7 +108,7 @@ function drawTwViewer( o::TwObj )
             mvwprintw( o.window, 0, o.width - 13, "%10s", "ALL" )
         else
             if o.data.trackLine
-                info = @sprintf( "%d/%d %5.1f%%", o.data.currentTop, o.data.msglen,
+                info = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.msglen,
                     o.data.currentLine / o.data.msglen * 100 )
             else
                 info = @sprintf( "%d/%d %5.1f%%", o.data.currentTop, o.data.msglen,
@@ -191,9 +188,9 @@ function injectTwViewer( o::TwObj, token )
     elseif token == :KEY_MOUSE
         (mstate,x,y, bs ) = getmouse()
         if mstate == :scroll_up
-            dorefresh = moveby( -int( viewContentHeight/5 ) )
+            dorefresh = moveby( -int( viewContentHeight/10 ) )
         elseif mstate == :scroll_down
-            dorefresh = moveby( int( viewContentHeight/5 ) )
+            dorefresh = moveby( int( viewContentHeight/10 ) )
         elseif mstate == :button1_pressed && o.data.trackLine
             begy,begx = getwinbegyx( o.window )
             relx = x - begx

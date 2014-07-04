@@ -42,11 +42,8 @@ function newTwEntry( scr::TwScreen, dt::DataType, w::Real,y::Any,x::Any; box=tru
     obj.data = TwEntryData( dt )
     obj.data.showHelp = showHelp
     h = box?3 : 1
-    obj.height = h = box ? 3: 1
-    obj.width = w
-    x, y = alignxy( obj, x, y)
-
-    configure_newwinpanel!( obj, h, w, y, x )
+    alignxy!( obj, h, w, x, y)
+    configure_newwinpanel!( obj )
     obj
 end
 
@@ -63,49 +60,9 @@ function newTwEntry( parentwin::Ptr{Void}, dt::DataType, w::Real, y::Any,x::Any;
     obj.borderSizeH= box ? 1 : 0
     obj.data.showHelp = showHelp
 
-    obj.height = h = box ? 3 : 1
-    obj.width = w
-
-    ( parmaxy, parmaxx ) = getwinmaxyx( parentwin )
-    gapx = max( 0, parmaxx - obj.width )
-    gapy = max( 0, parmaxy - obj.height )
-    lastx = parbegx + gapx
-    lasty = parbegy + gapy
-    if x == :left
-        xpos = parbegx
-    elseif x == :right
-        xpos = parbegx + gapx
-    elseif x == :center
-        xpos = int( parbegx + gapx / 2 )
-    elseif typeof( x ) == Float64 && 0.0 <= x <= 1.0
-        xpos = int( parbegx + gapx * x )
-    else
-        xpos = parbegx + x
-    end
-    xpos = max( min( xpos, lastx ), parbegx )
-
-    if y == :top
-        ypos = parbegy
-    elseif y == :bottom
-        ypos = parbegy + gapy
-    elseif y == :center
-        ypos = int( parbegy + gapy / 2 )
-    elseif typeof( y ) == Float64  && 0.0 <= y <= 1.0
-        ypos = int( parbegy + gapy * y )
-    else
-        ypos = parbegy + y
-    end
-    ypos = max( min( ypos, lasty ), parbegy )
-
-    obj.window = subwin( parentwin, h, w, ypos, xpos )
-    cbreak()
-    noecho()
-    keypad( obj.window, true )
-    nodelay( obj.window, true )
-    wtimeout( obj.window, 10 )
-    curs_set(0)
-    obj.xpos = xpos
-    obj.ypos = ypos
+    h = box ? 3 : 1
+    alignxy!( obj, h, w, x, y, parentwin = parentwin, derwin=true )
+    obj.window = derwin( parentwin, obj.height, obj.width, obj.ypos, obj.xpos )
     obj
 end
 
@@ -126,7 +83,7 @@ function drawTwEntry( o::TwObj )
         box( o.window, 0,0 )
     end
     if !isempty( o.title ) && !o.data.titleLeft && o.box
-        mvwprintw( o.window, 0, int( ( o.width - length(title) )/2 ), "%s", title )
+        mvwprintw( o.window, 0, int( ( o.width - length(o.title) )/2 ), "%s", o.title )
     end
     starty = o.borderSizeV
     startx = o.borderSizeH
@@ -414,10 +371,11 @@ function injectTwEntry( o::TwObj, token )
             checkcursor()
             retcode = :exit_ok
         end
-    elseif token == :F1 && o.data.showHelp && o.screen.value != nothing
-        helper = newTwViewer( o.screen.value, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+    elseif token == :F1 && o.data.showHelp
+        global rootTwScreen
+        helper = newTwViewer( rootTwScreen, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
-        unregisterTwObj( o.screen.value, helper )
+        unregisterTwObj( rootTwScreen, helper )
         dorefresh = true
     else
         retcode = :pass # I don't know what to do with it

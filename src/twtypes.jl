@@ -49,14 +49,28 @@ type TwObj
         finalizer( x, y->begin
             if y.panel != nothing
                 del_panel( y.panel )
+                y.panel = nothing
             end
             if y.window != nothing && y.window != rootwin
                 delwin( y.window )
+                y.window = nothing
+            end
+            if y.screen.value != nothing
+                unregisterTwObj( y.screen.value, y )
+                y.screen = WeakRef()
             end
             y.listeners = Dict{Symbol,Array{Function,1}}()
         end )
         x
     end
+end
+import Base.show
+
+function Base.show( io::IO, o::TwObj )
+    print( io, "TwObj("*string(o.fn.objtype)*")")
+end
+function Base.show( io::IO, f::TwFunc )
+    print( io, "TwFunc("*string(f.objtype)*")")
 end
 
 draw( p::TwObj ) = p.fn.draw( p )

@@ -2,18 +2,21 @@ module TermWin
 
 include( "consts.jl")
 include( "ccall.jl" )
+include( "strutils.jl")
 include( "twtypes.jl")
 include( "twobj.jl")
 include( "twscreen.jl")
 include( "twviewer.jl")
 include( "twentry.jl")
 include( "readtoken.jl" )
-include( "tree.jl" )
-include( "func.jl" )
+include( "twtree.jl" )
+include( "twfunc.jl" )
 
-export tshow, newTwViewer, newTwScreen, activateTwObj, newTwEntry, unregisterTwObj
+export tshow, newTwViewer, newTwScreen, activateTwObj, unregisterTwObj
+export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 
 rootwin = nothing
+rootTwScreen = nothing
 callcount = 0
 acs_map_ptr = nothing
 acs_map_arr = Uint8[]
@@ -21,11 +24,12 @@ COLORS = 8
 COLOR_PAIRS = 16
 
 function initsession()
-    global rootwin, libncurses, acs_map_ptr, acs_map_arr, COLORS
+    global rootwin, libncurses, acs_map_ptr, acs_map_arr, COLORS, COLOR_PAIRS
+    global rootTwScreen
 
     if rootwin == nothing || rootwin == C_NULL
         ENV["ESCDELAY"] = "25"
-        rootwin = ccall(dlsym(libncurses, :initscr), Ptr{Void}, ()) # rootwin is stdscr
+        rootwin = initscr()
         if rootwin == C_NULL
             println( "cannot create root win in ncurses")
             return
@@ -76,9 +80,14 @@ function initsession()
             init_pair( 23, COLOR_WHITE,  52 )
         end
         keypad( rootwin, true )
+        mouseinterval( 0 )
         nodelay( rootwin, true )
         notimeout( rootwin, false )
+        wtimeout( rootwin, 100 )
         curs_set( 0 )
+        rootTwScreen = newTwScreen( rootwin )
+    else
+        wrefresh( rootwin )
     end
 end
 
@@ -115,231 +124,47 @@ function get_acs_val( c::Char )
 end
 
 function endsession()
-    global rootwin, libncurses
-    if rootwin != nothing
-        ccall( dlsym( libncurses, :endwin), Void, () )
-        rootwin = nothing
-    end
-end
-
-function wordwrap( x::String, width::Int )
-    spaceleft = width
-    lines = String[]
-    currline = ""
-    words = split( x, " ", true ) # don't keep empty words
-    for w in words
-        wlen = length(w)
-        if wlen>width && spaceleft == width
-            push!( lines, SubString( w, 1, width-3 ) * " .." )
-        elseif wlen+1 > spaceleft
-            push!( lines, currline )
-            currline = w * " "
-            spaceleft = width - wlen - 1
-        else
-            currline = currline * w * " "
-            spaceleft = spaceleft - wlen -1
-        end
-    end
-    if currline != ""
-        push!(lines, currline )
-    end
-    return lines
+    endwin()
 end
 
 function tshow_( x::Number; title = string(typeof( x )) )
-    s = string( x )
-    len = length(s)
-    width = max( 21, len, length(title) ) + 4
-    win = winnewcenter( 3, width )
-    panel = new_panel( win )
-    box( win,  0, 0 )
-    keyhint = "[Esc to continue]"
-
-    if title != ""
-        mvwprintw( win, 0, int( ( width - length(title) )/2 ), "%s", title )
+    typx = typeof( x )
+    if typx <: Integer && typx <: Unsigned
+        s = @sprintf( "0x%x", x )
+    else
+        s = string( x )
     end
-    mvwprintw( win, 1, width-len-2, "%s", s )
-    mvwprintw( win, 2, int( (width-length(keyhint))/2), "%s", keyhint )
-
-    update_panels()
-    doupdate()
-    while( (readtoken( win )) != :esc ) end
-    del_panel( panel )
-    delwin( win )
+    tshow_( s, title=title )
 end
 
 tshow_( x::Symbol; title="Symbol" ) = tshow_( ":"*string(x), title=title )
 tshow_( x::Ptr; title="Ptr" ) = tshow_( string(x), title=title )
+function tshow_( x; title = string( typeof( x ) ) )
+    newTwTree( rootTwScreen, x, 25, 80, :center, :center, bottomText = "F1: Help  Esc: Exit" )
+end
 
-function tshow_( x::String; title = string(typeof( x )), showprogress=true, showkeyhelper=true )
-    msgs = map( x->replace(x, "\t", "    "), split( x, "\n" ) )
-    needy = length(msgs)
-    needx = maximum( map( x->length(x), msgs ) )
+function tshow_( x::String; title = string(typeof( x )) )
+    newTwViewer( rootTwScreen, x, :center, :center, bottomText = "F1: Help  Esc: Exit" )
+end
 
-    maxy= maxx= height= width= 0
-    panel = nothing
-
-    update_dimensions = ()-> begin
-        (maxy, maxx) = getwinmaxyx( rootwin )
-        height=max( 3, min( maxy-2, needy )+2 ) # including the borders
-        width =max( 30, length(title)+2, min( maxx-4, needx )+4 ) # including the borders
+function tshow_( f::Function; title="Function" )
+    funloc = "(anonymous)"
+    try
+        funloc = string( functionloc( f ) )
     end
-
-    update_dimensions()
-
-    win = winnewcenter( height, width )
-    panel = new_panel( win )
-
-    currentTop = 1
-    currentLeft = 1
-
-    redrawviewer = ()->begin
-        werase( win )
-        box( win, 0, 0 )
-        height, width = getwinmaxyx( win )
-        npushed = 0
-        for r in currentTop:min(currentTop+height-3, needy)
-            s = string( SubString( msgs[ r ], currentLeft, currentLeft + width - 5 ) )
-            mvwprintw( win, 1 + r-currentTop, 2, "%s",s )
-            npushed += length(s)
-            if npushed > 200
-                refresh()
-                wrefresh( win )
-                #update_panels()
-                #doupdate()
-                npushed = 0
-            end
-        end
-        if title != ""
-            mvwprintw( win, 0, int( ( width - length(title) )/2 ), "%s", title )
-        end
-        if showprogress
-            if needy <= height-2
-                mvwprintw( win, 0, width-13, "%10s", "ALL" )
-            else
-                mvwprintw( win, 0, width-13, "%10s", @sprintf( "%9.2f%%", currentTop / (needy - height +2 ) * 100 ) )
-            end
-        end
-        if showkeyhelper && (needy > height -2 || needx > width - 4)
-            s = "F1: Help   Esc: exit"
-            mvwprintw( win, height-1, int((width-length(s))/2), "%s", s )
-        else
-            s = "[Esc to continue]"
-            mvwprintw( win, height-1, int((width-length(s))/2), "%s", s )
-        end
-        update_panels()
-        doupdate()
+    if funloc == "(anonymous)"
+        return tshow_( string(f) * ":" * funloc, title=title )
+    else
+        return newTwFunc( rootTwScreen, f, 25, 80, :center, :center, title=title )
     end
+end
 
-    redrawviewer()
-    token = 0
-    while( (token = readtoken(win )) != :esc )
-        dorefresh = false
-        if token == :up
-            if currentTop > 1
-                currentTop -= 1
-                dorefresh = true
-            else
-                beep()
-            end
-        elseif token == :down
-            if currentTop + height-2 < needy
-                currentTop += 1
-                dorefresh = true
-            else
-                beep()
-            end
-        elseif token == :left
-            if currentLeft > 1
-                currentLeft -= 1
-                dorefresh = true
-            else
-                beep()
-            end
-        elseif token == :right
-            if currentLeft + width-4 < needx
-                currentLeft += 1
-                dorefresh = true
-            else
-                beep()
-            end
-        elseif token == :pageup
-            if currentTop > 1
-                currentTop = max( 1, currentTop - (height-2) )
-                dorefresh = true
-            else
-                beep()
-            end
-        elseif token == :pagedown
-            if currentTop + height-2 < needy
-                currentTop = min( needy - height + 2, currentTop + height - 2 )
-                dorefresh = true
-            else
-                beep()
-            end
-        elseif  token == :home
-            if currentTop != 1 || currentLeft != 1
-                currentTop = 1
-                currentLeft = 1
-                dorefresh = true
-            else
-                beep()
-            end
-        elseif in( token, [ "<", "0", "g" ] )
-            if currentTop != 1
-                currentTop = 1
-                dorefresh = true
-            else
-                beep()
-            end
-        elseif in( token, { ">", "G", symbol("end") } )
-            if currentTop + height-2 < needy
-                currentTop = needy - height+ 2
-                dorefresh = true
-            else
-                beep()
-            end
-        elseif token == "L" # move half-way toward the end
-            target = min( int(ceil((currentTop + needy - height+2)/2)), needy - height + 2 )
-            if target != currentTop
-                currentTop = target
-                dorefresh = true
-            else
-                beep()
-            end
-        elseif token == "l" # move half-way toward the beginning
-            target = max( int(floor( currentTop /2)), 1)
-            if target != currentTop
-                currentTop = target
-                dorefresh = true
-            else
-                beep()
-            end
-        elseif token == :F1 && showkeyhelper
-            tshow_(
-            """
-PgUp/PgDn,
-Arrow keys : standard navigation
-l          : move halfway toward the start
-L          : move halfway to the end
-<,0,g      : jump to the start
->, G       : jump to the end
-            """, title="Help", showprogress= false, showkeyhelper=false
-            )
-            dorefresh = true
-        elseif token == :KEY_RESIZE || is_term_resized( maxy, maxx )
-            update_dimensions()
-            wresize( win, height, width )
-            dorefresh = true
-            #TODO search, jump to line, etc.
-        end
+function tshow_( mt::MethodTable; title="MethodTable" )
+    newTwFunc( rootTwScreen, mt, 25, 80, :center, :center, title=title )
+end
 
-        if dorefresh
-            redrawviewer()
-        end
-    end
-    del_panel( panel )
-    delwin( win )
+function tshow_( ms::Array{Method,1}; title="Methods" )
+    newTwFunc( rootTwScreen, ms, 25, 80, :center, :center, title=title )
 end
 
 function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
@@ -389,28 +214,42 @@ function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
     keypad( win, true )
     nodelay( win, true )
     notimeout( win, false )
-    wtimeout( win, 10 )
+    wtimeout( win, 100 )
     win
 end
 
-function tshow( x::Any )
-    global callcount
+function tshow( x::Any; title=string(typeof(x)) )
+    global callcount, rootwin, rootTwScreen
     if callcount == 0
         initsession()
-    end
-    err = nothing
-    callcount += 1
-    #try
-        tshow_( x )
-    #catch er
-        #err = er
-    #end
-    callcount -= 1
-    if callcount == 0
+        callcount += 1
+        werase( rootwin )
+        #try
+            widget = tshow_( x, title=title )
+            if widget != nothing
+                activateTwObj( rootTwScreen )
+            end
+            #=
+        catch err
+            callcount -= 1
+            endsession()
+            throw( err )
+        end
+        =#
+        callcount -= 1
         endsession()
-    end
-    if err != nothing
-        println( err )
+    else
+        widget = tshow_(x, title=title )
+        if widget != nothing
+            if widget.acceptsFocus
+                widget.hasFocus = true
+                rootTwScreen.data.focus = length( rootTwScreen.data.objects )
+                refresh( rootTwScreen )
+            else
+                widget.hasFocus = false
+                lowerTwObject( widget )
+            end
+        end
     end
 end
 
@@ -420,7 +259,7 @@ function testkeydialog( remapkeypad::Bool = false )
     win = winnewcenter( 4, width )
     panel = new_panel( win )
     box( win, 0, 0 )
-    title = "Key Test"
+    title = "Test Key/Mouse/Unicode"
     keyhint = "[Esc to continue]"
 
     mvwprintw( win, 0, int( (width-length(title))/2), "%s", title )
