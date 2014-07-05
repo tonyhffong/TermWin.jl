@@ -273,6 +273,7 @@ function tshow( x::Any; title=string(typeof(x)) )
             end
         end
     end
+    nothing
 end
 
 function testkeydialog( remapkeypad::Bool = false )
