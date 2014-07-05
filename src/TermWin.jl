@@ -12,7 +12,7 @@ include( "readtoken.jl" )
 include( "twtree.jl" )
 include( "twfunc.jl" )
 
-export tshow, newTwViewer, newTwScreen, activateTwObj, unregisterTwObj, TwObj, TwScreen
+export tshow, newTwViewer, newTwScreen, activateTwObj, unregisterTwObj
 export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 
 rootwin = nothing
@@ -139,6 +139,13 @@ end
 
 tshow_( x::Symbol; title="Symbol" ) = tshow_( ":"*string(x), title=title )
 tshow_( x::Ptr; title="Ptr" ) = tshow_( string(x), title=title )
+function tshow_( x::WeakRef; title="WeakRef" ) 
+    if x.value == nothing
+        tshow_( "WeakRef: nothing", title=title )
+    else
+        tshow_( x.value, title=title )
+    end
+end
 function tshow_( x; title = string( typeof( x ) ) )
     newTwTree( rootTwScreen, x, 25, 80, :staggered, :staggered, bottomText = "F1: Help  Esc: Exit" )
 end
@@ -244,15 +251,25 @@ function tshow( x::Any; title=string(typeof(x)) )
         callcount -= 1
         endsession()
     else
-        widget = tshow_(x, title=title )
-        if widget != nothing
-            if widget.acceptsFocus
-                widget.hasFocus = true
-                rootTwScreen.data.focus = length( rootTwScreen.data.objects )
-                refresh( rootTwScreen )
-            else
-                widget.hasFocus = false
-                lowerTwObject( widget )
+        found = false
+        for o in rootTwScreen.data.objects
+            if objtype( o ) == :Tree && o.value == x
+                raiseTwObject( o )
+                found = true
+                break
+            end
+        end
+        if !found
+            widget = tshow_(x, title=title )
+            if widget != nothing
+                if widget.acceptsFocus
+                    widget.hasFocus = true
+                    rootTwScreen.data.focus = length( rootTwScreen.data.objects )
+                    refresh( rootTwScreen )
+                else
+                    widget.hasFocus = false
+                    lowerTwObject( widget )
+                end
             end
         end
     end

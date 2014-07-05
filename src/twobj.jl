@@ -124,7 +124,7 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
             widgetStaggerPosx = 0
         end
         xpos = parbegx + widgetStaggerPosx
-        widgetStaggerPosx += 2
+        widgetStaggerPosx += 4
     elseif typeof( x ) <: FloatingPoint && 0.0 <= x <= 1.0
         xpos = int( parbegx + gapx * x )
     end

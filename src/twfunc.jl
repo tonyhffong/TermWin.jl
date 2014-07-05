@@ -10,6 +10,7 @@ ctrl-r     : toggle insert/overwrite
 Home       : jump to the start
 End        : jump to the end
 Shift-left/right : Navigate method list left and right
+Ctrl-Sht-lft/rgt : Jump method list to left and right edge
 F6         : explore Method as tree
 F8         : edit method
 """
@@ -219,9 +220,23 @@ function injectTwFunc( o::TwObj, token )
         else
             beep()
         end
+    elseif token == :ctrlshift_left # TODO ctrl-left
+        if o.data.currentLeft > 1
+            o.data.currentLeft = 1
+            dorefresh = true
+        else
+            beep()
+        end
     elseif token == :shift_right
         if o.data.currentLeft + viewContentWidth < o.data.datawidth
             o.data.currentLeft += 1
+            dorefresh = true
+        else
+            beep()
+        end
+    elseif token == :ctrlshift_right
+        if o.data.currentLeft + viewContentWidth < o.data.datawidth
+            o.data.currentLeft = o.data.datawidth - viewContentWidth
             dorefresh = true
         else
             beep()
