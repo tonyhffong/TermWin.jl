@@ -191,6 +191,7 @@ function activateTwScreen( scr::TwScreen, tokens::Any=nothing )
                         focusObj = o
                         o.hasFocus = true
                         scr.data.focus = i
+                        break
                     end
                 end
             end

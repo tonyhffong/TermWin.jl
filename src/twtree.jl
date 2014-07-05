@@ -234,7 +234,7 @@ function drawTwTree( o::TwObj )
         stacklen = length( o.data.datalist[r][4])
         s = ensure_length( repeat( " ", 2*stacklen + 1) * o.data.datalist[r][1], o.data.datatreewidth ) * "|"
         t = ensure_length( o.data.datalist[r][2], o.data.datatypewidth ) * "|"
-        v = ensure_length( o.data.datalist[r][3], o.data.datavaluewidth )
+        v = ensure_length( o.data.datalist[r][3], o.data.datavaluewidth, false )
         rest = t*v
         rest = rest[ chr2ind( rest, o.data.currentLeft ) : end ]
         rest = ensure_length( rest, o.width - o.borderSizeH * 2 - o.data.datatreewidth  -1, false )
@@ -280,13 +280,13 @@ function injectTwTree( o::TwObj, token )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
     viewContentHeight = o.height - 2 * o.borderSizeV
-    viewContentWidth = o.data.datatreewidth + o.data.datavaluewidth+o.data.datavaluewidth
+    viewContentWidth = o.data.datatreewidth + o.data.datatypewidth+o.data.datavaluewidth + 2
 
     update_tree_data = ()->begin
         o.data.datalist = {}
         tree_data( o.value, o.title, o.data.datalist, o.data.openstatemap, {} )
         updateTreeDimensions(o)
-        viewContentWidth = o.data.datatreewidth + o.data.datavaluewidth+o.data.datavaluewidth
+        viewContentWidth = o.data.datatreewidth + o.data.datatypewidth+o.data.datavaluewidth + 2
     end
 
     checkTop = () -> begin

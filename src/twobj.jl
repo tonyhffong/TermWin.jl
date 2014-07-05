@@ -2,6 +2,9 @@
 
 #Automatic discovery of widget-specific functions
 widgetTwFuncCache = Dict{ Symbol, TwFunc }()
+widgetStaggerPosx = 0
+widgetStaggerPosy = 0
+
 function twFuncFactory( widgetname::Symbol )
     global widgetTwFuncCache
     if haskey( widgetTwFuncCache, widgetname )
@@ -54,15 +57,15 @@ function configure_newwinpanel!( obj::TwObj )
     noecho()
     keypad( obj.window, true )
     nodelay( obj.window, true )
-    wtimeout( obj.window, 10 )
+    wtimeout( obj.window, 100 )
     curs_set( 0 )
 end
 
 function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any; 
-    relative::Bool=false, # if true, o.xpos = parent.x + x
-    derwin::Bool=false, # if true, o.xpos will be set relative to parentwin
-    parentwin = o.screen.value.window )
-
+        relative::Bool=false, # if true, o.xpos = parent.x + x
+        derwin::Bool=false, # if true, o.xpos will be set relative to parentwin
+        parentwin = o.screen.value.window )
+    global widgetStaggerPosx, widgetStaggerPosy
     if derwin
         parbegx = parbegy = 0
     else
@@ -114,6 +117,14 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
         xpos = parbegx + gapx
     elseif x == :center
         xpos = int( parbegx + gapx / 2 )
+    elseif x == :random
+        xpos = int( parbegx + gapx * rand() )
+    elseif x == :staggered
+        if widgetStaggerPosx > gapx
+            widgetStaggerPosx = 0
+        end
+        xpos = parbegx + widgetStaggerPosx
+        widgetStaggerPosx += 2
     elseif typeof( x ) <: FloatingPoint && 0.0 <= x <= 1.0
         xpos = int( parbegx + gapx * x )
     end
@@ -125,6 +136,14 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
         ypos = parbegy + gapy
     elseif y == :center
         ypos = int( parbegy + gapy / 2 )
+    elseif y == :random
+        ypos = int( parbegy + gapy * rand() )
+    elseif y == :staggered
+        if widgetStaggerPosy > gapy
+            widgetStaggerPosy = 0
+        end
+        ypos = parbegy + widgetStaggerPosy
+        widgetStaggerPosy += 2
     elseif typeof( y ) <: FloatingPoint  && 0.0 <= y <= 1.0
         ypos = int( parbegy + gapy * y )
     end

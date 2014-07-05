@@ -2,8 +2,8 @@ module TermWin
 
 include( "consts.jl")
 include( "ccall.jl" )
-include( "strutils.jl")
 include( "twtypes.jl")
+include( "strutils.jl")
 include( "twobj.jl")
 include( "twscreen.jl")
 include( "twviewer.jl")
@@ -12,7 +12,7 @@ include( "readtoken.jl" )
 include( "twtree.jl" )
 include( "twfunc.jl" )
 
-export tshow, newTwViewer, newTwScreen, activateTwObj, unregisterTwObj
+export tshow, newTwViewer, newTwScreen, activateTwObj, unregisterTwObj, TwObj, TwScreen
 export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 
 rootwin = nothing
@@ -140,11 +140,15 @@ end
 tshow_( x::Symbol; title="Symbol" ) = tshow_( ":"*string(x), title=title )
 tshow_( x::Ptr; title="Ptr" ) = tshow_( string(x), title=title )
 function tshow_( x; title = string( typeof( x ) ) )
-    newTwTree( rootTwScreen, x, 25, 80, :center, :center, bottomText = "F1: Help  Esc: Exit" )
+    newTwTree( rootTwScreen, x, 25, 80, :staggered, :staggered, bottomText = "F1: Help  Esc: Exit" )
 end
 
 function tshow_( x::String; title = string(typeof( x )) )
-    newTwViewer( rootTwScreen, x, :center, :center, bottomText = "F1: Help  Esc: Exit" )
+    position = :center
+    if length(x) > 100
+        position = :staggered
+    end
+    newTwViewer( rootTwScreen, x, position, position, bottomText = "F1: Help  Esc: Exit" )
 end
 
 function tshow_( f::Function; title="Function" )
@@ -155,16 +159,17 @@ function tshow_( f::Function; title="Function" )
     if funloc == "(anonymous)"
         return tshow_( string(f) * ":" * funloc, title=title )
     else
-        return newTwFunc( rootTwScreen, f, 25, 80, :center, :center, title=title )
+        return newTwFunc( rootTwScreen, f, 25, 80, :staggered, :staggered,
+            title=title, bottomText = "F1: Help  F6: Explore  F8: Edit" )
     end
 end
 
 function tshow_( mt::MethodTable; title="MethodTable" )
-    newTwFunc( rootTwScreen, mt, 25, 80, :center, :center, title=title )
+    newTwFunc( rootTwScreen, mt, 25, 80, :staggered, :staggered, title=title )
 end
 
 function tshow_( ms::Array{Method,1}; title="Methods" )
-    newTwFunc( rootTwScreen, ms, 25, 80, :center, :center, title=title )
+    newTwFunc( rootTwScreen, ms, 25, 80, :staggered, :staggered, title=title )
 end
 
 function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )

@@ -282,7 +282,11 @@ function new_panel( win::Ptr{Void} )
 end
 
 function top_panel( pan::Ptr{Void} )
-    ccall( dlsym( libpanel, :top_panel ), Ptr{Void}, ( Ptr{Void}, ), pan )
+    ccall( dlsym( libpanel, :top_panel ), Int, ( Ptr{Void}, ), pan )
+end
+
+function bottom_panel( pan::Ptr{Void} )
+    ccall( dlsym( libpanel, :bottom_panel ), Int, ( Ptr{Void}, ), pan )
 end
 
 function move_panel( pan, starty, startx )
@@ -294,7 +298,7 @@ function del_panel( panel::Ptr{Void} )
 end
 
 function hide_panel( panel::Ptr{Void} )
-    ccall(dlsym( libpanel, :hide_panel ), Void, (Ptr{Void}, ), panel )
+    ccall(dlsym( libpanel, :hide_panel ), Int, (Ptr{Void}, ), panel )
 end
 
 function panel_hidden( panel::Ptr{Void } )

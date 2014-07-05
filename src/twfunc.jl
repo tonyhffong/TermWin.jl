@@ -1,9 +1,15 @@
 
 defaultFuncHelpText = """
-PgUp/PgDn,
-Arrow keys : standard navigation
+PgUp/PgDn  : method list navigation
+Up/Dn      : method list navigation
+Left/Right : search term cursor control
+ctrl-a     : move cursor to start
+ctrl-e     : move cursor to end
+ctrl-k     : empty search entry
+ctrl-r     : toggle insert/overwrite
 Home       : jump to the start
 End        : jump to the end
+Shift-left/right : Navigate method list left and right
 F6         : explore Method as tree
 F8         : edit method
 """
@@ -55,6 +61,7 @@ function newTwFunc( scr::TwScreen, ms::Array{Method,1},
     configure_newwinpanel!( obj )
     obj.data.searchbox = newTwEntry( obj.window, String, 30, 0, 5, box=false, showHelp=true )
     obj.data.searchbox.title = "Search: "
+    obj.data.searchbox.data.helpText = defaultFuncHelpText
     obj
 end
 
@@ -205,14 +212,14 @@ function injectTwFunc( o::TwObj, token )
         dorefresh = moveby(-1)
     elseif token == :down
         dorefresh = moveby(1)
-    elseif token == :left # TODO ctrl-left
+    elseif token == :shift_left # TODO ctrl-left
         if o.data.currentLeft > 1
             o.data.currentLeft -= 1
             dorefresh = true
         else
             beep()
         end
-    elseif token == :right
+    elseif token == :shift_right
         if o.data.currentLeft + viewContentWidth < o.data.datawidth
             o.data.currentLeft += 1
             dorefresh = true
