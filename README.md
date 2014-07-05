@@ -23,8 +23,10 @@ tshow( methods( deleteat! ) ) # ditto
 tshow( methodswith( Set ) ) # searchable, too!
 ```
 
-UTF-8 input and output are supported. That said,
-cursor movements may produce dodgy behavior when typing order and visual order
+Numeric and text input field (See `test/twentry.jl`). Designed to maximize
+entry efficiency and accuracy (See F1 help screen).
+UTF-8 input and output are supported. That said, in an entry field,
+cursor movements may produce dodgy behavior if typing order and visual order
 can be different e.g. Thai's prefix-vowels. Most European typesets,
 Han characters, currency symbols, e.g. €, £, are fine.
 
