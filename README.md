@@ -4,15 +4,18 @@
 
 ## Introduction
 
-TermWin.jl is a tool to help navigate deep data structure such as `Expr`, `Dict`, `Array`, `Module`. It uses a very
-minimalist ncurses-based user interface.
+TermWin.jl is a tool to help navigate deep data structure such as `Expr`, `Dict`, `Array`, `Module`.
+It uses a ncurses-based user interface.
+It also contains a backend framework for composing ncurses user interfaces.
+
 ```julia
 using TermWin
 ex = :( f(x) = x*x + 2x + 1 )
 tshow(ex)
 ```
 
-For `Function` and `MethodTable`, this would show a searchable (fuzzy) window:
+For `Function` and `MethodTable`, this would show a searchable (fuzzy) window, based on
+a mixture of substring search and Levenstein edit distance:
 ```julia
 using TermWin
 tshow( deleteat! ) # searchable methods table
@@ -20,7 +23,20 @@ tshow( methods( deleteat! ) ) # ditto
 tshow( methodswith( Set ) ) # searchable, too!
 ```
 
+UTF-8 input and output are supported. That said,
+cursor movements may produce dodgy behavior when typing order and visual order
+can be different e.g. Thai's prefix-vowels. Most European typesets,
+Han characters, currency symbols, e.g. €, £, are fine.
+
+Mouse support.
+
+Color support.
+
 ## Installation
+
+As stated on the tin, TermWin requires ncurses. It is being developed on MacOS/iTerm.
+It also requires Lint.jl for a superficial code cleanliness test. (Not sure how
+to unit-test a GUI than actually using it manually.)
 ```julia
 Pkg.add( "TermWin" )
 ```
@@ -32,7 +48,7 @@ TwScreen is just a typealias for TwObj, but it holds special role in
 * directing key stroke traffic
 * hold references to the content widgets and update them in the correct order
 
-All widgets can be used in both blocking and non-blocking manner, though
+Many widgets can be used in both blocking and non-blocking manner, though
 some are more useful in blocking than non-blocking and others vice versa.
 
 To use a widget for blocking use, instantiate that widget (if a container, 
@@ -42,7 +58,8 @@ return_value = activateTwObj( widget )
 ```
 
 To use a widget for non-blocking use, you need a container widget that is
-actually blocking and put it inside the container.
+actually blocking and put it inside the container. See the function viewer for
+an example of mixing in a data entry field.
 
 ## Focus and keystroke traffic logic
 When a widget has the focus, it has first dip in interpreting any user
