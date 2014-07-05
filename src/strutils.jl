@@ -1,3 +1,36 @@
+charDecorators = [
+#=
+Thai
+These do not take visual spaces and they modify the look of the previous character
+* Using the arrow key to move cursor by one cluster instead of by one character.
+* Text insertion is allowed at cluster boundary only.
+* Text deletion with Delete key will delete a whole cluster, not just a baseline character.
+* Text deletion with Backspace key can be done character by character.
+* Selection or deletion using character cluster boundaries means that an entire character cluster
+  is selected or deleted as a single unit.
+=#
+0xe31
+0xe34
+0xe35
+0xe36
+0xe37
+0xe38
+0xe39
+0xe3a
+0xe47
+0xe48
+0xe49
+0xe4a
+0xe4b
+0xe4c
+0xe4d
+0xe4e
+
+#= Latin diacritic marks
+0x300 - 0x36F
+=#
+
+]
 
 function ensure_length( s::String, w::Int, pad::Bool = true )
     t = replace( s, "\n", " " )

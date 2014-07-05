@@ -13,6 +13,7 @@ include( "twtree.jl" )
 include( "twfunc.jl" )
 
 export tshow, newTwViewer, newTwScreen, activateTwObj, unregisterTwObj
+export TwObj, TwScreen
 export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 
 rootwin = nothing
@@ -139,7 +140,7 @@ end
 
 tshow_( x::Symbol; title="Symbol" ) = tshow_( ":"*string(x), title=title )
 tshow_( x::Ptr; title="Ptr" ) = tshow_( string(x), title=title )
-function tshow_( x::WeakRef; title="WeakRef" ) 
+function tshow_( x::WeakRef; title="WeakRef" )
     if x.value == nothing
         tshow_( "WeakRef: nothing", title=title )
     else

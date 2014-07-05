@@ -282,8 +282,10 @@ function injectTwFunc( o::TwObj, token )
         dorefresh = true
     elseif token == :F8
         m = o.data.datalist[o.data.currentLine][3]
-        f = eval( m.func.code.name )
-        edit( f, m.sig )
+        try
+            f = eval( m.func.code.name )
+            edit( f, m.sig )
+        end
         dorefresh = true
     else
         retcode = :pass # I don't know what to do with it
