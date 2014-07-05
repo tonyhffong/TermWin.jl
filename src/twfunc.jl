@@ -285,6 +285,10 @@ function injectTwFunc( o::TwObj, token )
         try
             f = eval( m.func.code.name )
             edit( f, m.sig )
+        catch err
+            helper = newTwViewer( o.screen.value, string(err), :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+            activateTwObj( helper )
+            unregisterTwObj( o.screen.value, helper )
         end
         dorefresh = true
     else

@@ -12,9 +12,8 @@ F6         : popup window for value
 modulenames = Dict{ Module, Array{ Symbol, 1 } }()
 typefields  = Dict{ Any, Array{ Symbol, 1 } }()
 
-typefields[ Function ] = []
 typefields[ Method ] = [ :sig ]
-typefields[ LambdaStaticData ] = [ :name, :module, :file ]
+typefields[ LambdaStaticData ] = [ :name, :module, :file, :line ]
 
 treeTypeMaxWidth = 40
 treeValueMaxWidth = 40
@@ -131,6 +130,26 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
                 intern_tree_data( v, subname, newstack, i==len )
             end
         end
+    elseif typx == Function
+        s = string( name )
+        t = string( typx)
+        mt = methods( x )
+        len = length( mt )
+        szstr = string( len )
+        v = "num methods=" * szstr
+        #v = "*"
+        expandhint = len==0 ? :single : (isexp ? :open : :close )
+        push!( list, (s,t,v, stack, expandhint, skiplines ))
+        if isexp
+            szdigits = length( szstr )
+            for (i,m) in enumerate( mt )
+                istr = string(i)
+                subname = "Method[" * repeat( " ", szdigits - length(istr)) * istr * "]"
+                newstack = copy( stack )
+                push!( newstack, i )
+                intern_tree_data( m, subname, newstack, i==len )
+            end
+        end
     elseif typx == Module && !isempty( stack ) # don't want to recursively descend
         s = string( name )
         t = string( typx )
@@ -193,8 +212,16 @@ function getvaluebypath( x, path )
         return x
     end
     key = shift!( path )
-    if typeof( x ) <: Array || typeof( x ) <: Dict
+    if typeof( x ) <: Array || typeof( x ) <: Dict || typeof( x ) <: Tuple
         return getvaluebypath( x[key], path )
+    elseif typeof( x ) == Function
+        mt = methods( x )
+        for (i,m) in enumerate( mt )
+            if i == key
+                return getvaluebypath( m, path )
+            end
+        end
+        return nothing
     else
         return getvaluebypath( getfield( x, key ), path )
     end
@@ -334,6 +361,9 @@ function injectTwTree( o::TwObj, token )
             try
                 f = eval( v.func.code.name )
                 edit( f, v.sig )
+                dorefresh = true
+            catch err
+                tshow( "Error showing Method\n" * string( err ), title=string(lastkey) )
                 dorefresh = true
             end
         elseif !in( v, [ nothing, None, Any ] )
