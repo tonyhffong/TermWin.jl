@@ -161,9 +161,11 @@ This is some UGLY code. To be streamlined...
 =#
 function activateTwScreen( scr::TwScreen, tokens::Any=nothing )
     # consume one token, this also makes sure the readtoken function is jitted
+    #=
     if tokens == nothing
         readtoken( scr.window )
     end
+    =#
     refresh(scr) # clear any potential wait message
     focusObj = nothing
     focusIdx = scr.data.focus

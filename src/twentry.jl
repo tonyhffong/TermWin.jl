@@ -157,7 +157,7 @@ function drawTwEntry( o::TwObj )
     wattroff( o.window, COLOR_PAIR(15))
 end
 
-function injectTwEntry( o::TwObj, token )
+function injectTwEntry( o::TwObj, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
 

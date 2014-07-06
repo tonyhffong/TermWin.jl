@@ -13,7 +13,7 @@ println( "You entered ", string( ret ) )
 
 TermWin.initsession()
 v = nothing
-v = newTwEntry( rootTwScreen, String, 30, 0.3, 0.3 )
+v = newTwEntry( rootTwScreen, String, 30, :random, :random )
 v.title = "String: "
 activateTwObj( rootTwScreen )
 #unregisterTwObj( rootTwScreen, v )

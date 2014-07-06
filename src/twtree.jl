@@ -63,7 +63,7 @@ end
 # skiplines are hints where we should not draw the vertical lines to the left
 # because it corresponds the end of some list at a lower depth level
 
-function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
+function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict{ Any, Bool }, stack::Array{Any,1}, skiplines::Array{Int,1}=Int[] )
     global modulenames, typefields
     isexp = haskey( openstatemap, stack ) && openstatemap[ stack ]
     typx = typeof( x )
@@ -293,12 +293,10 @@ function drawTwTree( o::TwObj )
             mvwaddch( o.window, 1+r-o.data.currentTop, 2*stacklen, contchar )
             mvwaddch( o.window, 1+r-o.data.currentTop, 2*stacklen+1, get_acs_val('q') ) # horizontal line
         end
-        if o.data.datalist[r][5] == :single
-            mvwaddch( o.window, 1+r-o.data.currentTop, 2*stacklen+2, get_acs_val('q') ) # horizontal line
-        elseif o.data.datalist[r][5] == :close
-            mvwaddch( o.window, 1+r-o.data.currentTop, 2*stacklen+2, get_acs_val('+') ) # arrow pointing right
-        else
-            mvwaddch( o.window, 1+r-o.data.currentTop, 2*stacklen+2, get_acs_val('w') ) # arrow pointing down
+        if o.data.datalist[r][5] == :close
+            mvwprintw( o.window, 1+r-o.data.currentTop, 2*stacklen+2, "%s", string( char( 0x25b8 ) ) ) # right-pointing small triangle
+        elseif o.data.datalist[r][5] == :open
+            mvwprintw( o.window, 1+r-o.data.currentTop, 2*stacklen+2, "%s", string( char( 0x25be ) ) ) # down-pointing small triangle
         end
 
         if r == o.data.currentLine
@@ -310,7 +308,7 @@ function drawTwTree( o::TwObj )
     end
 end
 
-function injectTwTree( o::TwObj, token )
+function injectTwTree( o::TwObj, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
     viewContentHeight = o.height - 2 * o.borderSizeV
@@ -327,7 +325,7 @@ function injectTwTree( o::TwObj, token )
         if o.data.currentTop < 1
             o.data.currentTop = 1
         elseif o.data.currentTop > o.data.datalistlen - viewContentHeight + 1
-            o.data.currentTop = o.data.datalistlen - viewContentHeight + 1
+            o.data.currentTop = max(1,o.data.datalistlen - viewContentHeight + 1)
         end
         if o.data.currentTop > o.data.currentLine
             o.data.currentTop = o.data.currentLine
@@ -557,7 +555,7 @@ function injectTwTree( o::TwObj, token )
         helper.data.inputText = o.data.searchText
         s = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
-        if s != nothing 
+        if s != nothing
             if s != "" && o.data.searchText != s
                 o.data.searchText = s
                 searchNext( 1, true )

@@ -19,13 +19,12 @@ export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 rootwin = nothing
 rootTwScreen = nothing
 callcount = 0
-acs_map_ptr = nothing
 acs_map_arr = Uint8[]
 COLORS = 8
 COLOR_PAIRS = 16
 
 function initsession()
-    global rootwin, libncurses, acs_map_ptr, acs_map_arr, COLORS, COLOR_PAIRS
+    global rootwin, libncurses, acs_map_arr, COLORS, COLOR_PAIRS
     global rootTwScreen
     global widgetStaggerPosx
     global widgetStaggerPosy
@@ -95,6 +94,11 @@ function initsession()
         mvwprintw( rootwin, int( rootTwScreen.height / 2),
             int( ( rootTwScreen.width - length(info))/2), "%s", info )
         wrefresh( rootwin )
+        # precompile a bunch of code for better responsiveness
+        precompile( readtoken, (Ptr{Void}, ) )
+        precompile( injectTwTree, (TwObj, Any ) )
+        precompile( injectTwEntry, (TwObj, Any ) )
+        precompile( injectTwViewer, (TwObj, Any ) )
     else
         wrefresh( rootwin )
     end
@@ -156,7 +160,7 @@ function tshow_( x::WeakRef; title="WeakRef" )
     end
 end
 function tshow_( x; title = string( typeof( x ) ) )
-    newTwTree( rootTwScreen, x, 25, 80, :staggered, :staggered, bottomText = "F1: Help  Esc: Exit" )
+    newTwTree( rootTwScreen, x, 25, 80, :staggered, :staggered, bottomText = "F1: Help  Esc: Exit", title=title )
 end
 
 function tshow_( x::String; title = string(typeof( x )) )
@@ -164,7 +168,7 @@ function tshow_( x::String; title = string(typeof( x )) )
     if length(x) > 100
         position = :staggered
     end
-    newTwViewer( rootTwScreen, x, position, position, bottomText = "F1: Help  Esc: Exit" )
+    newTwViewer( rootTwScreen, x, position, position, bottomText = "F1: Help  Esc: Exit", title=title )
 end
 
 function tshow_( f::Function; title="Function" )
@@ -245,18 +249,16 @@ function tshow( x::Any; title=string(typeof(x)) )
         initsession()
         callcount += 1
         werase( rootwin )
-        #try
+        try
             widget = tshow_( x, title=title )
             if widget != nothing
                 activateTwObj( rootTwScreen )
             end
-            #=
         catch err
             callcount -= 1
             endsession()
             throw( err )
         end
-        =#
         callcount -= 1
         endsession()
     else

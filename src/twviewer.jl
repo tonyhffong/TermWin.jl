@@ -27,10 +27,11 @@ end
 # the ways to use it:
 # exact dimensions known: h,w,y,x, content to add later
 # exact dimensions unknown, but content known and content drives dimensions
-function newTwViewer( scr::TwScreen, h::Real,w::Real,y::Any,x::Any; box=true, showLineInfo=true, showHelp=true, bottomText = "", tabWidth = 4, trackLine = false )
+function newTwViewer( scr::TwScreen, h::Real,w::Real,y::Any,x::Any; box=true, showLineInfo=true, showHelp=true, bottomText = "", tabWidth = 4, trackLine = false, title="" )
     obj = TwObj( twFuncFactory( :Viewer ) )
     registerTwObj( scr, obj )
     obj.box = box
+    obj.title = title
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 2 : 0
     obj.data = TwViewerData()
@@ -45,11 +46,11 @@ function newTwViewer( scr::TwScreen, h::Real,w::Real,y::Any,x::Any; box=true, sh
     obj
 end
 
-function newTwViewer( scr::TwScreen, msgs::Array, y::Any,x::Any; box=true, showLineInfo=true, bottomText = "", showHelp=true, tabWidth = 4, trackLine = false )
+function newTwViewer( scr::TwScreen, msgs::Array, y::Any,x::Any; box=true, showLineInfo=true, bottomText = "", showHelp=true, tabWidth = 4, trackLine = false, title="" )
     map!( x->replace( x, "\t", repeat( " ", tabWidth ) ), msgs )
     obj = TwObj( twFuncFactory( :Viewer ) )
     obj.data = TwViewerData()
-
+    obj.title = title
     registerTwObj( scr, obj )
     setTwViewerMsgs( obj, msgs )
     obj.box = box
@@ -69,9 +70,9 @@ function newTwViewer( scr::TwScreen, msgs::Array, y::Any,x::Any; box=true, showL
     obj
 end
 
-function newTwViewer( scr::TwScreen, msg::String, y::Any,x::Any ; box=true, showLineInfo=true, bottomText="", showHelp=true, tabWidth = 4, trackLine = false )
+function newTwViewer( scr::TwScreen, msg::String, y::Any,x::Any ; box=true, showLineInfo=true, bottomText="", showHelp=true, tabWidth = 4, trackLine = false, title="" )
     msgs = map( x->replace( x, "\t", repeat( " ", tabWidth ) ), split( msg, "\n" ) )
-    newTwViewer( scr, msgs, y, x, box=box,showLineInfo=showLineInfo, bottomText=bottomText, showHelp=showHelp, tabWidth=tabWidth, trackLine=trackLine )
+    newTwViewer( scr, msgs, y, x, box=box,showLineInfo=showLineInfo, bottomText=bottomText, showHelp=showHelp, tabWidth=tabWidth, trackLine=trackLine, title="" )
 end
 
 function viewContentDimensions( o::TwObj )
@@ -139,7 +140,7 @@ function drawTwViewer( o::TwObj )
     end
 end
 
-function injectTwViewer( o::TwObj, token )
+function injectTwViewer( o::TwObj, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
     viewContentHeight, viewContentWidth, viewStartRow = viewContentDimensions( o )

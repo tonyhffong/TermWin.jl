@@ -61,7 +61,7 @@ function configure_newwinpanel!( obj::TwObj )
     curs_set( 0 )
 end
 
-function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any; 
+function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
         relative::Bool=false, # if true, o.xpos = parent.x + x
         derwin::Bool=false, # if true, o.xpos will be set relative to parentwin
         parentwin = o.screen.value.window )
