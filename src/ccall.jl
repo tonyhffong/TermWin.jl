@@ -15,17 +15,17 @@ function isendwin()
     ccall( dlsym( libncurses, :isendwin), Bool, () )
 end
 
-function newwin( lines, cols, origy, origx )
+function newwin( lines::Int, cols::Int, origy::Int, origx::Int )
     ccall( dlsym( libncurses, :newwin ), Ptr{Void}, ( Int, Int, Int, Int ),
         lines, cols, origy, origx )
 end
 
-function subwin( win, lines, cols, origy, origx )
+function subwin( win::Ptr{Void}, lines::Int, cols::Int, origy::Int, origx::Int )
     ccall( dlsym( libncurses, :subwin ), Ptr{Void}, ( Ptr{Void}, Int, Int, Int, Int ),
         win, lines, cols, origy, origx )
 end
 
-function derwin( win, lines, cols, origy, origx )
+function derwin( win, lines::Int, cols::Int, origy::Int, origx::Int )
     ccall( dlsym( libncurses, :derwin ), Ptr{Void}, ( Ptr{Void}, Int, Int, Int, Int ),
         win, lines, cols, origy, origx )
 end
@@ -34,7 +34,7 @@ function delwin( win::Ptr{Void} )
     ccall( dlsym( libncurses, :delwin ), Void, ( Ptr{Void}, ), win )
 end
 
-function mvwaddch( win, y, x, c )
+function mvwaddch( win, y::Int, x::Int, c::Int )
     ccall( dlsym( libncurses, :mvwaddch), Void,
         ( Ptr{Void}, Int, Int, Int ), win, y, x, c )
 end
@@ -45,7 +45,7 @@ function mvwprintw( win::Ptr{Void}, row::Int, height::Int, fmt::String, str::Str
         win, row, height, fmt, str )
 end
 
-function wmove( win, y, x )
+function wmove( win, y::Int, x::Int )
     ccall( dlsym( libncurses, :wmove), Int, ( Ptr{Void}, Int, Int ), win, y, x )
 end
 
@@ -117,11 +117,11 @@ function notimeout( win, bf )
     ccall( dlsym( libncurses, :notimeout ), Int, (Ptr{Void}, Bool), win, bf )
 end
 
-function timeout( delay )
+function timeout( delay::Int )
     ccall( dlsym( libncurses, :timeout ), Void, (Int,), delay )
 end
 
-function wtimeout( win, delay )
+function wtimeout( win, delay::Int )
     ccall( dlsym( libncurses, :wtimeout ), Void, (Ptr{Void}, Int), win, delay )
 end
 
@@ -138,7 +138,7 @@ function getwinbegyx( win )
     ( maxy, maxx )
 end
 
-function mvwin( win, y, x )
+function mvwin( win, y::Int, x::Int )
     ccall( dlsym( libncurses, :mvwin), Int, ( Ptr{Void}, Int, Int ), win, y, x )
 end
 
@@ -150,11 +150,11 @@ function flash()
     ccall( dlsym( libncurses, :flash), Void, () )
 end
 
-function is_term_resized( lines, cols )
+function is_term_resized( lines::Int, cols::Int )
     ccall( dlsym( libncurses, :is_term_resized ), Bool, (Int, Int), lines, cols )
 end
 
-function wresize( win, lines, cols )
+function wresize( win, lines::Int, cols::Int )
     ccall( dlsym( libncurses, :wresize), Int, (Ptr{Void}, Int, Int), win, lines, cols )
 end
 
@@ -181,27 +181,27 @@ function has_colors()
     ccall( dlsym( libncurses, :has_colors), Bool, () )
 end
 
-function wattroff( win, attrs )
+function wattroff( win, attrs::Uint32 )
     ccall( dlsym(libncurses, :wattroff), Int, ( Ptr{Void}, Uint32 ), win, attrs )
 end
 
-function wattron( win, attrs )
+function wattron( win, attrs::Uint32 )
     ccall( dlsym(libncurses, :wattron), Int, ( Ptr{Void}, Uint32 ), win, attrs )
 end
 
-function wattrset( win, attrs )
+function wattrset( win, attrs::Uint32 )
     ccall( dlsym(libncurses, :wattrset), Int, ( Ptr{Void}, Uint32 ), win, attrs )
 end
 
-function wbkgdset( win, ch )
+function wbkgdset( win, ch::Uint32 )
     ccall( dlsym(libncurses, :wbkgdset ), Void, ( Ptr{Void}, Uint32 ), win, ch )
 end
 
-function wbkgd( win, ch )
+function wbkgd( win, ch::Uint32 )
     ccall( dlsym(libncurses, :wbkgd ), Void, ( Ptr{Void}, Uint32 ), win, ch )
 end
 
-function curs_set( vis )
+function curs_set( vis::Int )
     ccall( dlsym(libncurses, :curs_set), Int, ( Int, ), vis )
 end
 
@@ -209,13 +209,13 @@ function has_mouse()
     ccall( dlsym(libncurses, :has_mouse), Bool, () )
 end
 
-function mousemask( mask )
+function mousemask( mask::Uint64 )
     oldmm = Array( Uint64, 1 )
     resultmm = ccall( dlsym( libncurses, :mousemask), Uint64, (Uint64, Ptr{Uint64}), mask, oldmm )
     ( resultmm, oldmm[1])
 end
 
-function mouseinterval( n )
+function mouseinterval( n::Int )
     ccall( dlsym(libncurses, :mouseinterval), Int, (Int, ) , n)
 end
 
@@ -263,7 +263,7 @@ function immedok( win, bf )
     ccall( dlsym( libncurses, :immedok), Int, ( Ptr{Void}, Bool ), win, bf )
 end
 
-function napms( ms )
+function napms( ms::Int )
     ccall( dlsym( libncurses, :napms), Int, (Int, ), ms )
 end
 
@@ -289,7 +289,7 @@ function bottom_panel( pan::Ptr{Void} )
     ccall( dlsym( libpanel, :bottom_panel ), Int, ( Ptr{Void}, ), pan )
 end
 
-function move_panel( pan, starty, startx )
+function move_panel( pan::Ptr{Void}, starty::Int, startx::Int )
     ccall( dlsym( libpanel, :move_panel ), Ptr{Void}, ( Ptr{Void}, Int, Int ), pan, starty, startx )
 end
 

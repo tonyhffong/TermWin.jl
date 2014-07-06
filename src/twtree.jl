@@ -7,7 +7,7 @@ End        : jump to the end
 ctrl_arrow : jump to the start/end of the line
 +, -       : expand/collapse one level
 _          : collapse all
-/          : search popup window
+/          : search dialog
 F6         : popup window for value
 """
 
@@ -536,9 +536,11 @@ function injectTwTree( o::TwObj, token )
         helper.data.inputText = o.data.searchText
         s = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
-        if s != "" && o.data.searchText != s
-            o.data.searchText = s
-            searchNext( 1, true )
+        if s != nothing 
+            if s != "" && o.data.searchText != s
+                o.data.searchText = s
+                searchNext( 1, true )
+            end
         end
         dorefresh = true
     elseif token == "n" || token == "p" || token == "N"
