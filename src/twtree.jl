@@ -5,7 +5,9 @@ Arrow keys : standard navigation
 Home       : jump to the start
 End        : jump to the end
 ctrl_arrow : jump to the start/end of the line
--          : collapse all
++, -       : expand/collapse one level
+_          : collapse all
+/          : search popup window
 F6         : popup window for value
 """
 
@@ -32,7 +34,8 @@ type TwTreeData
     bottomText::String
     showHelp::Bool
     helpText::String
-    TwTreeData() = new( Dict{ Any, Bool }(), {}, 0, 0, 0, 0, 1, 1, 1, true, "", true, defaultTreeHelpText )
+    searchText::String
+    TwTreeData() = new( Dict{ Any, Bool }(), {}, 0, 0, 0, 0, 1, 1, 1, true, "", true, defaultTreeHelpText, "" )
 end
 
 function newTwTree( scr::TwScreen, ex, h::Real,w::Real,y::Any,x::Any; title = string(typeof( ex ) ), box=true, showLineInfo=true, showHelp=true, bottomText = "", tabWidth = 4, trackLine = false )
@@ -92,7 +95,11 @@ function tree_data( x, name, list, openstatemap, stack, skiplines=Int[] )
         push!( list, (s, t, v, stack, :single, skiplines ) )
     elseif typx <: Array || typx <: Tuple
         s = string( name )
-        t = string( typx)
+        if typx <: Tuple
+            t = "Tuple"
+        else
+            t = string( typx)
+        end
         len = length(x)
         szstr = string( len )
         v = "size=" * szstr
@@ -317,6 +324,11 @@ function injectTwTree( o::TwObj, token )
     end
 
     checkTop = () -> begin
+        if o.data.currentTop < 1
+            o.data.currentTop = 1
+        elseif o.data.currentTop > o.data.datalistlen - viewContentHeight + 1
+            o.data.currentTop = o.data.datalistlen - viewContentHeight + 1
+        end
         if o.data.currentTop > o.data.currentLine
             o.data.currentTop = o.data.currentLine
         elseif o.data.currentLine - o.data.currentTop > viewContentHeight-1
@@ -335,12 +347,34 @@ function injectTwTree( o::TwObj, token )
         end
     end
 
+    searchNext = (step, trivialstop)->begin # if the currentLine contains the term, is it a success?
+        start = o.data.currentLine
+        o.data.searchText = lowercase(o.data.searchText)
+        i = trivialstop == true ? start : ( mod( start-1+step, o.data.datalistlen ) + 1 )
+        while true
+            if contains( lowercase( o.data.datalist[i][1]), o.data.searchText ) ||
+                contains( lowercase( o.data.datalist[i][3]), o.data.searchText )
+                o.data.currentLine = i
+                if abs( i-start ) > viewContentHeight
+                    o.data.currentTop = o.data.currentLine - (viewContentHeight>>1)
+                end
+                checkTop()
+                return i
+            end
+            i = mod( i-1+step, o.data.datalistlen ) + 1
+            if i == start
+                beep()
+                return 0
+            end
+        end
+    end
+
     if token == :esc
         retcode = :exit_nothing
     elseif token == " " || token == symbol( "return" ) || token == :enter
-        stack = o.data.datalist[ o.data.currentLine ][4]
         expandhint = o.data.datalist[ o.data.currentLine ][5]
         if expandhint != :single
+            stack = o.data.datalist[ o.data.currentLine ][4]
             if !haskey( o.data.openstatemap, stack ) || !o.data.openstatemap[ stack ]
                 o.data.openstatemap[ stack ] = true
             else
@@ -349,6 +383,73 @@ function injectTwTree( o::TwObj, token )
             update_tree_data()
             dorefresh = true
         end
+    elseif token == "+" # the tricky part is to preserve the currentLine
+        currentstack = o.data.datalist[ o.data.currentLine ][4]
+        somethingchanged = false
+        for i in 1:o.data.datalistlen
+            expandhint = o.data.datalist[ i ][5]
+            if expandhint != :single
+                stack = o.data.datalist[ i ][ 4 ]
+                if !haskey( o.data.openstatemap, stack ) || !o.data.openstatemap[ stack ]
+                    o.data.openstatemap[ stack ] = true
+                    somethingchanged = true
+                end
+            end
+        end
+        if somethingchanged
+            update_tree_data()
+            for i in o.data.currentLine:o.data.datalistlen
+                if currentstack == o.data.datalist[ i ][4]
+                    o.data.currentLine = i
+                    break
+                end
+            end
+            checkTop()
+            dorefresh = true
+        else
+            beep()
+        end
+    elseif token == "-" # the tricky part is to preserve the currentLine
+        currentstack = copy(o.data.datalist[ o.data.currentLine ][4])
+        somethingchanged = false
+        maxstackdepth = maximum( map( x->length(x[4]), o.data.datalist ) )
+        if maxstackdepth > 1
+            for i in 1:o.data.datalistlen
+                expandhint = o.data.datalist[ i ][5]
+                stack = o.data.datalist[ i ][ 4 ]
+                if expandhint != :single && length(stack) == maxstackdepth-1
+                    if haskey( o.data.openstatemap, stack ) && o.data.openstatemap[ stack ]
+                        o.data.openstatemap[ stack ] = false
+                        somethingchanged = true
+                    end
+                end
+            end
+            if somethingchanged
+                update_tree_data()
+                if length( currentstack ) == maxstackdepth
+                    pop!( currentstack )
+                end
+                prevline = o.data.currentLine
+                o.data.currentLine = 1
+                for i in 1:min(prevline,o.data.datalistlen)
+                    if currentstack == o.data.datalist[ i ][4]
+                        o.data.currentLine = i
+                        break
+                    end
+                end
+                checkTop()
+                dorefresh = true
+            end
+        else
+            beep()
+        end
+    elseif token == "_"
+        o.data.openstatemap = Dict{Any,Bool}()
+        o.data.openstatemap[ {} ] = true
+        o.data.currentLine = 1
+        o.data.currentTop = 1
+        update_tree_data()
+        dorefresh = true
     elseif token == :F6
         stack = copy( o.data.datalist[ o.data.currentLine ][4] )
         if !isempty( stack )
@@ -370,13 +471,6 @@ function injectTwTree( o::TwObj, token )
             tshow( v, title=string(lastkey) )
             dorefresh = true
         end
-    elseif token == "-"
-        o.data.openstatemap = Dict{Any,Bool}()
-        o.data.openstatemap[ {} ] = true
-        o.data.currentLine = 1
-        o.data.currentTop = 1
-        update_tree_data()
-        dorefresh = true
     elseif token == :up
         dorefresh = moveby(-1)
     elseif token == :down
@@ -437,6 +531,21 @@ function injectTwTree( o::TwObj, token )
         else
             beep()
         end
+    elseif token == "/"
+        helper = newTwEntry( o.screen.value, String, 30, :center, :center, title = "Search: " )
+        helper.data.inputText = o.data.searchText
+        s = activateTwObj( helper )
+        unregisterTwObj( o.screen.value, helper )
+        if s != "" && o.data.searchText != s
+            o.data.searchText = s
+            searchNext( 1, true )
+        end
+        dorefresh = true
+    elseif token == "n" || token == "p" || token == "N"
+        if o.data.searchText != ""
+            searchNext( (token == "n" ? 1 : -1), false )
+        end
+        dorefresh = true
     elseif in( token, { symbol("end") } )
         if o.data.currentTop + viewContentHeight -1 < o.data.datalistlen
             o.data.currentTop = o.data.datalistlen - viewContentHeight + 1

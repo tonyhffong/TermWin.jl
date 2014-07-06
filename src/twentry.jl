@@ -33,10 +33,11 @@ end
 # standalone panel
 # as a subwin as part of another widget (see next function)
 # w include title width, if it's shown on the left
-function newTwEntry( scr::TwScreen, dt::DataType, w::Real,y::Any,x::Any; box=true, showHelp=true, titleLeft = true )
+function newTwEntry( scr::TwScreen, dt::DataType, w::Real,y::Any,x::Any; box=true, showHelp=true, titleLeft = true, title = "" )
     obj = TwObj( twFuncFactory( :Entry ) )
     registerTwObj( scr, obj )
     obj.box = box
+    obj.title = title
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 1 : 0
     obj.data = TwEntryData( dt )
@@ -51,11 +52,12 @@ end
 # register it to a screen
 # so to use it, the container widget must keep track of its update and input
 # y and x is relative to parentwin
-function newTwEntry( parentwin::Ptr{Void}, dt::DataType, w::Real, y::Any,x::Any; box=true, showHelp=true, titleLeft=true )
+function newTwEntry( parentwin::Ptr{Void}, dt::DataType, w::Real, y::Any,x::Any; box=true, showHelp=true, titleLeft=true, title = "" )
     obj = TwObj( twFuncFactory( :Entry ) )
     parbegy, parbegx = getwinbegyx( parentwin )
     obj.data = TwEntryData( dt )
     obj.box = box
+    obj.title = title
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 1 : 0
     obj.data.showHelp = showHelp

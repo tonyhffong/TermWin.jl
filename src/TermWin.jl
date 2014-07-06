@@ -27,7 +27,11 @@ COLOR_PAIRS = 16
 function initsession()
     global rootwin, libncurses, acs_map_ptr, acs_map_arr, COLORS, COLOR_PAIRS
     global rootTwScreen
+    global widgetStaggerPosx
+    global widgetStaggerPosy
 
+    widgetStaggerPosx = 0
+    widgetStaggerPosy = 0
     if rootwin == nothing || rootwin == C_NULL
         ENV["ESCDELAY"] = "25"
         rootwin = initscr()
@@ -87,6 +91,10 @@ function initsession()
         wtimeout( rootwin, 100 )
         curs_set( 0 )
         rootTwScreen = newTwScreen( rootwin )
+        info = "TermWin: Please wait ..."
+        mvwprintw( rootwin, int( rootTwScreen.height / 2),
+            int( ( rootTwScreen.width - length(info))/2), "%s", info )
+        wrefresh( rootwin )
     else
         wrefresh( rootwin )
     end
