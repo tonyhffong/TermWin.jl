@@ -2,7 +2,7 @@ using TermWin
 
 TermWin.initsession()
 #s = "a test"
-v = newTwEntry( rootTwScreen, Rational{Int}, 25, :center, :center, showHelp=true, box=true )
+v = newTwEntry( rootTwScreen, Rational{Int}, 25, :random, :random, showHelp=true, box=true )
 v.title = "Input: "
 v.data.tickSize = 1
 activateTwObj( rootTwScreen )

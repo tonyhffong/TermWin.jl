@@ -10,8 +10,8 @@ ctrl-k : empty entry
 m      : (Num only) multiply by 1,000. So 1mm becomes 1 million
 e      : (Floating Point only) exponent. 1e6 for 1,000,000.0
 ctrl-r : Toggle insertion/overwrite mode
-ctrl-up: If configured, increase value by a tick-size
-ctrl-dn: If configured, decrease value by a tick-size
+Shft-up: If configured, increase value by a tick-size
+Shft-dn: If configured, decrease value by a tick-size
 
 n.b. (String only) Edges are highlighted if more beyond boundary
 """

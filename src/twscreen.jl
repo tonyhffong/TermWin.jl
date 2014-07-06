@@ -160,7 +160,11 @@ Blocking call. it doesn't use inject directly, because
 This is some UGLY code. To be streamlined...
 =#
 function activateTwScreen( scr::TwScreen, tokens::Any=nothing )
-    refresh(scr)
+    # consume one token, this also makes sure the readtoken function is jitted
+    if tokens == nothing
+        readtoken( scr.window )
+    end
+    refresh(scr) # clear any potential wait message
     focusObj = nothing
     focusIdx = scr.data.focus
     retvalue = nothing
@@ -315,6 +319,7 @@ function refreshTwScreen( scr::TwScreen )
         end
         i -= 1
     end
+    werase( scr.window )
     scr.data.focus = focused
     for (i,o) in enumerate( scr.data.objects )
         o.hasFocus = (i == focused)

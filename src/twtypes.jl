@@ -12,7 +12,7 @@ type TwFunc
     draw::Function
     erase::Function # default to eraseTwObj
     move::Function # default to moveTwObj
-    inject::Function # send a key to this thing
+    inject::Function # send a key to this thing. Tips: make it small to minimize initial jit-delay
     focus::Function # default to dummy
     unfocus::Function # default to dummy
     refresh::Function # default to dummy

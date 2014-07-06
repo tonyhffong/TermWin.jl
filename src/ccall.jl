@@ -34,7 +34,7 @@ function delwin( win::Ptr{Void} )
     ccall( dlsym( libncurses, :delwin ), Void, ( Ptr{Void}, ), win )
 end
 
-function mvwaddch( win, y::Int, x::Int, c::Int )
+function mvwaddch( win, y::Int, x::Int, c )
     ccall( dlsym( libncurses, :mvwaddch), Void,
         ( Ptr{Void}, Int, Int, Int ), win, y, x, c )
 end
@@ -181,27 +181,27 @@ function has_colors()
     ccall( dlsym( libncurses, :has_colors), Bool, () )
 end
 
-function wattroff( win, attrs::Uint32 )
+function wattroff( win, attrs )
     ccall( dlsym(libncurses, :wattroff), Int, ( Ptr{Void}, Uint32 ), win, attrs )
 end
 
-function wattron( win, attrs::Uint32 )
+function wattron( win, attrs )
     ccall( dlsym(libncurses, :wattron), Int, ( Ptr{Void}, Uint32 ), win, attrs )
 end
 
-function wattrset( win, attrs::Uint32 )
+function wattrset( win, attrs )
     ccall( dlsym(libncurses, :wattrset), Int, ( Ptr{Void}, Uint32 ), win, attrs )
 end
 
-function wbkgdset( win, ch::Uint32 )
+function wbkgdset( win, ch )
     ccall( dlsym(libncurses, :wbkgdset ), Void, ( Ptr{Void}, Uint32 ), win, ch )
 end
 
-function wbkgd( win, ch::Uint32 )
+function wbkgd( win, ch )
     ccall( dlsym(libncurses, :wbkgd ), Void, ( Ptr{Void}, Uint32 ), win, ch )
 end
 
-function curs_set( vis::Int )
+function curs_set( vis )
     ccall( dlsym(libncurses, :curs_set), Int, ( Int, ), vis )
 end
 
@@ -209,7 +209,7 @@ function has_mouse()
     ccall( dlsym(libncurses, :has_mouse), Bool, () )
 end
 
-function mousemask( mask::Uint64 )
+function mousemask( mask )
     oldmm = Array( Uint64, 1 )
     resultmm = ccall( dlsym( libncurses, :mousemask), Uint64, (Uint64, Ptr{Uint64}), mask, oldmm )
     ( resultmm, oldmm[1])

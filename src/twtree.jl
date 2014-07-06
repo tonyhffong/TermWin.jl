@@ -397,10 +397,14 @@ function injectTwTree( o::TwObj, token )
             end
         end
         if somethingchanged
+            prevline = o.data.currentLine
             update_tree_data()
             for i in o.data.currentLine:o.data.datalistlen
                 if currentstack == o.data.datalist[ i ][4]
                     o.data.currentLine = i
+                    if abs( i - prevline ) > viewContentHeight
+                        o.data.currentTop = i - int(viewContentHeight/2)
+                    end
                     break
                 end
             end
@@ -434,6 +438,9 @@ function injectTwTree( o::TwObj, token )
                 for i in 1:min(prevline,o.data.datalistlen)
                     if currentstack == o.data.datalist[ i ][4]
                         o.data.currentLine = i
+                        if abs( i-prevline ) > viewContentHeight
+                            o.data.currentTop = i - int(viewContentHeight / 2)
+                        end
                         break
                     end
                 end
@@ -444,11 +451,25 @@ function injectTwTree( o::TwObj, token )
             beep()
         end
     elseif token == "_"
+        currentstack = copy(o.data.datalist[ o.data.currentLine ][4])
+        if length( currentstack ) > 1
+            currentstack = { currentstack[1] }
+        end
         o.data.openstatemap = Dict{Any,Bool}()
         o.data.openstatemap[ {} ] = true
-        o.data.currentLine = 1
-        o.data.currentTop = 1
         update_tree_data()
+        prevline = o.data.currentLine
+        o.data.currentLine = 1
+        for i in 1:min(prevline,o.data.datalistlen)
+            if currentstack == o.data.datalist[ i ][4]
+                o.data.currentLine = i
+                if abs( i-prevline ) > viewContentHeight
+                    o.data.currentTop = o.data.currentLine - int(viewContentHeight / 2)
+                end
+                break
+            end
+        end
+        checkTop()
         dorefresh = true
     elseif token == :F6
         stack = copy( o.data.datalist[ o.data.currentLine ][4] )
