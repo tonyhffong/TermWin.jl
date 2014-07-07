@@ -15,6 +15,8 @@ include( "twfunc.jl" )
 export tshow, newTwViewer, newTwScreen, activateTwObj, unregisterTwObj
 export TwObj, TwScreen
 export newTwEntry, newTwTree, rootTwScreen, newTwFunc
+export twFuncFactory, registerTwObj
+export COLOR_PAIR
 
 rootwin = nothing
 rootTwScreen = nothing
@@ -83,6 +85,13 @@ function initsession()
             init_pair( 22, COLOR_CYAN,   52 )
             init_pair( 23, COLOR_WHITE,  52 )
         end
+        if COLOR_PAIRS >= 32 && COLORS >= 64 # dark red background
+            init_pair( 24, 56,  COLOR_BLACK ) # light purple on black
+            init_pair( 25, 56,  17 ) # light purple on dark blue
+            init_pair( 26, COLOR_GREEN,  17 ) # purple on dark blue
+            init_pair( 27, COLOR_YELLOW,  17 ) # purple on dark blue
+            init_pair( 28, 8,  17 ) # purple on dark blue
+        end
         keypad( rootwin, true )
         mouseinterval( 0 )
         nodelay( rootwin, true )
@@ -94,12 +103,12 @@ function initsession()
         mvwprintw( rootwin, int( rootTwScreen.height / 2),
             int( ( rootTwScreen.width - length(info))/2), "%s", info )
         wrefresh( rootwin )
-        # precompile a bunch of code for better responsiveness
-        precompile( readtoken, (Ptr{Void}, ) )
-        precompile( injectTwTree, (TwObj, Any ) )
-        precompile( injectTwEntry, (TwObj, Any ) )
-        precompile( injectTwViewer, (TwObj, Any ) )
     else
+        # in case the terminal has been resized
+        maxy, maxx = getwinmaxyx( rootwin )
+        if maxy != rootTwScreen.height || maxx != rootTwScreen.width
+            wresize( rootwin, maxy, maxx )
+        end
         wrefresh( rootwin )
     end
 end
@@ -350,4 +359,14 @@ function testkeydialog( remapkeypad::Bool = false )
     endsession()
 end
 
+# precompile a bunch of code for better responsiveness
+precompile( initsession, (Ptr{Void}, ) )
+precompile( readtoken, (Ptr{Void}, ) )
+precompile( registerTwObj, (TwObj, TwObj ) )
+precompile( twFuncFactory, (Symbol,) )
+precompile( injectTwTree, (TwObj, Any ) )
+precompile( injectTwEntry, (TwObj, Any ) )
+precompile( injectTwViewer, (TwObj, Any ) )
+
 end
+

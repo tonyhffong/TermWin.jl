@@ -143,7 +143,6 @@ function drawTwFunc( o::TwObj )
     if o.data.showLineInfo
         if o.data.datalistlen <= o.height - 2 * o.borderSizeV
             info = "ALL"
-            mvwprintw( o.window, 0, o.width - 13, "%10s", "ALL" )
         else
             info = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.datalistlen,
                 o.data.currentLine / o.data.datalistlen * 100 )
@@ -171,7 +170,7 @@ function drawTwFunc( o::TwObj )
     draw( o.data.searchbox )
 end
 
-function injectTwFunc( o::TwObj, token )
+function injectTwFunc( o::TwObj, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
     viewContentHeight = o.height - o.borderSizeV * 2

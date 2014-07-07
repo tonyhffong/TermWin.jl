@@ -63,7 +63,7 @@ function newTwViewer( scr::TwScreen, msgs::Array, y::Any,x::Any; box=true, showL
     obj.data.trackLine = trackLine
 
     h = obj.data.msglen + obj.borderSizeV * 2 + (!box && !isempty( obj.data.bottomText )? 1 : 0 )
-    w = obj.data.msgwidth + obj.borderSizeH * 2
+    w = max( 25, obj.data.msgwidth + obj.borderSizeH * 2 )
 
     alignxy!( obj, h, w, x, y )
     configure_newwinpanel!( obj )
@@ -106,7 +106,6 @@ function drawTwViewer( o::TwObj )
     if o.data.showLineInfo
         if o.data.msglen <= o.height - 2 * o.borderSizeV
             info = "ALL"
-            mvwprintw( o.window, 0, o.width - 13, "%10s", "ALL" )
         else
             if o.data.trackLine
                 info = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.msglen,

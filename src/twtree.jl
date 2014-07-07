@@ -257,9 +257,8 @@ function drawTwTree( o::TwObj )
     if o.data.showLineInfo && o.box
         if o.data.datalistlen <= viewContentHeight
             info = "ALL"
-            mvwprintw( o.window, 0, o.width - 13, "%10s", "ALL" )
         else
-           info = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.datalistlen,
+            info = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.datalistlen,
                 o.data.currentLine / o.data.datalistlen * 100 )
         end
         mvwprintw( o.window, 0, o.width - length(info)-3, "%s", info )
@@ -348,7 +347,7 @@ function injectTwTree( o::TwObj, token::Any )
     searchNext = (step, trivialstop)->begin # if the currentLine contains the term, is it a success?
         start = o.data.currentLine
         o.data.searchText = lowercase(o.data.searchText)
-        i = trivialstop == true ? start : ( mod( start-1+step, o.data.datalistlen ) + 1 )
+        i = trivialstop ? start : ( mod( start-1+step, o.data.datalistlen ) + 1 )
         while true
             if contains( lowercase( o.data.datalist[i][1]), o.data.searchText ) ||
                 contains( lowercase( o.data.datalist[i][3]), o.data.searchText )

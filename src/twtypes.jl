@@ -76,7 +76,7 @@ end
 draw( p::TwObj ) = p.fn.draw( p )
 erase( p::TwObj ) = p.fn.erase( p )
 move( p::TwObj, y, x, relative, refresh ) = p.fn.move( p, y, x, relative, refresh )
-inject( p::TwObj, k ) = p.fn.inject( p, k )
+inject( p::TwObj, k::Any ) = p.fn.inject( p, k )
 focus( p::TwObj ) = p.fn.focus( p )
 unfocus( p::TwObj ) = p.fn.unfocus( p )
 refresh( p::TwObj ) = p.fn.refresh( p )

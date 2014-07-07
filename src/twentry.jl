@@ -271,15 +271,19 @@ function injectTwEntry( o::TwObj, token::Any )
     elseif token == :delete
         p = o.data.cursorPos
         utfs = o.data.inputText
-        pp = chr2ind( utfs, p-1 )
-        ppn = nextind( utfs, pp )
-        if p <= length(o.data.inputText)
-            ppnn = nextind( utfs, ppn )
-            o.data.inputText = utfs[1:pp] * utfs[ppnn:end]
-            checkcursor()
-            dorefresh = true
-        else
+        if p == 1 && length( utfs ) == 0
             beep()
+        else
+            pp = chr2ind( utfs, p-1 )
+            ppn = nextind( utfs, pp )
+            if p <= length(o.data.inputText)
+                ppnn = nextind( utfs, ppn )
+                o.data.inputText = utfs[1:pp] * utfs[ppnn:end]
+                checkcursor()
+                dorefresh = true
+            else
+                beep()
+            end
         end
     elseif token == :backspace
         p = o.data.cursorPos

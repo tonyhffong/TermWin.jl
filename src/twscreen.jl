@@ -256,10 +256,10 @@ function activateTwScreen( scr::TwScreen, tokens::Any=nothing )
     end
 end
 
-function injectTwScreen( scr::TwScreen )
+function injectTwScreen( scr::TwScreen, token::Any )
     result = :pass
     if scr.data.focus != 0
-        result = inject( scr.data.objects[ scr.data.focus] )
+        result = inject( scr.data.objects[ scr.data.focus], token )
         if result != :pass
             return result
         end
@@ -269,7 +269,7 @@ function injectTwScreen( scr::TwScreen )
         o = scr.data.objects[i]
         o.hasFocus = (i==scr.data.focus)
         if o.isVisible && !o.hasFocus && o.grabUnusedKey
-            result = inject( scr.data.objects[i] )
+            result = inject( scr.data.objects[i], token )
             if result != :pass
                 break
             end
