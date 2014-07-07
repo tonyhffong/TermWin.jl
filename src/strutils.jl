@@ -32,6 +32,18 @@ These do not take visual spaces and they modify the look of the previous charact
 
 ]
 
+function repr_symbol( s::Symbol )
+    v = string(s)
+    if length(v) == 0
+        v = ":\"\""
+    elseif match( r"^[a-zA-Z_][0-9a-zA-Z_]*$", v ) != nothing
+        v = ":" * v
+    else
+        v = "sym\""*escape_string(v)*"\""
+    end
+    v
+end
+
 function ensure_length( s::String, w::Int, pad::Bool = true )
     t = replace( s, "\n", "\\n" )
     t = replace( t, "\t", " " )

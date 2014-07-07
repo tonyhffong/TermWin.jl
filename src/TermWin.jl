@@ -266,7 +266,7 @@ function tshow( x::Any; title=string(typeof(x)) )
         catch err
             callcount -= 1
             endsession()
-            throw( err )
+            rethrow( err )
         end
         callcount -= 1
         endsession()
@@ -280,7 +280,14 @@ function tshow( x::Any; title=string(typeof(x)) )
             end
         end
         if !found
-            widget = tshow_(x, title=title )
+            widget = nothing
+            try
+                widget = tshow_(x, title=title )
+            catch err
+                bt = catch_backtrace()
+                msg = string(err) * "\n" * string( bt )
+                widget = tshow_( msg, title="Error" )
+            end
             if widget != nothing
                 if widget.acceptsFocus
                     widget.hasFocus = true

@@ -84,6 +84,9 @@ function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict
         t = string( typx )
         if typx <: Integer && typx <: Unsigned
             v = @sprintf( "0x%x", x )
+        elseif typx == Symbol
+            v = repr_symbol(x)
+            v = ensure_length( v, treeValueMaxWidth, false )
         else
             v = ensure_length( string( x ), treeValueMaxWidth, false )
         end
@@ -131,7 +134,11 @@ function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict
             end
             for (i,k) in enumerate( ks )
                 v = x[k]
-                subname = repr( k )
+                if ktype == Symbol
+                    subname = repr_symbol( k )
+                else
+                    subname = repr( k )
+                end
                 newstack = copy( stack )
                 push!( newstack, k )
                 intern_tree_data( v, subname, newstack, i==len )
