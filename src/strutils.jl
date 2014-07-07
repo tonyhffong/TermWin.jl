@@ -33,7 +33,8 @@ These do not take visual spaces and they modify the look of the previous charact
 ]
 
 function ensure_length( s::String, w::Int, pad::Bool = true )
-    t = replace( s, "\n", " " )
+    t = replace( s, "\n", "\\n" )
+    t = replace( t, "\t", " " )
     if length(t)<= w
         if pad
             return t * repeat( " ", w - length( t ) )
