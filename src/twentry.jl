@@ -95,7 +95,7 @@ function drawTwEntry( o::TwObj )
         mvwprintw( o.window, starty, startx, "%s", o.title )
         startx += length(o.title)
     end
-    if o.data.valueType <: Number # right justifed
+    if o.data.valueType <: Number && o.data.valueType != Bool # right justifed
         if remainspacecount <= 0
             rcursPos = max( 1, min( fieldcount, o.data.cursorPos ) )
             outstr = repeat( "#", fieldcount-1 ) * " "
@@ -274,7 +274,7 @@ function injectTwEntry( o::TwObj, token::Any )
         if p == 1 && length( utfs ) == 0
             beep()
         else
-            pp = chr2ind( utfs, p-1 )
+            pp = (p == 1)? 0 : chr2ind( utfs, p-1 )
             ppn = nextind( utfs, pp )
             if p <= length(o.data.inputText)
                 ppnn = nextind( utfs, ppn )
@@ -310,7 +310,7 @@ function injectTwEntry( o::TwObj, token::Any )
         o.data.cursorPos = 1
         o.data.fieldLeftPos = 1
         dorefresh = true
-    elseif token == "m"  && o.data.valueType <: Real # add 000
+    elseif token == "m"  && o.data.valueType <: Real && o.data.valueType != Bool # add 000
         (fieldcount, remainspacecount ) = getFieldDimension( o )
         (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
         if v!=nothing
@@ -319,7 +319,19 @@ function injectTwEntry( o::TwObj, token::Any )
             checkcursor()
             dorefresh = true
         end
-    elseif typeof( token ) <: String && o.data.valueType <: Number &&
+    elseif o.data.valueType == Bool && typeof( token ) <: String && isprint( token )
+        if token == "t"
+            o.data.inputText = "true"
+            o.data.cursorPos = 1
+            dorefresh = true
+        elseif token == "f"
+            o.data.inputText = "false"
+            o.data.cursorPos = 1
+            dorefresh = true
+        else
+            beep()
+        end
+    elseif typeof( token ) <: String && o.data.valueType <: Number && o.data.valueType != Bool
         ( isdigit( token ) || token == "," ||
           o.data.valueType <: FloatingPoint && in( token, [ ".", "e", "+", "-" ] ) ||
           o.data.valueType <: Rational && in( token, [ ".", "+", "-" ] ) ||
@@ -432,6 +444,15 @@ end
 function evalNFormat( dt::DataType, s::String, fieldcount::Int )
     if dt <: String
         return( s, s )
+    elseif dt == Bool
+        if s == "true"
+            v = true
+        elseif s == "false"
+            v = false
+        else
+            v = nothing
+        end
+        return v, s
     elseif dt <: FloatingPoint
         v = nothing
         stmp = replace( s, ",", "" )
