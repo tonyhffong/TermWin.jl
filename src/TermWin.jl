@@ -89,8 +89,8 @@ function initsession()
             init_pair( 24, 56,  COLOR_BLACK ) # light purple on black
             init_pair( 25, 56,  17 ) # light purple on dark blue
             init_pair( 26, COLOR_GREEN,  17 ) # purple on dark blue
-            init_pair( 27, COLOR_YELLOW,  17 ) # purple on dark blue
-            init_pair( 28, 8,  17 ) # purple on dark blue
+            init_pair( 27, COLOR_YELLOW,  17 ) # yellow on dark blue
+            init_pair( 28, 8,  17 ) # gray on dark blue
         end
         keypad( rootwin, true )
         mouseinterval( 0 )
