@@ -9,6 +9,7 @@ ctrl_arrow : jump to the start/end of the line
 _          : collapse all
 /          : search dialog
 F6         : popup window for value
+n, p       : Move to next/previous matched line
 """
 
 modulenames = Dict{ Module, Array{ Symbol, 1 } }()
@@ -568,9 +569,9 @@ function injectTwTree( o::TwObj, token::Any )
             end
         end
         dorefresh = true
-    elseif token == "n" || token == "p" || token == "N"
+    elseif token == "n" || token == "p" || token == "N" || token == :ctrl_n || token == :ctrl_p
         if o.data.searchText != ""
-            searchNext( (token == "n" ? 1 : -1), false )
+            searchNext( ( (token == "n" || token == :ctrl_n ) ? 1 : -1), false )
         end
         dorefresh = true
     elseif in( token, { symbol("end") } )
