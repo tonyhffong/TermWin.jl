@@ -10,9 +10,11 @@ _          : collapse all
 /          : search dialog
 F6         : popup window for value
 n, p       : Move to next/previous matched line
+m          : (Module Only) toggle export-only vs all names
 """
 
 modulenames = Dict{ Module, Array{ Symbol, 1 } }()
+moduleallnames = Dict{ Module, Array{ Symbol, 1 } }()
 typefields  = Dict{ Any, Array{ Symbol, 1 } }()
 
 typefields[ Method ] = [ :sig ]
@@ -36,7 +38,8 @@ type TwTreeData
     showHelp::Bool
     helpText::String
     searchText::String
-    TwTreeData() = new( Dict{ Any, Bool }(), {}, 0, 0, 0, 0, 1, 1, 1, true, "", true, defaultTreeHelpText, "" )
+    moduleall::Bool
+    TwTreeData() = new( Dict{ Any, Bool }(), {}, 0, 0, 0, 0, 1, 1, 1, true, "", true, defaultTreeHelpText, "", true )
 end
 
 function newTwTree( scr::TwScreen, ex, h::Real,w::Real,y::Any,x::Any; title = string(typeof( ex ) ), box=true, showLineInfo=true, showHelp=true, bottomText = "", tabWidth = 4, trackLine = false )
@@ -49,7 +52,7 @@ function newTwTree( scr::TwScreen, ex, h::Real,w::Real,y::Any,x::Any; title = st
     obj.borderSizeH= box ? 2 : 0
     obj.data = TwTreeData()
     obj.data.openstatemap[ {} ] = true
-    tree_data( ex, title, obj.data.datalist, obj.data.openstatemap, {} )
+    tree_data( ex, title, obj.data.datalist, obj.data.openstatemap, {}, Int[], true )
     updateTreeDimensions( obj )
     obj.data.showLineInfo = showLineInfo
     obj.data.showHelp = showHelp
@@ -64,7 +67,7 @@ end
 # skiplines are hints where we should not draw the vertical lines to the left
 # because it corresponds the end of some list at a lower depth level
 
-function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict{ Any, Bool }, stack::Array{Any,1}, skiplines::Array{Int,1}=Int[] )
+function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict{ Any, Bool }, stack::Array{Any,1}, skiplines::Array{Int,1}=Int[], moduleall::Bool = true )
     global modulenames, typefields
     isexp = haskey( openstatemap, stack ) && openstatemap[ stack ]
     typx = typeof( x )
@@ -119,7 +122,7 @@ function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict
                 intern_tree_data( a, subname, newstack, i==len )
             end
         end
-    elseif typx <: Dict
+    elseif typx <: Associative
         s = string( name )
         t = string( typx)
         len = length(x)
@@ -173,12 +176,22 @@ function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict
     else
         ns = Symbol[]
         if typx == Module
-            if haskey( modulenames, x )
-                ns = modulenames[ x ]
+            if moduleall
+                if haskey( moduleallnames, x )
+                    ns = moduleallnames[ x ]
+                else
+                    ns = filter( y->!beginswith( string(y), "@" ), names( x, true ) )
+                    sort!( ns )
+                    moduleallnames[ x ] = ns
+                end
             else
-                ns = names( x, true )
-                sort!( ns )
-                modulenames[ x ] = ns
+                if haskey( modulenames, x )
+                    ns = modulenames[ x ]
+                else
+                    ns = filter( y->!beginswith( string(y), "@" ), names( x ) )
+                    sort!( ns )
+                    modulenames[ x ] = ns
+                end
             end
         else
             if haskey( typefields, typx )
@@ -210,8 +223,13 @@ function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict
                 catch err
                     intern_tree_data( ErrorException(string(err)), subname, newstack, i==len )
                     if typx == Module
-                        todel = find( y->y==n, modulenames[ x] )
-                        deleteat!( modulenames[x], todel[1] )
+                        if moduleall
+                            todel = find( y->y==n, moduleallnames[ x] )
+                            deleteat!( moduleallnames[x], todel[1] )
+                        else
+                            todel = find( y->y==n, modulenames[ x] )
+                            deleteat!( modulenames[x], todel[1] )
+                        end
                     else
                         todel = find( y->y==n, typefields[ typx ] )
                         deleteat!( typefields[ typx ], todel[1] )
@@ -227,7 +245,7 @@ function getvaluebypath( x, path )
         return x
     end
     key = shift!( path )
-    if typeof( x ) <: Array || typeof( x ) <: Dict || typeof( x ) <: Tuple
+    if typeof( x ) <: Array || typeof( x ) <: Associative || typeof( x ) <: Tuple
         return getvaluebypath( x[key], path )
     elseif typeof( x ) == Function
         mt = methods( x )
@@ -260,7 +278,15 @@ function drawTwTree( o::TwObj )
         box( o.window, 0,0 )
     end
     if !isempty( o.title ) && o.box
-        mvwprintw( o.window, 0, int( ( o.width - length(o.title) )/2 ), "%s", o.title )
+        titlestr = o.title
+        if typeof( o.value ) == Module
+            if o.data.moduleall
+                titlestr *= "(all names)"
+            else
+                titlestr *= "(exported )"
+            end
+        end
+        mvwprintw( o.window, 0, int( ( o.width - length(titlestr) )/2 ), "%s", titlestr )
     end
     if o.data.showLineInfo && o.box
         if o.data.datalistlen <= viewContentHeight
@@ -323,7 +349,7 @@ function injectTwTree( o::TwObj, token::Any )
 
     update_tree_data = ()->begin
         o.data.datalist = {}
-        tree_data( o.value, o.title, o.data.datalist, o.data.openstatemap, {} )
+        tree_data( o.value, o.title, o.data.datalist, o.data.openstatemap, {}, Int[], o.data.moduleall )
         updateTreeDimensions(o)
         viewContentWidth = o.data.datatreewidth + o.data.datatypewidth+o.data.datavaluewidth + 2
     end
@@ -474,6 +500,29 @@ function injectTwTree( o::TwObj, token::Any )
                 break
             end
         end
+        checkTop()
+        dorefresh = true
+    elseif token == "m" && typeof( o.value ) == Module
+        o.data.moduleall = !o.data.moduleall
+        prevstack = copy( o.data.datalist[ o.data.currentLine ][4] )
+        update_tree_data()
+        maxmatch = 0
+        bestline = 0
+        for i in 1:o.data.datalistlen
+            stack = o.data.datalist[i][4]
+            if length( prevstack ) > maxmatch && length( stack )> maxmatch &&
+                isequal( prevstack[1:maxmatch+1], stack[1:maxmatch+1] )
+                maxmatch += 1
+                bestline = i
+                continue
+            elseif length( prevstack ) < maxmatch
+                break
+            elseif length( prevstack ) >= maxmatch && length( stack ) >= maxmatch &&
+                !isequal( prevstack[1:maxmatch], stack[1:maxmatch] )
+                break
+            end
+        end
+        o.data.currentLine = max( 1, bestline )
         checkTop()
         dorefresh = true
     elseif token == :F6
