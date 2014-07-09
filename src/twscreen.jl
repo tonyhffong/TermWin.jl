@@ -325,6 +325,9 @@ function refreshTwScreen( scr::TwScreen )
     scr.data.focus = focused
     for (i,o) in enumerate( scr.data.objects )
         o.hasFocus = (i == focused)
+        if o.panel == nothing
+            throw( string( o.fn.objtype ) * " has unset panel. Check its constructor." )
+        end
         if o.isVisible
             if panel_hidden( o.panel )
                 show_panel( o.panel )
