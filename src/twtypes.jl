@@ -47,6 +47,7 @@ type TwObj
             false, 0, 0,
             true, true, false, true, nothing, nothing, "", f, Dict{Symbol, Array{Function,1} }() )
         finalizer( x, y->begin
+            global rootwin
             if y.panel != nothing
                 del_panel( y.panel )
                 y.panel = nothing
