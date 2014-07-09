@@ -273,7 +273,7 @@ function tshow( x::Any; title=string(typeof(x)) )
     else
         found = false
         for o in rootTwScreen.data.objects
-            if objtype( o ) == :Tree && o.value == x
+            if !in( objtype( o ), [ :Entry, :Viewer ] ) && o.value == x
                 raiseTwObject( o )
                 found = true
                 break
