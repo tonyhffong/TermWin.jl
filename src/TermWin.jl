@@ -252,7 +252,16 @@ function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
     win
 end
 
-function tshow( x::Any; title=string(typeof(x)) )
+function titleof( x::Any )
+    typx = typeof( x )
+    if typx == Module || typx == Function
+        return string( x )
+    else
+        return string( typx )
+    end
+end
+
+function tshow( x::Any; title=titleof( x ) )
     global callcount, rootwin, rootTwScreen
     if callcount == 0
         initsession()
