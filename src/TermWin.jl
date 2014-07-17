@@ -99,7 +99,7 @@ function initsession()
         wtimeout( rootwin, 100 )
         curs_set( 0 )
         rootTwScreen = newTwScreen( rootwin )
-        info = "TermWin: Please wait ..."
+        info = string( char( 0xb83) ) * " TermWin: Please wait ..."
         mvwprintw( rootwin, int( rootTwScreen.height / 2),
             int( ( rootTwScreen.width - length(info))/2), "%s", info )
         wrefresh( rootwin )
