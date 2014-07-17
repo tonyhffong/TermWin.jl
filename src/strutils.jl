@@ -47,6 +47,23 @@ end
 function ensure_length( s::String, w::Int, pad::Bool = true )
     t = replace( s, "\n", "\\n" )
     t = replace( t, "\t", " " )
+    if w <= 0
+        return ""
+    end
+    if w ==1
+        if length(t) > 1
+            return string( char( 0x2026 ) )
+        elseif length(t)==1
+            return t
+        else
+            if pad
+                return " "
+            else
+                return ""
+            end
+        end
+    end
+
     if length(t)<= w
         if pad
             return t * repeat( " ", w - length( t ) )
