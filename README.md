@@ -1,5 +1,6 @@
 # TermWin.jl
 
+[![TermWin](http://pkg.julialang.org/badges/TermWin_0.3.svg)](http://pkg.julialang.org/?pkg=TermWin&ver=0.3)
 [![Build Status](https://travis-ci.org/tonyhffong/TermWin.jl.svg?branch=master)](https://travis-ci.org/tonyhffong/TermWin.jl)
 
 ## Introduction
