@@ -34,7 +34,7 @@ type TwCalendarData
 end
 
 function monthDimension( ncalStyle::Bool )
-    ncalStyle ? ( 8, 3*6-1 ): (8, 3*7 )
+    ncalStyle ? ( 8, 3*6-1 ): (8, 3*7+1 )
 end
 
 function bestfitgeometry( ncalStyle, scr::TwScreen, box::Bool )
@@ -213,36 +213,79 @@ function injectTwCalendar( o::TwObj, token::Any )
     elseif token == "."
         o.data.date = today()
         dorefresh = true
-    elseif token == :left || token == :up
-        if ncalStyle && token == :left || (!ncalStyle) && token == :up
-            o.data.date = o.data.date - Day(7)
-        else
-            if dayofweek( o.data.date ) > 1 && day( o.data.date ) > 1
-                o.data.date = o.data.date - Day(1)
-            else
-                # last weekday of the same nth week of the previous month
-                # if the nth week of the previous month doesn't exist, it'd
-                # be the weekday of the last week of the previous month
-                prevmonth = o.data.date - Month( ncalStyle ? o.data.geometry[2] : o.data.geometry[1] )
-                o.data.date = monthNthWeekRange( year( prevmonth ), month( prevmonth ), o.data.cursorweekofmonth )[2]
+    elseif in( token, [ :up, :down, :left, :right ] )
+        if ncalStyle
+            if token == :left
+                o.data.date = o.data.date - Day(7)
+            elseif token == :right
+                o.data.date = o.data.date + Day(7)
+            elseif token == :up
+                if dayofweek( o.data.date ) > 1 && day( o.data.date ) > 1
+                    o.data.date = o.data.date - Day(1)
+                else
+                    # last weekday of the same nth week of the previous month
+                    # if the nth week of the previous month doesn't exist, it'd
+                    # be the weekday of the last week of the previous month
+                    prevmonth = o.data.date - Month( ncalStyle ? o.data.geometry[2] : o.data.geometry[1] )
+                    o.data.date = monthNthWeekRange( year( prevmonth ), month( prevmonth ), o.data.cursorweekofmonth )[2]
+                end
+            else # :down
+                if dayofweek( o.data.date ) < 7 && day( o.data.date ) < daysinmonth( year( o.data.date ), month( o.data.date ) )
+                    o.data.date = o.data.date + Day(1)
+                else
+                    # last weekday of the same nth week of the "next" month
+                    nextmonth = o.data.date + Month( ncalStyle ? o.data.geometry[2] : o.data.geometry[1] )
+                    o.data.date = monthNthWeekRange( year( nextmonth ), month( nextmonth ), o.data.cursorweekofmonth )[1]
+                end
             end
-        end
-        dorefresh = true
-    elseif token == :right || token == :down
-        if ncalStyle && token == :right || (!ncalStyle) && token == :down
-            o.data.date = o.data.date + Day(7)
+            dorefresh = true
         else
-            if dayofweek( o.data.date ) < 7 && day( o.data.date ) < daysinmonth( year( o.data.date ), month( o.data.date ) )
-                o.data.date = o.data.date + Day(1)
-            else
-                # last weekday of the same nth week of the previous month
-                # if the nth week of the previous month doesn't exist, it'd
-                # be the weekday of the last week of the previous month
-                nextmonth = o.data.date + Month( ncalStyle ? o.data.geometry[2] : o.data.geometry[1] )
-                o.data.date = monthNthWeekRange( year( nextmonth ), month( nextmonth ), o.data.cursorweekofmonth )[1]
+            if token == :up
+                d = day( o.data.date )
+                if d >= 7
+                    o.data.date = o.data.date - Day(7)
+                else
+                    currdayofweek = dayofweek( o.data.date )
+                    prevmonth = o.data.date - Month( o.data.geometry[2] )
+                    (y,m) = (year(prevmonth), month(prevmonth))
+                    mds = daysinmonth( y,m )
+                    lastdayofweek = dayofweek( Date( y,m,mds ) )
+                    o.data.date = Date( y,m, mds - mod(lastdayofweek-currdayofweek, 7))
+                end
+            elseif token == :down
+                (y,m,d) = (year(o.data.date ), month( o.data.date), day( o.data.date ))
+                mds = daysinmonth( y,m )
+                if d + 7 <= mds
+                    o.data.date = o.data.date + Day(7)
+                else
+                    currdayofweek = dayofweek( o.data.date )
+                    nextmonth = o.data.date + Month( o.data.geometry[2] )
+                    (y,m) = (year(nextmonth), month(nextmonth))
+                    mds = daysinmonth( y,m )
+                    firstdayofweek = dayofweek( Date( y,m,1 ) )
+                    o.data.date = Date( y,m, 1 + mod(currdayofweek-firstdayofweek, 7))
+                end
+            elseif token == :left
+                if dayofweek( o.data.date ) > 1 && day( o.data.date ) > 1
+                    o.data.date = o.data.date - Day(1)
+                else
+                    # last weekday of the same nth week of the previous month
+                    # if the nth week of the previous month doesn't exist, it'd
+                    # be the weekday of the last week of the previous month
+                    prevmonth = o.data.date - Month( 1 )
+                    o.data.date = monthNthWeekRange( year( prevmonth ), month( prevmonth ), o.data.cursorweekofmonth )[2]
+                end
+            else # :right
+                if dayofweek( o.data.date ) < 7 && day( o.data.date ) < daysinmonth( year( o.data.date ), month( o.data.date ) )
+                    o.data.date = o.data.date + Day(1)
+                else
+                    # last weekday of the same nth week of the "next" month
+                    nextmonth = o.data.date + Month( 1 )
+                    o.data.date = monthNthWeekRange( year( nextmonth ), month( nextmonth ), o.data.cursorweekofmonth )[1]
+                end
             end
+            dorefresh = true
         end
-        dorefresh = true
     elseif token == "a"
         o.data.date = Date( year( o.data.date ), month( o.data.date ) )
         dorefresh = true
