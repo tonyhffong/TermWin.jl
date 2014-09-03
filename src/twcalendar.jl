@@ -1,5 +1,9 @@
 # hand-crafted date selector
-using Dates
+if VERSION < v"0.4-"
+    using Dates
+else
+    using Base.Dates
+end
 
 defaultCalendarHelpText = """
 Arrows : move cursor
