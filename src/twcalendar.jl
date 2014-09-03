@@ -10,10 +10,11 @@ Arrows : move cursor
 .      : jump to today
 a      : jump to start of cursor's month
 e      : jump to end of cursor's month
-A      : jump to 1/1/YYYY
-E      : jump to 12/31/YYYY
+A      : jump to Jan 1st
+E      : jump to Dec 31st
 d,D    : add/subtract a day
 w,W    : add/subtract a week
+( the following would do end-of-month truncation)
 m,M    : add/subtract a month
 q,Q    : add/subtract a quarter
 y,Y    : add/subtract a year
@@ -29,7 +30,7 @@ type TwCalendarData
 end
 
 function monthDimension( ncalStyle::Bool )
-    ncalStyle ? ( 8, 3*6 ): (8, 3*7 )
+    ncalStyle ? ( 8, 3*6-1 ): (8, 3*7 )
 end
 
 function bestfitgeometry( ncalStyle, scr::TwScreen, box::Bool )
@@ -134,7 +135,11 @@ function drawTwCalendar( o::TwObj )
                         flags = flags | A_BOLD
                     end
                     wattron( o.window, flags )
-                    mvwprintw( o.window, starty + wkd, startx + wcol * 3, "%3s", string( day( dt ) ) )
+                    if wcol == 0
+                        mvwprintw( o.window, starty + wkd, startx, "%2s", string( day( dt ) ) )
+                    else
+                        mvwprintw( o.window, starty + wkd, startx - 1 + wcol * 3, "%3s", string( day( dt ) ) )
+                    end
                     wattroff( o.window, flags )
                     if wkd == 7
                         wkd = 1
