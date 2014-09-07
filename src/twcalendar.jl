@@ -249,8 +249,8 @@ function injectTwCalendar( o::TwObj, token::Any )
                     prevmonth = o.data.date - Month( o.data.geometry[2] )
                     (y,m) = (year(prevmonth), month(prevmonth))
                     mds = daysinmonth( y,m )
-                    lastdayofweek = dayofweek( Date( y,m,mds ) )
-                    o.data.date = Date( y,m, mds - mod(lastdayofweek-currdayofweek, 7))
+                    lstdayofwk = dayofweek( Date( y,m,mds ) )
+                    o.data.date = Date( y,m, mds - mod(lstdayofwk-currdayofweek, 7))
                 end
             elseif token == :down
                 (y,m,d) = (year(o.data.date ), month( o.data.date), day( o.data.date ))
@@ -262,8 +262,8 @@ function injectTwCalendar( o::TwObj, token::Any )
                     nextmonth = o.data.date + Month( o.data.geometry[2] )
                     (y,m) = (year(nextmonth), month(nextmonth))
                     mds = daysinmonth( y,m )
-                    firstdayofweek = dayofweek( Date( y,m,1 ) )
-                    o.data.date = Date( y,m, 1 + mod(currdayofweek-firstdayofweek, 7))
+                    fstdayofwk = dayofweek( Date( y,m,1 ) )
+                    o.data.date = Date( y,m, 1 + mod(currdayofweek-fstdayofwk, 7))
                 end
             elseif token == :left
                 if dayofweek( o.data.date ) > 1 && day( o.data.date ) > 1

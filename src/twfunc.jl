@@ -54,7 +54,7 @@ function newTwFunc( scr::TwScreen, ms::Array{Method,1},
         push!( obj.data.datalist, { lowercase(s), s, d, 0.0 } )
     end
     obj.data.datalistlen = length( ms )
-    obj.data.datawidth = maximum( map( x->length( x[2] ), obj.data.datalist ))
+    obj.data.datawidth = maximum( map( z->length( z[2] ), obj.data.datalist ))
     obj.data.showLineInfo = showLineInfo
     obj.data.showHelp = showHelp
     obj.data.bottomText = bottomText

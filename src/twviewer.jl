@@ -47,7 +47,7 @@ function newTwViewer( scr::TwScreen, h::Real,w::Real,y::Any,x::Any; box=true, sh
 end
 
 function newTwViewer( scr::TwScreen, msgs::Array, y::Any,x::Any; box=true, showLineInfo=true, bottomText = "", showHelp=true, tabWidth = 4, trackLine = false, title="" )
-    map!( x->replace( x, "\t", repeat( " ", tabWidth ) ), msgs )
+    map!( z->replace( z, "\t", repeat( " ", tabWidth ) ), msgs )
     obj = TwObj( twFuncFactory( :Viewer ) )
     obj.data = TwViewerData()
     obj.title = title
@@ -71,7 +71,7 @@ function newTwViewer( scr::TwScreen, msgs::Array, y::Any,x::Any; box=true, showL
 end
 
 function newTwViewer( scr::TwScreen, msg::String, y::Any,x::Any ; box=true, showLineInfo=true, bottomText="", showHelp=true, tabWidth = 4, trackLine = false, title="" )
-    msgs = map( x->replace( x, "\t", repeat( " ", tabWidth ) ), split( msg, "\n" ) )
+    msgs = map( z->replace( z, "\t", repeat( " ", tabWidth ) ), split( msg, "\n" ) )
     newTwViewer( scr, msgs, y, x, box=box,showLineInfo=showLineInfo, bottomText=bottomText, showHelp=showHelp, tabWidth=tabWidth, trackLine=trackLine, title="" )
 end
 
