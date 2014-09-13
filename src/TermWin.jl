@@ -1,5 +1,7 @@
 if VERSION < v"0.4-"
-    Pkg.add( "Dates" )
+    if Pkg.installed( "Dates" ) == nothing
+        Pkg.add( "Dates" )
+    end
 end
 
 module TermWin
