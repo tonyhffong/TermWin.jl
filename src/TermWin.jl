@@ -1,3 +1,7 @@
+if VERSION < v"0.4-"
+    Pkg.add( "Dates" )
+end
+
 module TermWin
 
 include( "consts.jl")
