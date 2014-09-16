@@ -331,7 +331,7 @@ function injectTwEntry( o::TwObj, token::Any )
         else
             beep()
         end
-    elseif typeof( token ) <: String && o.data.valueType <: Number && o.data.valueType != Bool
+    elseif typeof( token ) <: String && o.data.valueType <: Number && o.data.valueType != Bool &&
         ( isdigit( token ) || token == "," ||
           o.data.valueType <: FloatingPoint && in( token, [ ".", "e", "+", "-" ] ) ||
           o.data.valueType <: Rational && in( token, [ ".", "+", "-" ] ) ||
