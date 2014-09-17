@@ -5,6 +5,7 @@ if VERSION < v"0.4-"
 end
 
 module TermWin
+using Lint
 
 include( "consts.jl")
 include( "ccall.jl" )
