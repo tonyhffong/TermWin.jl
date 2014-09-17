@@ -442,6 +442,9 @@ function formatCommas( v::Real, fieldcount::Int )
 end
 
 function evalNFormat( dt::DataType, s::String, fieldcount::Int )
+    @lintpragma( "Ignore unstable type variable v")
+    @lintpragma( "Ignore unstable type variable iv")
+    @lintpragma( "Ignore unstable type variable fv")
     if dt <: String
         return( s, s )
     elseif dt == Bool
