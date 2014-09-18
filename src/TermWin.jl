@@ -18,12 +18,14 @@ include( "twentry.jl")
 include( "readtoken.jl" )
 include( "twtree.jl" )
 include( "twfunc.jl" )
+include( "twpopup.jl" )
 include( "twcalendar.jl")
 
 export tshow, newTwViewer, newTwScreen, activateTwObj, unregisterTwObj
 export TwObj, TwScreen
 export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 export newTwCalendar
+export newTwPopup
 export twFuncFactory, registerTwObj
 export COLOR_PAIR
 
