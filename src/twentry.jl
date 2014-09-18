@@ -1,19 +1,40 @@
 # hand-crafted numeric and string input field
 
-defaultEntryHelpText = """
+defaultEntryStringHelpText = """
 <-, -> : move cursor
 ctrl-a : move cursor to start
 ctrl-e : move cursor to end
 ctrl-k : empty entry
-,      : (Num only) clean up format (add commas)
-.      : (Num only) decimal point. If already exists, jump there
-m      : (Num only) multiply by 1,000. So 1mm becomes 1 million
+ctrl-r : Toggle insertion/overwrite mode
+
+Edges are highlighted if more beyond boundary
+"""
+
+defaultEntryNumberHelpText = """
+<-, -> : move cursor
+ctrl-a : move cursor to start
+ctrl-e : move cursor to end
+ctrl-k : empty entry
+,      : Clean up format (add commas)
+.      : Decimal point. If already exists, jump there
+m      : Multiply by 1,000. So 1mm becomes 1 million
 e      : (Floating Point only) exponent. 1e6 for 1,000,000.0
 ctrl-r : Toggle insertion/overwrite mode
 Shft-up: If configured, increase value by a tick-size
 Shft-dn: If configured, decrease value by a tick-size
+"""
 
-n.b. (String only) Edges are highlighted if more beyond boundary
+defaultEntryDateHelpText = """
+Format : YYYY-MM-DD
+<-, -> : move cursor
+ctrl-a : move cursor to start
+ctrl-e : move cursor to end
+ctrl-k : empty entry
+,      : Clean up format
+ctrl-r : Toggle insertion/overwrite mode
+?      : View calendar
+Shft-up: If configured, increase value by a tick-size
+Shft-dn: If configured, decrease value by a tick-size
 """
 type TwEntryData
     valueType::DataType
@@ -26,7 +47,17 @@ type TwEntryData
     titleLeft::Bool
     overwriteMode::Bool
     limitToWidth::Bool # TODO: not implemented yet
-    TwEntryData( dt::DataType ) = new( dt, false, defaultEntryHelpText, "", 1, 1, 0, true, false, false )
+    function TwEntryData( dt::DataType )
+        o = new( dt, false, "", "", 1, 1, 0, true, false, false )
+        if dt <: String
+            o.helpText = defaultEntryStringHelpText
+        elseif dt <: Number
+            o.helpText = defaultEntryNumberHelpText
+        elseif dt <: Date
+            o.helpText = defaultEntryDateHelpText
+        end
+        o
+    end
 end
 
 # the ways to use it:
@@ -103,6 +134,14 @@ function drawTwEntry( o::TwObj )
             rcursPos =  max(1,min( remainspacecount + o.data.cursorPos-1, fieldcount ))
             outstr = repeat( " ", remainspacecount-1 ) * o.data.inputText * " "
         end
+    elseif o.data.valueType <: Date
+        if remainspacecount <= 0
+            rcursPos = max( 1, min( fieldcount, o.data.cursorPos ) )
+            outstr = repeat( "#", fieldcount-1 ) * " "
+        else
+            rcursPos =  max(1,min( o.data.cursorPos, fieldcount ))
+            outstr = o.data.inputText * repeat( " ", remainspacecount )
+        end
     else
         if remainspacecount <= 0
             rcursPos = min( fieldcount, max(1, o.data.cursorPos - o.data.fieldLeftPos+1 ) )
@@ -157,31 +196,34 @@ function drawTwEntry( o::TwObj )
     wattroff( o.window, COLOR_PAIR(15))
 end
 
+#TODO: test this thoroughly!!
+function insertstring( str::String, c::String, p::Int, overwrite::Bool )
+    pm1 = p <= 1 ? 0 : chr2ind(str,p-1)
+    pp = nextind( str, pm1 )
+    if overwrite
+        out = str[1:pm1] * c
+        for j in 1:length(c)
+            pp = nextind( str, pp )
+        end
+        if p+length(c) <= length(str)
+            out *= str[ pp:end ]
+        end
+    else
+        out = str[1:pm1] * c
+        if p <= length(str)
+            out *= str[ pp:end]
+        end
+    end
+    return out
+end
+
 function injectTwEntry( o::TwObj, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
 
     insertchar = ( c ) -> begin
-        utfs = o.data.inputText
-        p = o.data.cursorPos
-        pm1 = p <= 1 ? 0 : chr2ind(utfs,p-1)
-        pp = nextind( utfs, pm1 )
-        if o.data.overwriteMode
-            o.data.inputText = utfs[1:pm1] * c
-            for j in 2:length(c)
-                pp = nextind( utfs, pp )
-            end
-            if p+length(c) <= length(utfs)
-                o.data.inputText *= utfs[ pp:end ]
-            end
-            o.data.cursorPos += length( c )
-        else
-            o.data.inputText = utfs[1:pm1] * c
-            if p <= length(utfs)
-                o.data.inputText *= utfs[ pp:end]
-            end
-            o.data.cursorPos += length( c )
-        end
+        o.data.inputText = insertstring( o.data.inputText, c, o.data.cursorPos, o.data.overwriteMode )
+        o.data.cursorPos += length( c )
     end
 
     checkcursor = ()-> begin
@@ -330,6 +372,31 @@ function injectTwEntry( o::TwObj, token::Any )
             dorefresh = true
         else
             beep()
+        end
+    elseif typeof( token ) <: String && ( isdigit( token ) || token =="-" ) && o.data.valueType <: Date
+        insertchar( token )
+        dorefresh = true
+    elseif token == "?" && o.data.valueType <: Date
+        global rootTwScreen
+        (fieldcount, remainspacecount ) = getFieldDimension( o )
+        (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
+        if v == nothing
+            v = today()
+        end
+        w = newTwCalendar( rootTwScreen, v, :center, :center )
+        activateTwObj( w )
+        if typeof( w.value ) <: Date
+            o.data.inputText = string( w.value )
+            dorefresh = true
+        end
+        unregisterTwObj( rootTwScreen, w )
+    elseif token == "," && o.data.valueType <: Date
+        (fieldcount, remainspacecount ) = getFieldDimension( o )
+        (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
+        if v != nothing
+            o.data.inputText = s
+            o.value = v
+            dorefresh = true
         end
     elseif typeof( token ) <: String && o.data.valueType <: Number && o.data.valueType != Bool &&
         ( isdigit( token ) || token == "," ||
@@ -520,6 +587,14 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
         if v != nothing
             v = convert( dt, v)
             return (v, formatCommas( v, fieldcount ))
+        end
+    elseif dt <: Date
+        v = nothing
+        try
+            v = Date( s )
+        end
+        if v != nothing
+            return (v,string(v))
         end
     end
     return (nothing, s)
