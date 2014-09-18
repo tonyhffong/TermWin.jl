@@ -1,11 +1,4 @@
 # hand-crafted date selector
-if VERSION < v"0.4-"
-    @lintpragma( "Ignore undefined module Dates" )
-    using Dates
-else
-    @lintpragma( "Ignore undefined module Base.Dates" )
-    using Base.Dates
-end
 
 defaultCalendarHelpText = """
 Arrows : move cursor
