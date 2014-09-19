@@ -605,18 +605,22 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
         end
     elseif dt <: Date
         v = nothing
-        res = [ r"[0-9]{2}[a-z]{3}[0-9]{4}"i => "dduuuyyyy",
-                r"[0-9][a-z]{3}[0-9]{4}"i => "duuuyyyy",
-                r"[0-9]{2}[a-z]{3}[0-9]{2}"i => "dduuuyy",
-                r"[0-9][a-z]{3}[0-9]{2}"i => "duuuyy",
-                r"[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}" => "yyyy-mm-dd",
-                r"[0-9]{4} [0-9]{1,2} [0-9]{1,2}" => "yyyy mm dd",
-                r"[0-9]{4}.[0-9]{1,2}.[0-9]{1,2}" => "yyyy.mm.dd",
-                r"[0-9]{4}/[0-9]{1,2}/[0-9]{1,2}" => "yyyy/mm/dd",
-                r"[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}" => "mm/dd/yyyy", # assume american
-                r"[0-9]{1,2} +[a-z]{3} +[0-9]{4}"i => "dd uuu yyyy",
-                r"[0-9]{1,2} +[a-z]{4,} +[0-9]{4}"i => "dd U yyyy",
-                r"[0-9]{8}" => "yyyymmdd"
+        s = strip( s )
+        res = [ r"^[0-9]{2}[a-z]{3}[0-9]{4}$"i => "dduuuyyyy",
+                r"^[0-9][a-z]{3}[0-9]{4}$"i => "duuuyyyy",
+                r"^[0-9]{2}[a-z]{3}[0-9]{2}$"i => "dduuuyy",
+                r"^[0-9][a-z]{3}[0-9]{2}$"i => "duuuyy",
+                r"^[0-9]{2}[a-z]{3}$"i => "dduuu",
+                r"^[0-9][a-z]{3}$"i => "duuu",
+                r"^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$" => "yyyy-mm-dd",
+                r"^[0-9]{4} [0-9]{1,2} [0-9]{1,2}$" => "yyyy mm dd",
+                r"^[0-9]{4}.[0-9]{1,2}.[0-9]{1,2}$" => "yyyy.mm.dd",
+                r"^[0-9]{4}/[0-9]{1,2}/[0-9]{1,2}$" => "yyyy/mm/dd",
+                r"^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$" => "mm/dd/yyyy", # assume american
+                r"^[0-9]{1,2} +[a-z]{3} +[0-9]{4}$"i => "dd uuu yyyy",
+                r"^[0-9]{1,2} +[a-z]{4,} +[0-9]{4}$"i => "dd U yyyy",
+                r"^[0-9]{8}$" => "yyyymmdd",
+                r"^[0-9]{1,2} [0-9]{1,2}$" => "mm dd"
                 ]
         fmt = "yyyy-mm-dd"
         for (r,f) in res
@@ -627,7 +631,7 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
                 end
                 if v != nothing
                     fmt = f
-                    if !contains( fmt, "yyyy" ) && year(v) < 100
+                    if !contains( fmt, "yyyy" ) && contains( fmt, "yy" ) && year(v) < 100
                         smally = year(v)
                         thisy = year(today())
                         cent = int( floor( thisy, -2 ) )
@@ -637,6 +641,16 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
                             v = v + Year( cent - 100 )
                         end
                         fmt = replace( fmt, "yy", "yyyy" )
+                    end
+                    if !contains( fmt, "y" ) && year(v) < 100 # get to the nearest half year
+                        smally = year(v)
+                        thisy = year(today())
+                        if int( v + Year( thisy - smally + 1) - today() ) < 182
+                            v = v + Year( thisy - smally + 1)
+                        else
+                            v = v + Year( thisy - smally )
+                        end
+                        fmt = "yyyy-mm-dd"
                     end
                     if fmt == "mm/dd/yyyy" || fmt == "yyyymmdd"  # the more ambiguous formats
                         fmt = "yyyy-mm-dd"
