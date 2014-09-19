@@ -5,10 +5,36 @@
 # if hideunmatched is enabled, any choice that doesn't match will be hidden. deleting the search string will revert
 # if sortmatched is enabled (usually in conjunction with substr and but not hideunmatched), a levenstein distance
 #  score will be generated and the result sorted according to the match score
+# if allownew is enabled, the search box is also an entry box to enter new text, as long as there is no match.
+#   Use trailing space to disambiguate. They will be stripped afterwards.
 POPUPQUICKSELECT    = 1
 POPUPSUBSTR         = 2
 POPUPHIDEUNMATCHED  = 4
 POPUPSORTMATCHED    = 8
+POPUPALLOWNEW       = 16
+
+defaultPopupHelpText = """
+arrows : move cursor
+home   : move to top
+end    : move to bottom
+enter  : select
+"""
+
+defaultPopupQuickHelpText = """
+arrows : move item cursor
+home   : move to top
+end    : move to bottom
+enter  : select
+
+Search box:
+ctrl-a : move search cursor to start
+ctrl-e : move search cursor to end
+ctrl-k : empty search entry
+ctrl-r : Toggle insertion/overwrite mode
+
+ctrl-n : move to the next matched item
+ctrl-p : move to the previous matched item
+"""
 
 type TwPopupData
     choices::Array{UTF8String,1}
@@ -19,7 +45,8 @@ type TwPopupData
     currentLeft::Int
     currentTop::Int
     selectmode::Int
-    TwPopupData( arr::Array{UTF8String,1} ) = new( arr, {}, maximum( map( z->length(z), arr ) ), nothing, 1, 1, 1, 0 )
+    helpText::String
+    TwPopupData( arr::Array{UTF8String,1} ) = new( arr, {}, maximum( map( z->length(z), arr ) ), nothing, 1, 1, 1, 0, "" )
 end
 TwPopupData{ T<:String} ( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8( x ), arr ) )
 
@@ -29,7 +56,7 @@ TwPopupData{ T<:String} ( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8( x ), 
 # w include title width, if it's shown on the left
 function newTwPopup{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::Any;
         title = "", maxwidth = 50, maxheight = 15, minwidth = 20,
-        quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false )
+        quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false )
     obj = TwObj( twFuncFactory( :Popup ) )
     registerTwObj( scr, obj )
     box = true
@@ -50,12 +77,17 @@ function newTwPopup{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::Any;
     if sortmatched
         obj.data.selectmode |= POPUPQUICKSELECT | POPUPSUBSTR | POPUPSORTMATCHED
     end
-    usedatalist = obj.data.selectmode & POPUPHIDEUNMATCHED != 0 || obj.data.selectmode & POPUPSORTMATCHED != 0
+    if allownew
+        obj.data.selectmode |= POPUPQUICKSELECT | POPUPSUBSTR | POPUPHIDEUNMATCHED | POPUPALLOWNEW
+    end
+    usedatalist = popup_use_datalist( obj )
     if usedatalist
-        obj.data.datalist = {}
-        for (i, c) in enumerate( arr )
-            push!( obj.data.datalist, {lowercase(c), c, i, 0.0 } )
-        end
+        rebuild_popup_datalist( obj )
+    end
+    if obj.data.selectmode & POPUPQUICKSELECT != 0
+        obj.data.helpText = defaultPopupQuickHelpText
+    else
+        obj.data.helpText = defaultPopupHelpText
     end
 
     h = (box?2 : 0) + min( length( arr ), maxheight )
@@ -66,6 +98,18 @@ function newTwPopup{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::Any;
     obj.data.searchbox = newTwEntry( obj.window, String, minwidth, :bottom, 1, box=false )
     obj.data.searchbox.title = "?"
     obj
+end
+
+function popup_use_datalist( o::TwObj )
+    o.data.selectmode & POPUPHIDEUNMATCHED != 0 || o.data.selectmode & POPUPSORTMATCHED != 0
+end
+
+function rebuild_popup_datalist( o::TwObj )
+    o.data.datalist = {}
+    for (i, c) in enumerate( o.data.choices )
+        searchstring = c
+        push!( o.data.datalist, {lowercase( searchstring ), c, i, 0.0 } )
+    end
 end
 
 function drawTwPopup( o::TwObj )
@@ -79,7 +123,7 @@ function drawTwPopup( o::TwObj )
     starty = o.borderSizeV
     viewContentHeight = o.height - o.borderSizeV * 2
     viewContentWidth  = o.width - o.borderSizeH * 2
-    usedatalist = o.data.selectmode & POPUPHIDEUNMATCHED != 0 || o.data.selectmode & POPUPSORTMATCHED != 0
+    usedatalist = popup_use_datalist( o )
     if usedatalist
         n = length( o.data.datalist )
     else
@@ -112,15 +156,32 @@ end
 
 function popup_search_next( o::TwObj, step::Int, trivialstop::Bool )
     st = o.data.currentLine
-    tmpstr = o.data.searchbox.data.inputText = lowercase(o.data.searchbox.data.inputText)
-    n = length( o.data.choices )
+    tmpstr = lowercase(o.data.searchbox.data.inputText)
+    if length(tmpstr) == 0
+        TermWin.beep()
+        return 0
+    end
+
+    usedatalist = popup_use_datalist( o )
+    if usedatalist
+        n = length( o.data.datalist )
+    else
+        n = length( o.data.choices )
+    end
 
     i = trivialstop ? st : ( mod( st-1+step, n ) + 1 )
     while true
         if o.data.selectmode & POPUPSUBSTR != 0
-            if contains( lowercase( o.data.choices[i] ), tmpstr )
-                o.data.currentLine = i
-                return i
+            if usedatalist
+                if contains( o.data.datalist[i][1], tmpstr )
+                    o.data.currentLine = i
+                    return i
+                end
+            else
+                if contains( lowercase( o.data.choices[i] ), tmpstr )
+                    o.data.currentLine = i
+                    return i
+                end
             end
         else
             if beginswith( lowercase( o.data.choices[i] ), tmpstr )
@@ -141,7 +202,7 @@ function update_popup_score( o::TwObj )
     needx = o.data.maxchoicelength
 
     l1 = length(searchterm)
-    usedatalist = o.data.selectmode & POPUPHIDEUNMATCHED != 0 || o.data.selectmode & POPUPSORTMATCHED != 0
+    usedatalist = popup_use_datalist( o )
 
     if usedatalist
         prevchoice = ""
@@ -151,10 +212,9 @@ function update_popup_score( o::TwObj )
             o.data.currentLine = 1
         end
         if l1 == 0
-            o.data.datalist = {}
-            for (i, c) in enumerate( o.data.choices )
-                push!( o.data.datalist, {lowercase(c), c, i, 0.0 } )
-                if c == prevchoice
+            rebuild_popup_datalist( o )
+            for (i, row) in enumerate( o.data.datalist)
+                if row[2] == prevchoice
                     o.data.currentLine = i
                 end
             end
@@ -231,7 +291,7 @@ function injectTwPopup( o::TwObj, token::Any )
     viewContentWidth = o.width - o.borderSizeH * 2
     viewContentHeight = o.height - 2 * o.borderSizeV
 
-    usedatalist = o.data.selectmode & POPUPHIDEUNMATCHED != 0 || o.data.selectmode & POPUPSORTMATCHED != 0
+    usedatalist = popup_use_datalist( o )
 
     checkTop = () -> begin
         if o.data.currentTop > o.data.currentLine
@@ -252,7 +312,7 @@ function injectTwPopup( o::TwObj, token::Any )
         return true
     end
 
-    if o.data.selectmode & POPUPQUICKSELECT != 0
+    if o.data.selectmode & POPUPQUICKSELECT != 0 && token != :F1
         inputText = o.data.searchbox.data.inputText
         result = inject( o.data.searchbox, token )
 
@@ -318,6 +378,14 @@ function injectTwPopup( o::TwObj, token::Any )
         dorefresh = moveby( -viewContentHeight )
     elseif token == :pagedown
         dorefresh = moveby( viewContentHeight )
+    elseif token == :ctrl_n
+        popup_search_next( o, 1, false )
+        checkTop()
+        dorefresh = true
+    elseif token == :ctrl_p
+        popup_search_next( o, -1, false )
+        checkTop()
+        dorefresh = true
     elseif token == :KEY_MOUSE
         (mstate,x,y, bs ) = getmouse()
         if mstate == :scroll_up
@@ -343,8 +411,14 @@ function injectTwPopup( o::TwObj, token::Any )
             beep()
         end
     elseif in( token, { symbol("end") } )
-        if o.data.currentTop + o.height-2 < o.data.msglen
-            o.data.currentTop = o.data.msglen - o.height+ 2
+        if usedatalist
+            n = length( o.data.datalist )
+        else
+            n = length( o.data.choices )
+        end
+        if o.data.currentLine != n
+            o.data.currentLine = n
+            checkTop()
             dorefresh = true
         else
             beep()
@@ -354,6 +428,9 @@ function injectTwPopup( o::TwObj, token::Any )
             if o.data.currentLine <= length( o.data.datalist )
                 o.value = o.data.datalist[ o.data.currentLine ][ 2]
                 retcode = :exit_ok
+            elseif o.data.selectmode & POPUPALLOWNEW != 0
+                o.value = strip( o.data.searchbox.data.inputText )
+                retcode = :exit_ok
             end
         else
             if o.data.currentLine <= length( o.data.choices )
@@ -361,6 +438,12 @@ function injectTwPopup( o::TwObj, token::Any )
                 retcode = :exit_ok
             end
         end
+    elseif token == :F1
+        global rootTwScreen
+        helper = newTwViewer( rootTwScreen, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+        activateTwObj( helper )
+        unregisterTwObj( rootTwScreen, helper )
+        dorefresh = true
     else
         retcode = :pass # I don't know what to do with it
     end
