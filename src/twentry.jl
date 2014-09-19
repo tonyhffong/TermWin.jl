@@ -626,8 +626,20 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
                     v = Date( s, f )
                 end
                 if v != nothing
-                    if f != "mm/dd/yyyy" && f != "yyyymmdd"  # the more ambiguous formats
-                        fmt = f
+                    fmt = f
+                    if !contains( fmt, "yyyy" ) && year(v) < 100
+                        smally = year(v)
+                        thisy = year(today())
+                        cent = int( floor( thisy, -2 ) )
+                        if abs(cent+smally - thisy)<=50
+                            v = v + Year( cent )
+                        else
+                            v = v + Year( cent - 100 )
+                        end
+                        fmt = replace( fmt, "yy", "yyyy" )
+                    end
+                    if fmt == "mm/dd/yyyy" || fmt == "yyyymmdd"  # the more ambiguous formats
+                        fmt = "yyyy-mm-dd"
                     end
                     break
                 end
