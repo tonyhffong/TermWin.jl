@@ -25,7 +25,9 @@ Shft-dn: If configured, decrease value by a tick-size
 """
 
 defaultEntryDateHelpText = """
-Format : YYYY-MM-DD
+Format : YYYY-MM-DD standard, but allows formats such as
+         20140101, 1/1/2014, 1Jan2014, 1 January 2014
+         2014.01.01
 <-, -> : move cursor
 ctrl-a : move cursor to start
 ctrl-e : move cursor to end
@@ -247,13 +249,6 @@ function injectTwEntry( o::TwObj, token::Any )
     end
 
     if token == :esc
-        (fieldcount, remainspacecount ) = getFieldDimension( o )
-        (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
-        if v != nothing
-            o.value = v
-            o.data.inputText = s
-            checkcursor()
-        end
         retcode = :exit_nothing
     elseif token == :shift_up && o.data.valueType <: Real && o.data.tickSize != 0
         (fieldcount, remainspacecount ) = getFieldDimension( o )
@@ -360,6 +355,8 @@ function injectTwEntry( o::TwObj, token::Any )
             o.data.inputText = formatCommas( o.value, fieldcount )
             checkcursor()
             dorefresh = true
+        else
+            beep()
         end
     elseif o.data.valueType == Bool && typeof( token ) <: String && isprint( token )
         if token == "t"
@@ -373,9 +370,20 @@ function injectTwEntry( o::TwObj, token::Any )
         else
             beep()
         end
-    elseif typeof( token ) <: String && ( isdigit( token ) || token =="-" ) && o.data.valueType <: Date
+    elseif typeof( token ) <: String && o.data.valueType <: Date && !in( token, [ "?", "," ] )
         insertchar( token )
         dorefresh = true
+    #=
+    elseif o.data.valueType <: Date && in( token, [ "j", "f", "m", "a", "s", "o", "n", "d" ] )
+        global rootTwScreen
+        mnames = map( x->monthabbr(x), 1:12 )
+        w = newTwPopup( rootTwScreen, mnames, :center, :center, hideunmatch=true )
+        w.data.searchbox.data.inputText = token
+        activateTwObj( w )
+        if w.value != nothing
+            i = findfirst( mnames, w.value )
+        end
+    =#
     elseif token == "?" && o.data.valueType <: Date
         global rootTwScreen
         (fieldcount, remainspacecount ) = getFieldDimension( o )
@@ -387,6 +395,7 @@ function injectTwEntry( o::TwObj, token::Any )
         activateTwObj( w )
         if typeof( w.value ) <: Date
             o.data.inputText = string( w.value )
+            checkcursor()
             dorefresh = true
         end
         unregisterTwObj( rootTwScreen, w )
@@ -395,8 +404,10 @@ function injectTwEntry( o::TwObj, token::Any )
         (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
         if v != nothing
             o.data.inputText = s
-            o.value = v
+            checkcursor()
             dorefresh = true
+        else
+            beep()
         end
     elseif typeof( token ) <: String && o.data.valueType <: Number && o.data.valueType != Bool &&
         ( isdigit( token ) || token == "," ||
@@ -436,8 +447,10 @@ function injectTwEntry( o::TwObj, token::Any )
             (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
             if v != nothing
                 o.data.inputText = s
-                o.value = v
+                checkcursor()
                 dorefresh = true
+            else
+                beep()
             end
         else
             insertchar( token )
@@ -455,6 +468,8 @@ function injectTwEntry( o::TwObj, token::Any )
             o.data.inputText = s
             checkcursor()
             retcode = :exit_ok
+        else
+            beep()
         end
     elseif token == :F1 && o.data.showHelp
         global rootTwScreen
@@ -590,11 +605,36 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
         end
     elseif dt <: Date
         v = nothing
-        try
-            v = Date( s )
+        res = [ r"[0-9]{2}[a-z]{3}[0-9]{4}"i => "dduuuyyyy",
+                r"[0-9][a-z]{3}[0-9]{4}"i => "duuuyyyy",
+                r"[0-9]{2}[a-z]{3}[0-9]{2}"i => "dduuuyy",
+                r"[0-9][a-z]{3}[0-9]{2}"i => "duuuyy",
+                r"[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}" => "yyyy-mm-dd",
+                r"[0-9]{4} [0-9]{1,2} [0-9]{1,2}" => "yyyy mm dd",
+                r"[0-9]{4}.[0-9]{1,2}.[0-9]{1,2}" => "yyyy.mm.dd",
+                r"[0-9]{4}/[0-9]{1,2}/[0-9]{1,2}" => "yyyy/mm/dd",
+                r"[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}" => "mm/dd/yyyy", # assume american
+                r"[0-9]{1,2} +[a-z]{3} +[0-9]{4}"i => "dd uuu yyyy",
+                r"[0-9]{1,2} +[a-z]{4,} +[0-9]{4}"i => "dd U yyyy",
+                r"[0-9]{8}" => "yyyymmdd"
+                ]
+        fmt = "yyyy-mm-dd"
+        for (r,f) in res
+            m = match( r, s )
+            if m != nothing
+                try
+                    v = Date( s, f )
+                end
+                if v != nothing
+                    if f != "mm/dd/yyyy" && f != "yyyymmdd"  # the more ambiguous formats
+                        fmt = f
+                    end
+                    break
+                end
+            end
         end
         if v != nothing
-            return (v,string(v))
+            return (v,Dates.format(v,fmt))
         end
     end
     return (nothing, s)
