@@ -1,12 +1,18 @@
 # popup selection widget
 # default behavior is a simple scrollable box of strings that is selectable
-# quickselect enable a searchbox
+# quickselect enable a searchbox. Users can type in a string and the cursor will jump to the first item matching 
+# that as a prefix
+
+# Additional modification of the behavior:
 # if substr is enabled, it'd search for any substr instead of a faster beginswith
 # if hideunmatched is enabled, any choice that doesn't match will be hidden. deleting the search string will revert
 # if sortmatched is enabled (usually in conjunction with substr and but not hideunmatched), a levenstein distance
 #  score will be generated and the result sorted according to the match score
 # if allownew is enabled, the search box is also an entry box to enter new text, as long as there is no match.
 #   Use trailing space to disambiguate. They will be stripped afterwards.
+
+# But if no additional modification is used, tab-completion is enabled.
+
 POPUPQUICKSELECT    = 1
 POPUPSUBSTR         = 2
 POPUPHIDEUNMATCHED  = 4
@@ -102,6 +108,32 @@ end
 
 function popup_use_datalist( o::TwObj )
     o.data.selectmode & POPUPHIDEUNMATCHED != 0 || o.data.selectmode & POPUPSORTMATCHED != 0
+end
+
+function longest_common_prefix( s1::String, s2::String )
+    m = min( length( s1 ), length( s2 ) )
+    lcpidx = 0
+    for i in 1:m
+        if s1[i] != s2[i]
+            break
+        end
+        lcpidx = i
+    end
+    return s1[ 1:lcpidx ]
+    #= Julia's utf8 substring seems tolerant enough for now, otherwise we have to do something like this
+    while lcpidx > 0
+        chr = 0
+        try
+            chr = ind2chr( s1, lcpidx )
+        catch
+            lcpidx -= 1
+        end
+        if chr != 0
+            return s1[ 1:lcpidx ]
+        end
+    end
+    return ""
+    =#
 end
 
 function rebuild_popup_datalist( o::TwObj )
@@ -292,6 +324,7 @@ function injectTwPopup( o::TwObj, token::Any )
     viewContentHeight = o.height - 2 * o.borderSizeV
 
     usedatalist = popup_use_datalist( o )
+    tabcomplete = ( o.data.selectmode & POPUPQUICKSELECT != 0 ) && (o.data.selectmode & POPUPSUBSTR == 0 )
 
     checkTop = () -> begin
         if o.data.currentTop > o.data.currentLine
@@ -401,6 +434,30 @@ function injectTwPopup( o::TwObj, token::Any )
                 dorefresh = true
             end
         end
+    elseif token == :tab && tabcomplete
+        # auto-input the search text to be the longest common prefix of the current line and the next line,
+        # as long as the current search text content can be appended.
+        nextstr = ""
+        currstr = ""
+        if usedatalist
+            if o.data.currentLine < length( o.data.datalist )
+                currstr = o.data.datalist[ o.data.currentLine     ][2]
+                nextstr = o.data.datalist[ o.data.currentLine + 1 ][2]
+            end
+        else
+            if o.data.currentLine < length( o.data.choices )
+                currstr = o.data.choices[ o.data.currentLine    ]
+                nextstr = o.data.choices[ o.data.currentLine + 1]
+            end
+        end
+        lcp = longest_common_prefix( currstr, nextstr )
+        if beginswith( lcp, o.data.searchbox.data.inputText )
+            o.data.searchbox.data.inputText = lcp
+            inject( o.data.searchbox, :ctrl_e ) # move the cursor to the end
+            dorefresh = true
+        else
+            beep()
+        end
     elseif  token == :home
         if o.data.currentTop != 1 || o.data.currentLeft != 1 || o.data.currentLine != 1
             o.data.currentTop = 1
@@ -440,7 +497,11 @@ function injectTwPopup( o::TwObj, token::Any )
         end
     elseif token == :F1
         global rootTwScreen
-        helper = newTwViewer( rootTwScreen, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+        s = o.data.helpText
+        if tabcomplete
+            s *= "tab    : tab-completion"
+        end
+        helper = newTwViewer( rootTwScreen, s, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
         unregisterTwObj( rootTwScreen, helper )
         dorefresh = true
