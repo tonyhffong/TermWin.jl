@@ -11,7 +11,7 @@ function twFuncFactory( widgetname::Symbol )
         return widgetTwFuncCache[ widgetname ]
     end
 
-    args = {}
+    args = Any[]
     modulenames = names( TermWin, true )
     for ( n, t ) in zip( names( TwFunc ), TwFunc.types )
         if n == :objtype

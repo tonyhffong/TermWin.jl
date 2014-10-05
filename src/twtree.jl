@@ -39,7 +39,7 @@ type TwTreeData
     helpText::String
     searchText::String
     moduleall::Bool
-    TwTreeData() = new( Dict{ Any, Bool }(), {}, 0, 0, 0, 0, 1, 1, 1, true, "", true, defaultTreeHelpText, "", true )
+    TwTreeData() = new( Dict{ Any, Bool }(), Any[], 0, 0, 0, 0, 1, 1, 1, true, "", true, defaultTreeHelpText, "", true )
 end
 
 function newTwTree( scr::TwScreen, ex, h::Real,w::Real,y::Any,x::Any; title = string(typeof( ex ) ), box=true, showLineInfo=true, showHelp=true, bottomText = "", tabWidth = 4, trackLine = false )
@@ -52,7 +52,7 @@ function newTwTree( scr::TwScreen, ex, h::Real,w::Real,y::Any,x::Any; title = st
     obj.borderSizeH= box ? 2 : 0
     obj.data = TwTreeData()
     obj.data.openstatemap[ {} ] = true
-    tree_data( ex, title, obj.data.datalist, obj.data.openstatemap, {}, Int[], true )
+    tree_data( ex, title, obj.data.datalist, obj.data.openstatemap, Any[], Int[], true )
     updateTreeDimensions( obj )
     obj.data.showLineInfo = showLineInfo
     obj.data.showHelp = showHelp
@@ -348,8 +348,8 @@ function injectTwTree( o::TwObj, token::Any )
     viewContentWidth = o.data.datatreewidth + o.data.datatypewidth+o.data.datavaluewidth + 2
 
     update_tree_data = ()->begin
-        o.data.datalist = {}
-        tree_data( o.value, o.title, o.data.datalist, o.data.openstatemap, {}, Int[], o.data.moduleall )
+        o.data.datalist = Any[]
+        tree_data( o.value, o.title, o.data.datalist, o.data.openstatemap, Any[], Int[], o.data.moduleall )
         updateTreeDimensions(o)
         viewContentWidth = o.data.datatreewidth + o.data.datatypewidth+o.data.datavaluewidth + 2
     end

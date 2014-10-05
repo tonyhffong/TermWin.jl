@@ -52,7 +52,7 @@ type TwPopupData
     currentTop::Int
     selectmode::Int
     helpText::String
-    TwPopupData( arr::Array{UTF8String,1} ) = new( arr, {}, maximum( map( z->length(z), arr ) ), nothing, 1, 1, 1, 0, "" )
+    TwPopupData( arr::Array{UTF8String,1} ) = new( arr, Any[], maximum( map( z->length(z), arr ) ), nothing, 1, 1, 1, 0, "" )
 end
 TwPopupData{ T<:String} ( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8( x ), arr ) )
 
@@ -137,7 +137,7 @@ function longest_common_prefix( s1::String, s2::String )
 end
 
 function rebuild_popup_datalist( o::TwObj )
-    o.data.datalist = {}
+    o.data.datalist = Any[]
     for (i, c) in enumerate( o.data.choices )
         searchstring = c
         push!( o.data.datalist, {lowercase( searchstring ), c, i, 0.0 } )
@@ -252,7 +252,7 @@ function update_popup_score( o::TwObj )
             end
         else
             if o.data.selectmode & POPUPHIDEUNMATCHED != 0
-                o.data.datalist = {}
+                o.data.datalist = Any[]
                 if o.data.selectmode & POPUPSUBSTR != 0
                     for (i,c) in enumerate( o.data.choices )
                         if contains( lowercase( c ), lowercase( searchterm ) )
