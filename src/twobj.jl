@@ -47,7 +47,7 @@ function twFuncFactory( widgetname::Symbol )
             throw( "TwFunc has unsupported field type " * string(t) )
         end
     end
-    widgetTwFuncCache[ widgetname ] = apply( TwFunc, args )
+    widgetTwFuncCache[ widgetname ] = TwFunc( args... )
 end
 
 function configure_newwinpanel!( obj::TwObj )
