@@ -331,7 +331,7 @@ function tshow( x::Any; title=titleof( x ) )
     nothing
 end
 
-function testkeydialog( remapkeypad::Bool = false )
+function testkeydialog()
     width = 42
     initsession()
     win = winnewcenter( 4, width )
@@ -345,7 +345,6 @@ function testkeydialog( remapkeypad::Bool = false )
     update_panels()
     doupdate()
     local token
-    #while( (token = readtoken( remapkeypad )) != :esc )
     while( (token = readtoken( win )) != :esc )
         if token == :nochar
             continue

@@ -214,6 +214,7 @@ function activateTwObj( o::TwObj, tokens::Any=nothing )
 end
 
 function injectTwObj( o::TwObj, k )
+    @lintpragma( "Ignore unused o")
     if k== :esc
         return :exit_nothing
     else
@@ -240,6 +241,10 @@ function moveTwObj( o::TwObj, x, y, relative::Bool, refresh::Bool=false )
     end
 end
 
-focusTwObj( o::TwObj ) = nothing
-unfocusTwObj( o::TwObj ) = nothing
+function focusTwObj( o::TwObj )
+    @lintpragma( "Ignore unused o" )
+end
+function unfocusTwObj( o::TwObj )
+    @lintpragma( "Ignore unused o" )
+end
 refreshTwObj( o::TwObj ) = (erase(o);draw(o))

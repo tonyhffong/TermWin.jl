@@ -75,6 +75,7 @@ function newTwEntry( scr::TwScreen, dt::DataType, w::Real,y::Any,x::Any; box=tru
     obj.borderSizeH= box ? 1 : 0
     obj.data = TwEntryData( dt )
     obj.data.showHelp = showHelp
+    obj.data.titleLeft = titleLeft
     h = box?3 : 1
     alignxy!( obj, h, w, x, y)
     configure_newwinpanel!( obj )
@@ -94,6 +95,7 @@ function newTwEntry( parentwin::Ptr{Void}, dt::DataType, w::Real, y::Any,x::Any;
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 1 : 0
     obj.data.showHelp = showHelp
+    obj.data.titleLeft = titleLeft
 
     h = box ? 3 : 1
     alignxy!( obj, h, w, x, y, parentwin = parentwin, derwin=true )

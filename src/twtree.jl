@@ -42,7 +42,7 @@ type TwTreeData
     TwTreeData() = new( Dict{ Any, Bool }(), Any[], 0, 0, 0, 0, 1, 1, 1, true, "", true, defaultTreeHelpText, "", true )
 end
 
-function newTwTree( scr::TwScreen, ex, h::Real,w::Real,y::Any,x::Any; title = string(typeof( ex ) ), box=true, showLineInfo=true, showHelp=true, bottomText = "", tabWidth = 4, trackLine = false )
+function newTwTree( scr::TwScreen, ex, h::Real,w::Real,y::Any,x::Any; title = string(typeof( ex ) ), box=true, showLineInfo=true, showHelp=true, bottomText = "" )
     obj = TwObj( twFuncFactory( :Tree ) )
     registerTwObj( scr, obj )
     obj.value = ex

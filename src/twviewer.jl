@@ -72,7 +72,7 @@ end
 
 function newTwViewer( scr::TwScreen, msg::String, y::Any,x::Any ; box=true, showLineInfo=true, bottomText="", showHelp=true, tabWidth = 4, trackLine = false, title="" )
     msgs = map( z->replace( z, "\t", repeat( " ", tabWidth ) ), split( msg, "\n" ) )
-    newTwViewer( scr, msgs, y, x, box=box,showLineInfo=showLineInfo, bottomText=bottomText, showHelp=showHelp, tabWidth=tabWidth, trackLine=trackLine, title="" )
+    newTwViewer( scr, msgs, y, x, box=box,showLineInfo=showLineInfo, bottomText=bottomText, showHelp=showHelp, tabWidth=tabWidth, trackLine=trackLine, title=title )
 end
 
 function viewContentDimensions( o::TwObj )
