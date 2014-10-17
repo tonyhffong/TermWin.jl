@@ -140,7 +140,7 @@ function rebuild_popup_datalist( o::TwObj )
     o.data.datalist = Any[]
     for (i, c) in enumerate( o.data.choices )
         searchstring = c
-        push!( o.data.datalist, {lowercase( searchstring ), c, i, 0.0 } )
+        push!( o.data.datalist, Any[lowercase( searchstring ), c, i, 0.0 ] )
     end
 end
 
@@ -256,13 +256,13 @@ function update_popup_score( o::TwObj )
                 if o.data.selectmode & POPUPSUBSTR != 0
                     for (i,c) in enumerate( o.data.choices )
                         if contains( lowercase( c ), lowercase( searchterm ) )
-                            push!( o.data.datalist, { lowercase( c ), c, i, search( lowercase( c ), lowercase( searchterm ) )[1] + length( c ) / needx } )
+                            push!( o.data.datalist, Any[ lowercase( c ), c, i, search( lowercase( c ), lowercase( searchterm ) )[1] + length( c ) / needx ] )
                         end
                     end
                 else
                     for (i,c) in enumerate( o.data.choices )
                         if beginswith( lowercase( c ), lowercase( searchterm ) )
-                            push!( o.data.datalist, { lowercase( c ), c, i, length(c) } )
+                            push!( o.data.datalist, Any[ lowercase( c ), c, i, length(c) ] )
                         end
                     end
                 end
@@ -467,7 +467,7 @@ function injectTwPopup( o::TwObj, token::Any )
         else
             beep()
         end
-    elseif in( token, { symbol("end") } )
+    elseif in( token, Any[ symbol("end") ] )
         if usedatalist
             n = length( o.data.datalist )
         else

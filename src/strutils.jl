@@ -79,7 +79,7 @@ function wordwrap( x::String, width::Int )
     spaceleft = width
     lines = String[]
     currline = ""
-    words = split( x, " ", true ) # don't keep empty words
+    words = @compat split( x, " ", keep=true ) # don't keep empty words
     for w in words
         wlen = length(w)
         if wlen>width && spaceleft == width

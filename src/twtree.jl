@@ -51,7 +51,7 @@ function newTwTree( scr::TwScreen, ex, h::Real,w::Real,y::Any,x::Any; title = st
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 2 : 0
     obj.data = TwTreeData()
-    obj.data.openstatemap[ {} ] = true
+    obj.data.openstatemap[ Any[] ] = true
     tree_data( ex, title, obj.data.datalist, obj.data.openstatemap, Any[], Int[], true )
     updateTreeDimensions( obj )
     obj.data.showLineInfo = showLineInfo
@@ -484,10 +484,10 @@ function injectTwTree( o::TwObj, token::Any )
     elseif token == "_"
         currentstack = copy(o.data.datalist[ o.data.currentLine ][4])
         if length( currentstack ) > 1
-            currentstack = { currentstack[1] }
+            currentstack = Any[ currentstack[1] ]
         end
         o.data.openstatemap = Dict{Any,Bool}()
-        o.data.openstatemap[ {} ] = true
+        o.data.openstatemap[ Any[] ] = true
         update_tree_data()
         prevline = o.data.currentLine
         o.data.currentLine = 1
@@ -623,7 +623,7 @@ function injectTwTree( o::TwObj, token::Any )
             searchNext( ( (token == "n" || token == :ctrl_n ) ? 1 : -1), false )
         end
         dorefresh = true
-    elseif in( token, { symbol("end") } )
+    elseif in( token, Any[ symbol("end") ] )
         if o.data.currentTop + viewContentHeight -1 < o.data.datalistlen
             o.data.currentTop = o.data.datalistlen - viewContentHeight + 1
             o.data.currentLine = o.data.datalistlen

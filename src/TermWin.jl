@@ -6,6 +6,7 @@ end
 
 module TermWin
 
+using Compat
 using Lint
 if VERSION < v"0.4-"
     @lintpragma( "Ignore undefined module Dates" )

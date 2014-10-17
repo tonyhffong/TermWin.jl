@@ -51,7 +51,7 @@ function newTwFunc( scr::TwScreen, ms::Array{Method,1},
     obj.data = TwFuncData()
     for d in ms
         s = string(d.sig)*" : " * string(d)
-        push!( obj.data.datalist, { lowercase(s), s, d, 0.0 } )
+        push!( obj.data.datalist, Any[ lowercase(s), s, d, 0.0 ] )
     end
     obj.data.datalistlen = length( ms )
     obj.data.datawidth = maximum( map( z->length( z[2] ), obj.data.datalist ))
@@ -268,7 +268,7 @@ function injectTwFunc( o::TwObj, token::Any )
         else
             beep()
         end
-    elseif in( token, { symbol("end") } )
+    elseif in( token, Any[ symbol("end") ] )
         if o.data.currentTop + o.height-2 < o.data.datalistlen
             o.data.currentTop = o.data.datalistlen - o.height+ 2
             dorefresh = true

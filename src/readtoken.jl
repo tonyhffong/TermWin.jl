@@ -1,4 +1,4 @@
-const keymap = (String=>Symbol)[
+const keymap = Compat.@Dict(
     "\eOA"    => :up,
     "\e[1;2A" => :shift_up,
     "\e[1;5A" => :ctrl_up,
@@ -99,9 +99,9 @@ const keymap = (String=>Symbol)[
     "\e\e[6~" => :alt_pagedown,
     "\e"*string(char(0x153)) => :alt_pageup,
     "\e"*string(char(0x152)) => :alt_pagedown
-]
+)
 
-ncnummap = (Int=>Symbol) [
+ncnummap = Compat.@Dict(
     int(0x7f) => :backspace,
     int(0x01) => :ctrl_a,
     int(0x02) => :ctrl_b,
@@ -254,10 +254,10 @@ ncnummap = (Int=>Symbol) [
     int(0x022d) => :ctrlshift_right,
     int(0x0232) => :ctrl_up,
     int(0x0233) => :ctrlshift_up,
-]
+)
 
 
-const keypadmap = (Symbol=>Any) [
+const keypadmap = Compat.@Dict(
     :keypad_dot => ".",
     :keypad_enter => symbol( "return" ),
     :keypad_asterisk => "*",
@@ -275,7 +275,7 @@ const keypadmap = (Symbol=>Any) [
     :keypad_7 => "7",
     :keypad_8 => "8",
     :keypad_9 => "9"
-]
+)
 
 function readtoken( win::Ptr{Void} )
     c = wgetch( win )

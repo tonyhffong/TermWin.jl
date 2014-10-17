@@ -209,7 +209,7 @@ function injectTwViewer( o::TwObj, token::Any )
         else
             beep()
         end
-    elseif in( token, { symbol("end") } )
+    elseif in( token, Any[ symbol("end") ] )
         if o.data.currentTop + o.height-2 < o.data.msglen
             o.data.currentTop = o.data.msglen - o.height+ 2
             dorefresh = true

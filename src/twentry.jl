@@ -608,7 +608,7 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
     elseif dt <: Date
         v = nothing
         s = strip( s )
-        res = [ r"^[0-9]{2}[a-z]{3}[0-9]{4}$"i => "dduuuyyyy",
+        res = Compat.@Dict( r"^[0-9]{2}[a-z]{3}[0-9]{4}$"i => "dduuuyyyy",
                 r"^[0-9][a-z]{3}[0-9]{4}$"i => "duuuyyyy",
                 r"^[0-9]{2}[a-z]{3}[0-9]{2}$"i => "dduuuyy",
                 r"^[0-9][a-z]{3}[0-9]{2}$"i => "duuuyy",
@@ -623,7 +623,7 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
                 r"^[0-9]{1,2} +[a-z]{4,} +[0-9]{4}$"i => "dd U yyyy",
                 r"^[0-9]{8}$" => "yyyymmdd",
                 r"^[0-9]{1,2} [0-9]{1,2}$" => "mm dd"
-                ]
+                )
         fmt = "yyyy-mm-dd"
         for (r,f) in res
             m = match( r, s )
