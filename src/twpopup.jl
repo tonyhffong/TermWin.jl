@@ -1,6 +1,6 @@
 # popup selection widget
 # default behavior is a simple scrollable box of strings that is selectable
-# quickselect enable a searchbox. Users can type in a string and the cursor will jump to the first item matching 
+# quickselect enable a searchbox. Users can type in a string and the cursor will jump to the first item matching
 # that as a prefix
 
 # Additional modification of the behavior:
@@ -172,9 +172,13 @@ function drawTwPopup( o::TwObj )
             s = o.data.choices[r]
         end
         endpos = o.data.currentLeft + o.width - 2 * o.borderSizeH - 1
-        s = s[ chr2ind( s, o.data.currentLeft ) : end ]
-        if length( s ) > viewContentWidth
-            s = s[ 1: chr2ind( s, viewContentWidth ) ]
+        if length(s) > 0
+            s = s[ chr2ind( s, o.data.currentLeft ) : end ]
+            if length( s ) > viewContentWidth
+                s = s[ 1: chr2ind( s, viewContentWidth ) ]
+            end
+        else
+            s = repeat( " ", viewContentWidth )
         end
 
         wattron( o.window, flag )
