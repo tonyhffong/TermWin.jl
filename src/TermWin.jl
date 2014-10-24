@@ -22,6 +22,7 @@ include( "twtypes.jl")
 include( "strutils.jl")
 include( "twobj.jl")
 include( "twscreen.jl")
+include( "twprogress.jl")
 include( "twviewer.jl")
 include( "twentry.jl")
 include( "readtoken.jl" )
@@ -31,6 +32,7 @@ include( "twpopup.jl" )
 include( "twcalendar.jl")
 
 export tshow, newTwViewer, newTwScreen, activateTwObj, unregisterTwObj
+export trun
 export TwObj, TwScreen
 export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 export newTwCalendar
@@ -302,7 +304,7 @@ function tshow( x::Any; title=titleof( x ) )
     else
         found = false
         for o in rootTwScreen.data.objects
-            if !in( objtype( o ), [ :Entry, :Viewer ] ) && isequal( o.value, x )
+            if !in( objtype( o ), [ :Entry, :Viewer, :Calendar ] ) && isequal( o.value, x )
                 raiseTwObject( o )
                 found = true
                 break
@@ -330,6 +332,63 @@ function tshow( x::Any; title=titleof( x ) )
         end
     end
     nothing
+end
+
+# f is a no-arg function
+function trun( f::Function; title="" )
+    # async start the function
+    # start the progress bar window and listen to it
+    global callcount, rootwin, rootTwScreen
+    @async begin
+        problem = false
+        updateProgressChannel( :init, nothing )
+        try
+            val = f()
+            updateProgressChannel( :done, val )
+        catch er
+            updateProgressChannel( :error, er )
+        end
+    end
+
+    ret = nothing
+
+    if callcount == 0
+        initsession()
+        callcount += 1
+        werase( rootwin )
+        try
+            o = newTwProgress( rootTwScreen, 5, 50, :center, :center, title=title )
+            if o != nothing
+                activateTwObj( rootTwScreen )
+                ret = o.value
+            end
+        catch er
+            callcount -= 1
+            endsession()
+            rethrow( er )
+        end
+        callcount -= 1
+        endsession()
+        return ret
+    else
+        found = false
+        for o in rootTwScreen.data.objects
+            if objtype( o ) == :Progress
+                raiseTwObject( o )
+                o.title = title
+                o.isvisible = true
+                found = true
+                break
+            end
+        end
+        if !found
+            o = newTwProgress( rootTwScreen, 5, 50, :center, :center, title=title )
+            o.hasFocus = true
+            rootTwScreen.data.focus = length( rootTwScreen.data.objects )
+            refresh( rootTwScreen )
+        end
+        return nothing
+    end
 end
 
 function testkeydialog()

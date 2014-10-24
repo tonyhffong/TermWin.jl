@@ -229,12 +229,18 @@ function activateTwScreen( scr::TwScreen, tokens::Any=nothing )
                 token = readtoken( scr.window )
                 status = inject( scr, token )
             else
-                token = readtoken( focusObj.window )
-                status = inject( focusObj, token )
+                global twGlobProgressData
+                if objtype(focusObj) == :Progress && isready( twGlobProgressData.statusChannel )
+                    status = inject( focusObj, :progressupdate )
+                else
+                    token = readtoken( focusObj.window )
+                    status = inject( focusObj, token )
+                end
             end
             if handleStatus( status, token ) == :really_exit
                 return retvalue
             end
+            sleep(0.01) # this is important or @async task won't run
         end
     else
         for token in tokens
