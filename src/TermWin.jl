@@ -339,6 +339,8 @@ function trun( f::Function; title="" )
     # async start the function
     # start the progress bar window and listen to it
     global callcount, rootwin, rootTwScreen
+    @lintpragma( "Ignore unused f")
+
     @async begin
         problem = false
         updateProgressChannel( :init, nothing )
