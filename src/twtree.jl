@@ -9,6 +9,7 @@ ctrl_arrow : jump to the start/end of the line
 _          : collapse all
 /          : search dialog
 F6         : popup window for value
+Shift-F6   : popup window for type
 n, p       : Move to next/previous matched line
 m          : (Module Only) toggle export-only vs all names
 """
@@ -19,6 +20,8 @@ typefields  = Dict{ Any, Array{ Symbol, 1 } }()
 
 typefields[ Method ] = [ :sig ]
 typefields[ LambdaStaticData ] = [ :name, :module, :file, :line ]
+typefields[ DataType ] = [ :name, :super, symbol( "abstract" ), :mutable ]
+typefields[ TypeName ] = [ :name, :module, :primary ]
 
 treeTypeMaxWidth = 40
 treeValueMaxWidth = 40
@@ -82,7 +85,8 @@ function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict
         end
     end
     if typx == Symbol || typx <: Number ||
-        typx == Any || typx == DataType ||
+        typx == Any ||
+        ( typx == DataType && !isempty( stack ) ) || # so won't expand deep
         typx <: Ptr || typx <: String
         s = string( name )
         t = string( typx )
@@ -544,6 +548,19 @@ function injectTwTree( o::TwObj, token::Any )
             end
         elseif !in( v, [ nothing, None, Any ] )
             tshow( v, title=string(lastkey) )
+            dorefresh = true
+        end
+    elseif token == :shift_F6
+        stack = copy( o.data.datalist[ o.data.currentLine ][4] )
+        if !isempty( stack )
+            lastkey = stack[end]
+        else
+            lastkey = o.title
+        end
+        v = getvaluebypath( o.value, stack )
+        vtyp = typeof( v )
+        if !in( v, [ nothing, None, Any ] )
+            tshow( vtyp )
             dorefresh = true
         end
     elseif token == :up
