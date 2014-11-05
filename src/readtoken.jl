@@ -285,7 +285,7 @@ function readtoken( win::Ptr{Void} )
         # for quite some time...
         # so sometimes I get a single key code, but sometimes I get
         # a sequence of escape codes
-        while( ( nc = wgetch(win ) ) != char(-1) )
+        while( ( nc = wgetch(win ) ) != 0xff )
             s *= string(char(nc))
             if haskey( keymap, s ) # greedy matching
                 break
@@ -306,7 +306,7 @@ function readtoken( win::Ptr{Void} )
         end
         return ret
     end
-    if c == char(-1)
+    if c == 0xff
         return :nochar
     end
     if c < 192 || c > 253

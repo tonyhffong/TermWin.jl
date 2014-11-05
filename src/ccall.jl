@@ -78,7 +78,7 @@ function box( win, vchr, hchr )
 end
 
 function wgetch( win::Ptr{Void } )
-    ccall( dlsym( libncurses, :wgetch ), Int, (Ptr{Void},), win )
+    ccall( dlsym( libncurses, :wgetch ), Uint8, (Ptr{Void},), win )
 end
 
 function keypad( win, bf )
