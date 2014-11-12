@@ -20,7 +20,7 @@ typefields  = Dict{ Any, Array{ Symbol, 1 } }()
 
 typefields[ Method ] = [ :sig, :isstaged ]
 typefields[ LambdaStaticData ] = [ :name, :module, :file, :line ]
-typefields[ DataType ] = [ :name, :super, symbol( "abstract" ), :mutable ]
+typefields[ DataType ] = [ :name, :super, symbol( "abstract" ), :mutable, :parameters ]
 typefields[ TypeName ] = [ :name, :module, :primary ]
 
 treeTypeMaxWidth = 40
@@ -106,12 +106,16 @@ function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict
         push!( list, (s, t, v, stack, :single, skiplines ) )
     elseif typx <: Array || typx <: Tuple
         s = string( name )
+        len = length(x)
         if typx <: Tuple
-            t = "Tuple"
+            if len <= 2
+                t = string( typx )
+            else
+                t = "Tuple"
+            end
         else
             t = string( typx)
         end
-        len = length(x)
         szstr = string( len )
         v = "size=" * szstr
         expandhint = isempty(x) ? :single : (isexp ? :open : :close )
