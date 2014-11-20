@@ -495,32 +495,51 @@ function formatCommas( n::Int )
     len = length(s)
     t = ""
     for i in 1:3:len
-        if t != ""
-            t = s[max(1,len-i-1):len-i+1] *"," * t
+        subs = s[max(1,len-i-1):len-i+1]
+        if i == 1
+            t = subs
         else
-            t = s[max(1,len-i-1):len-i+1]
+            if subs == "-"
+                t = subs * t
+            else
+                t = subs * "," * t
+            end
         end
     end
     return t
 end
 
-function formatCommas( v::Real, fieldcount::Int )
+function formatCommas{T<:Real}( v::T, fieldcount::Int )
     if typeof(v) <: FloatingPoint
         s = string( v )
+        if !contains( s, "e" )
+            ip = trunc( v )
+            dpos = findfirst( s, "." )
+            ips = formatCommas( int( ip ) )
+            if dpos == 0
+                s = ips
+            else
+                s = ips * s[dpos:end]
+            end
+            if length(s) > fieldcount-1
+                s = replace( s, ",", "", length(s)-fieldcount+1 )
+            end
+        end
     elseif typeof( v ) <: Rational # assume int
         ip,remp = divrem( v.num, v.den )
         ips = formatCommas( ip )
-        rems = string( float( remp / v.den ))
-        #println( remp, " ", v.den, " ", float( remp / v.den ), " ", ip, " ", rems )
+        rems = string( float( abs( remp ) / v.den ))
         s = ips * rems[2:end]
         if length(s) > fieldcount-1
             s = replace( s, ",", "", length(s)-fieldcount+1 )
         end
-    else # assume int
+    elseif typeof( v ) <: Integer  # assume int
         s=formatCommas(v )
         if length(s) > fieldcount-1
             s = replace( s, ",", "", length(s)-fieldcount+1 )
         end
+    else # BigFloat?
+        throw( "formatCommas: Cannot handle Real subtype " * String( T ) )
     end
     return s
 end
@@ -580,14 +599,14 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
                     iv = parseint( dt.types[1], stmp[1:dpos-1] )
                 end
                 if dpos == length( stmp )
-                    fv = 0
+                    fv = 0 // 1
                 else
                     tail = stmp[dpos+1:end]
                     fv = parseint( dt.types[2], tail ) // ( 10 ^ length(tail) )
                 end
             end
             if iv != nothing && fv != nothing
-                v = iv + fv
+                v = iv + (sign(iv) > 0? fv : -fv )
                 return (v, formatCommas( v, fieldcount ))
             end
         end
