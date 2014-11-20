@@ -539,7 +539,7 @@ function formatCommas{T<:Real}( v::T, fieldcount::Int )
             s = replace( s, ",", "", length(s)-fieldcount+1 )
         end
     else # BigFloat?
-        throw( "formatCommas: Cannot handle Real subtype " * String( T ) )
+        throw( "formatCommas: Cannot handle Real subtype " * string( T ) )
     end
     return s
 end
