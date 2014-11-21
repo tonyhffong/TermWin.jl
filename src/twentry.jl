@@ -514,7 +514,7 @@ function formatCommas{T<:Real}( v::T, fieldcount::Int )
         s = string( v )
         if !contains( s, "e" )
             ip = trunc( v )
-            dpos = findfirst( s, "." )
+            dpos = findfirst( s, '.' )
             ips = formatCommas( int( ip ) )
             if dpos == 0
                 s = ips
