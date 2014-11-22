@@ -49,14 +49,28 @@ type TwEntryData
     titleLeft::Bool
     overwriteMode::Bool
     limitToWidth::Bool # TODO: not implemented yet
+    precision::Any
+    commas::Bool
+    stripzeros::Bool
+    conversion::ASCIIString
     function TwEntryData( dt::DataType )
-        o = new( dt, false, "", "", 1, 1, 0, true, false, false )
+        o = new( dt, false, "", "", 1, 1, 0, true, false, false,
+        nothing, true, true, "" )
         if dt <: String
             o.helpText = defaultEntryStringHelpText
+            o.conversion = "s"
         elseif dt <: Number
             o.helpText = defaultEntryNumberHelpText
+            if dt <: Unsigned
+                o.conversion = "x"
+            elseif dt <: Integer
+                o.conversion = "d"
+            else
+                o.conversion = "f"
+            end
         elseif dt <: Date
             o.helpText = defaultEntryDateHelpText
+            o.conversion = ""
         end
         o
     end
@@ -66,7 +80,9 @@ end
 # standalone panel
 # as a subwin as part of another widget (see next function)
 # w include title width, if it's shown on the left
-function newTwEntry( scr::TwScreen, dt::DataType, w::Real,y::Any,x::Any; box=true, showHelp=true, titleLeft = true, title = "" )
+function newTwEntry( scr::TwScreen, dt::DataType, w::Real,y::Any,x::Any;
+    box=true, showHelp=true, titleLeft = true, title = "",
+    precision=nothing, stripzeros= (precision == nothing), conversion="" )
     obj = TwObj( twFuncFactory( :Entry ) )
     registerTwObj( scr, obj )
     obj.box = box
@@ -76,6 +92,11 @@ function newTwEntry( scr::TwScreen, dt::DataType, w::Real,y::Any,x::Any; box=tru
     obj.data = TwEntryData( dt )
     obj.data.showHelp = showHelp
     obj.data.titleLeft = titleLeft
+    obj.data.precision = precision
+    obj.data.stripzeros = stripzeros
+    if conversion != ""
+        obj.data.conversion = conversion
+    end
     h = box?3 : 1
     alignxy!( obj, h, w, x, y)
     configure_newwinpanel!( obj )
@@ -86,7 +107,9 @@ end
 # register it to a screen
 # so to use it, the container widget must keep track of its update and input
 # y and x is relative to parentwin
-function newTwEntry( parentwin::Ptr{Void}, dt::DataType, w::Real, y::Any,x::Any; box=true, showHelp=true, titleLeft=true, title = "" )
+function newTwEntry( parentwin::Ptr{Void}, dt::DataType, w::Real, y::Any,x::Any;
+    box=true, showHelp=true, titleLeft=true, title = "",
+    precision=nothing, stripzeros= (precision == nothing ), conversion="" )
     obj = TwObj( twFuncFactory( :Entry ) )
     parbegy, parbegx = getwinbegyx( parentwin )
     obj.data = TwEntryData( dt )
@@ -96,6 +119,11 @@ function newTwEntry( parentwin::Ptr{Void}, dt::DataType, w::Real, y::Any,x::Any;
     obj.borderSizeH= box ? 1 : 0
     obj.data.showHelp = showHelp
     obj.data.titleLeft = titleLeft
+    obj.data.precision = precision
+    obj.data.stripzeros = stripzeros
+    if conversion != ""
+        obj.data.conversion = conversion
+    end
 
     h = box ? 3 : 1
     alignxy!( obj, h, w, x, y, parentwin = parentwin, derwin=true )
@@ -254,24 +282,24 @@ function injectTwEntry( o::TwObj, token::Any )
         retcode = :exit_nothing
     elseif token == :shift_up && o.data.valueType <: Real && o.data.tickSize != 0
         (fieldcount, remainspacecount ) = getFieldDimension( o )
-        (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
+        (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
         if v != nothing
             v += o.data.tickSize
             o.value = v
-            o.data.inputText = formatCommas( v, fieldcount )
+            o.data.inputText = myNumFormat( o.value, o.data, fieldcount )
             checkcursor()
             dorefresh = true
         end
     elseif token == :shift_down && o.data.valueType <: Real && o.data.tickSize != 0
         (fieldcount, remainspacecount ) = getFieldDimension( o )
-        (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
+        (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
         if v != nothing
             if o.data.valueType <: Unsigned && v < o.data.tickSize
                 v = convert( o.data.valueType, 0 )
             else
                 v -= o.data.tickSize
             end
-            o.data.inputText = formatCommas( v, fieldcount )
+            o.data.inputText = myNumFormat( o.value, o.data, fieldcount )
             checkcursor()
             dorefresh = true
         end
@@ -351,10 +379,10 @@ function injectTwEntry( o::TwObj, token::Any )
         dorefresh = true
     elseif token == "m"  && o.data.valueType <: Real && o.data.valueType != Bool # add 000
         (fieldcount, remainspacecount ) = getFieldDimension( o )
-        (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
+        (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
         if v!=nothing
             o.value = v * 1000
-            o.data.inputText = formatCommas( o.value, fieldcount )
+            o.data.inputText = myNumFormat( o.value, o.data, fieldcount )
             checkcursor()
             dorefresh = true
         else
@@ -389,7 +417,7 @@ function injectTwEntry( o::TwObj, token::Any )
     elseif token == "?" && o.data.valueType <: Date
         global rootTwScreen
         (fieldcount, remainspacecount ) = getFieldDimension( o )
-        (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
+        (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
         if v == nothing
             v = today()
         end
@@ -403,7 +431,7 @@ function injectTwEntry( o::TwObj, token::Any )
         unregisterTwObj( rootTwScreen, w )
     elseif token == "," && o.data.valueType <: Date
         (fieldcount, remainspacecount ) = getFieldDimension( o )
-        (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
+        (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
         if v != nothing
             o.data.inputText = s
             checkcursor()
@@ -446,7 +474,7 @@ function injectTwEntry( o::TwObj, token::Any )
             end
         elseif token == "," # try to add commas to all
             (fieldcount, remainspacecount ) = getFieldDimension( o )
-            (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
+            (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
             if v != nothing
                 o.data.inputText = s
                 checkcursor()
@@ -464,7 +492,7 @@ function injectTwEntry( o::TwObj, token::Any )
         dorefresh = true
     elseif token == :enter || token == symbol( "return" )
         (fieldcount, remainspacecount ) = getFieldDimension( o )
-        (v,s) = evalNFormat( o.data.valueType, o.data.inputText, fieldcount )
+        (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
         if v != nothing
             o.value = v
             o.data.inputText = s
@@ -490,64 +518,21 @@ function injectTwEntry( o::TwObj, token::Any )
     return retcode
 end
 
-function formatCommas( n::Int )
-    s = string( n )
-    len = length(s)
-    t = ""
-    for i in 1:3:len
-        subs = s[max(1,len-i-1):len-i+1]
-        if i == 1
-            t = subs
-        else
-            if subs == "-"
-                t = subs * t
-            else
-                t = subs * "," * t
-            end
-        end
+function myNumFormat( v, data::TwEntryData, fieldcount::Int )
+    s = format(v,
+        precision=data.precision,
+        commas=data.commas, stripzeros=data.stripzeros,
+        conversion=data.conversion )
+    if length(s) > fieldcount
+        s = replace( s, ",", "", length(s)-fieldcount )
     end
-    return t
+    s
 end
 
-function formatCommas{T<:Real}( v::T, fieldcount::Int )
-    if typeof(v) <: FloatingPoint
-        s = string( v )
-        if !contains( s, "e" )
-            ip = trunc( v )
-            dpos = findfirst( s, '.' )
-            ips = formatCommas( int( ip ) )
-            if dpos == 0
-                s = ips
-            else
-                s = ips * s[dpos:end]
-            end
-            if length(s) > fieldcount-1
-                s = replace( s, ",", "", length(s)-fieldcount+1 )
-            end
-        end
-    elseif typeof( v ) <: Rational # assume int
-        ip,remp = divrem( v.num, v.den )
-        ips = formatCommas( ip )
-        rems = string( float( abs( remp ) / v.den ))
-        s = ips * rems[2:end]
-        if length(s) > fieldcount-1
-            s = replace( s, ",", "", length(s)-fieldcount+1 )
-        end
-    elseif typeof( v ) <: Integer  # assume int
-        s=formatCommas(v )
-        if length(s) > fieldcount-1
-            s = replace( s, ",", "", length(s)-fieldcount+1 )
-        end
-    else # BigFloat?
-        throw( "formatCommas: Cannot handle Real subtype " * string( T ) )
-    end
-    return s
-end
-
-function evalNFormat( dt::DataType, s::String, fieldcount::Int )
+function evalNFormat( data::TwEntryData, s::String, fieldcount::Int )
     @lintpragma( "Ignore unstable type variable v")
     @lintpragma( "Ignore unstable type variable iv")
-    @lintpragma( "Ignore unstable type variable fv")
+    dt = data.valueType
     if dt <: String
         return( s, s )
     elseif dt == Bool
@@ -566,12 +551,12 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
             if length(stmp)==0
                 v = 0.0
             else
-                v = parsefloat( dt, replace( s, ",", "" ) )
+                v = parsefloat( dt, stmp )
             end
         end
         if v != nothing
             v = convert(dt, v)
-            return (v, formatCommas( v, fieldcount ))
+            return (v, myNumFormat( v, data, fieldcount ) )
         end
     elseif dt <: Rational
         v = nothing
@@ -587,7 +572,7 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
             end
             if v != nothing
                 v = convert( dt, v)
-                return (v, formatCommas( v, fieldcount ))
+                return (v, myNumFormat( v, data, fieldcount ) )
             end
         else
             iv = nothing
@@ -607,7 +592,7 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
             end
             if iv != nothing && fv != nothing
                 v = iv + (sign(iv) > 0? fv : -fv )
-                return (v, formatCommas( v, fieldcount ))
+                return (v, myNumFormat( v, data, fieldcount ) )
             end
         end
     elseif dt <: Integer # assume int
@@ -622,7 +607,7 @@ function evalNFormat( dt::DataType, s::String, fieldcount::Int )
         end
         if v != nothing
             v = convert( dt, v)
-            return (v, formatCommas( v, fieldcount ))
+            return (v, myNumFormat( v, data, fieldcount ) )
         end
     elseif dt <: Date
         v = nothing

@@ -8,6 +8,8 @@ module TermWin
 
 using Compat
 using Lint
+using NumFormat
+
 if VERSION < v"0.4-"
     @lintpragma( "Ignore undefined module Dates" )
     using Dates
