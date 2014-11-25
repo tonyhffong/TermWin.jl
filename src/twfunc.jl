@@ -151,7 +151,12 @@ function drawTwFunc( o::TwObj )
     end
     for r in o.data.currentTop:min( o.data.currentTop + viewContentHeight - 1, o.data.datalistlen )
         line = o.data.datalist[r][2]
-        line = line[ chr2ind( line, o.data.currentLeft ):end ]
+        if o.data.currentLeft <= length( line )
+            i = chr2ind( line, o.data.currentLeft )
+            line = line[ i:end ]
+        else
+            line = ""
+        end
         if length( line ) > viewContentWidth
             line = line[ 1: chr2ind( line, viewContentWidth ) ]
         end
