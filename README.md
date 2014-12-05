@@ -5,7 +5,8 @@
 
 ## Introduction
 
-TermWin.jl is a tool to help navigate deep data structure such as `Expr`, `Dict`, `Array`, `Module`.
+TermWin.jl is a tool to help navigate deep data structure such as `Expr`, `Dict`, `Array`, `Module`, and
+`DataFrame`
 It uses a ncurses-based user interface.
 It also contains a backend framework for composing ncurses user interfaces.
 
@@ -30,6 +31,8 @@ UTF-8 input and output are supported. That said, in an entry field,
 cursor movements may produce dodgy behavior if typing order and visual order
 can be different e.g. Thai's prefix-vowels. Most European typesets,
 Han characters, currency symbols, e.g. €, £, are fine.
+
+Date input support.
 
 Mouse support.
 
