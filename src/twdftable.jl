@@ -390,7 +390,12 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
 
     # construct colInfo for each col in finalcolorder
     for c in finalcolorder
-        @lintpragma( "DataFrame is a container type" )
+        if VERSION <= v"0.3"
+            @lintpragma( "DataFrame is a container type" )
+        else
+            @lintpragma( "DataFrames.DataFrame is a container type" )
+        end
+
         t = eltype( df[ c ] )
         hdr = get( headerHints, c, string( c ) )
         fmt = get( formatHints, c,
