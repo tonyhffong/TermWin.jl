@@ -390,6 +390,7 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
 
     # construct colInfo for each col in finalcolorder
     for c in finalcolorder
+        @lintpragma( "DataFrame is a container type" )
         t = eltype( df[ c ] )
         hdr = get( headerHints, c, string( c ) )
         fmt = get( formatHints, c,
@@ -536,12 +537,12 @@ function drawTwDfTable( o::TwObj )
         mvwprintw( o.window, 0, int( ( o.width - length(titlestr) )/2 ), "%s", titlestr )
     end
     if o.data.datalistlen <= viewContentHeight
-        info = "ALL"
+        msg = "ALL"
     else
-        info = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.datalistlen,
+        msg = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.datalistlen,
             o.data.currentLine / o.data.datalistlen * 100 )
     end
-    mvwprintw( o.window, 0, o.width - length(info)-3, "%s", info )
+    mvwprintw( o.window, 0, o.width - length(msg)-3, "%s", msg )
     updateTableDimensions( o )
 
     # header row(s)

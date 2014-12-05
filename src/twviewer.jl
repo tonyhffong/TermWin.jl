@@ -105,17 +105,17 @@ function drawTwViewer( o::TwObj )
     end
     if o.data.showLineInfo
         if o.data.msglen <= o.height - 2 * o.borderSizeV
-            info = "ALL"
+            msg = "ALL"
         else
             if o.data.trackLine
-                info = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.msglen,
+                msg = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.msglen,
                     o.data.currentLine / o.data.msglen * 100 )
             else
-                info = @sprintf( "%d/%d %5.1f%%", o.data.currentTop, o.data.msglen,
+                msg = @sprintf( "%d/%d %5.1f%%", o.data.currentTop, o.data.msglen,
                     o.data.currentTop / (o.data.msglen - o.height + 2 * o.borderSizeV ) * 100 )
             end
         end
-        mvwprintw( o.window, 0, o.width - length(info)-3, "%s", info )
+        mvwprintw( o.window, 0, o.width - length(msg)-3, "%s", msg )
     end
     for r in o.data.currentTop:min( o.data.currentTop + viewContentHeight - 1, o.data.msglen )
         s = o.data.messages[r]

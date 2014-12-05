@@ -298,12 +298,12 @@ function drawTwTree( o::TwObj )
     end
     if o.data.showLineInfo && o.box
         if o.data.datalistlen <= viewContentHeight
-            info = "ALL"
+            msg = "ALL"
         else
-            info = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.datalistlen,
+            msg = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.datalistlen,
                 o.data.currentLine / o.data.datalistlen * 100 )
         end
-        mvwprintw( o.window, 0, o.width - length(info)-3, "%s", info )
+        mvwprintw( o.window, 0, o.width - length(msg)-3, "%s", msg )
     end
     for r in o.data.currentTop:min( o.data.currentTop + viewContentHeight - 1, o.data.datalistlen )
         stacklen = length( o.data.datalist[r][4])
@@ -387,21 +387,21 @@ function injectTwTree( o::TwObj, token::Any )
     end
 
     searchNext = (step, trivialstop)->begin # if the currentLine contains the term, is it a success?
-        start = o.data.currentLine
+        local st = o.data.currentLine
         o.data.searchText = lowercase(o.data.searchText)
-        i = trivialstop ? start : ( mod( start-1+step, o.data.datalistlen ) + 1 )
+        i = trivialstop ? st : ( mod( st-1+step, o.data.datalistlen ) + 1 )
         while true
             if contains( lowercase( o.data.datalist[i][1]), o.data.searchText ) ||
                 contains( lowercase( o.data.datalist[i][3]), o.data.searchText )
                 o.data.currentLine = i
-                if abs( i-start ) > viewContentHeight
+                if abs( i-st ) > viewContentHeight
                     o.data.currentTop = o.data.currentLine - (viewContentHeight>>1)
                 end
                 checkTop()
                 return i
             end
             i = mod( i-1+step, o.data.datalistlen ) + 1
-            if i == start
+            if i == st
                 beep()
                 return 0
             end

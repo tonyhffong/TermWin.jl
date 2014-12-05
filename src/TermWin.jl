@@ -7,7 +7,6 @@ end
 module TermWin
 
 using Compat
-using Lint
 using Formatting
 
 if VERSION < v"0.4-"
@@ -44,6 +43,9 @@ export newTwPopup
 export newTwDfTable, DataFrameAggr, uniqvalue
 export twFuncFactory, registerTwObj
 export COLOR_PAIR
+
+macro lintpragma( s )
+end
 
 rootwin = nothing
 rootTwScreen = nothing
@@ -126,9 +128,9 @@ function initsession()
         wtimeout( rootwin, 100 )
         curs_set( 0 )
         rootTwScreen = newTwScreen( rootwin )
-        info = string( char( 0xb83) ) * " TermWin: Please wait ..."
+        msg = string( char( 0xb83) ) * " TermWin: Please wait ..."
         mvwprintw( rootwin, int( rootTwScreen.height / 2),
-            int( ( rootTwScreen.width - length(info))/2), "%s", info )
+            int( ( rootTwScreen.width - length(msg))/2), "%s", msg)
         wrefresh( rootwin )
     else
         # in case the terminal has been resized
@@ -200,11 +202,11 @@ function tshow_( x; title = string( typeof( x ) ) )
 end
 
 function tshow_( x::String; title = string(typeof( x )) )
-    position = :center
+    pos = :center
     if length(x) > 100
-        position = :staggered
+        pos = :staggered
     end
-    newTwViewer( rootTwScreen, x, position, position, bottomText = "F1: Help  Esc: Exit", title=title )
+    newTwViewer( rootTwScreen, x, pos, pos, bottomText = "F1: Help  Esc: Exit", title=title )
 end
 
 function tshow_( f::Function; title="Function" )

@@ -63,7 +63,7 @@ end
 
 function setTwFocusNext( scr::TwScreen )
     n = scr.data.focus
-    first = n
+    fst = n
     result = nothing
     while true
         n +=1
@@ -75,7 +75,7 @@ function setTwFocusNext( scr::TwScreen )
             result = o
             break
         end
-        if n == first
+        if n == fst
             break
         end
     end
@@ -89,7 +89,7 @@ end
 
 function setTwFocusPrevious( scr::TwScreen )
     n = scr.data.focus
-    first = n
+    fst = n
     result = nothing
     while true
         n -=1
@@ -101,7 +101,7 @@ function setTwFocusPrevious( scr::TwScreen )
             result = o
             break
         end
-        if n == first
+        if n == fst
             break
         end
     end

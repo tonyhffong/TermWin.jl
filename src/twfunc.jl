@@ -142,12 +142,12 @@ function drawTwFunc( o::TwObj )
     end
     if o.data.showLineInfo
         if o.data.datalistlen <= o.height - 2 * o.borderSizeV
-            info = "ALL"
+            msg = "ALL"
         else
-            info = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.datalistlen,
+            msg = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.datalistlen,
                 o.data.currentLine / o.data.datalistlen * 100 )
         end
-        mvwprintw( o.window, 0, o.width - length(info)-3, "%s", info )
+        mvwprintw( o.window, 0, o.width - length(msg)-3, "%s", msg )
     end
     for r in o.data.currentTop:min( o.data.currentTop + viewContentHeight - 1, o.data.datalistlen )
         line = o.data.datalist[r][2]

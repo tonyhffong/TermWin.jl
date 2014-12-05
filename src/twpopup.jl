@@ -65,11 +65,10 @@ function newTwPopup{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::Any;
         quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false )
     obj = TwObj( twFuncFactory( :Popup ) )
     registerTwObj( scr, obj )
-    box = true
-    obj.box = box
+    obj.box = true
     obj.title = title
-    obj.borderSizeV= box ? 1 : 0
-    obj.borderSizeH= box ? 1 : 0
+    obj.borderSizeV= 1
+    obj.borderSizeH= 1
     obj.data = TwPopupData( arr )
     if quickselect
         obj.data.selectmode |= POPUPQUICKSELECT
@@ -96,8 +95,8 @@ function newTwPopup{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::Any;
         obj.data.helpText = defaultPopupHelpText
     end
 
-    h = (box?2 : 0) + min( length( arr ), maxheight )
-    w = (box?2 : 0) + max( min( max( length( title ), obj.data.maxchoicelength ), maxwidth ), minwidth )
+    h = 2 + min( length( arr ), maxheight )
+    w = 2 + max( min( max( length( title ), obj.data.maxchoicelength ), maxwidth ), minwidth )
     alignxy!( obj, h, w, x, y)
     configure_newwinpanel!( obj )
 
