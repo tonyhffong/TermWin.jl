@@ -8,15 +8,16 @@ module TermWin
 
 using Compat
 using Lint
-using NumFormat
+using Formatting
 
 if VERSION < v"0.4-"
-    @lintpragma( "Ignore undefined module Dates" )
     using Dates
 else
-    @lintpragma( "Ignore undefined module Base.Dates" )
     using Base.Dates
 end
+
+using DataArrays
+using DataFrames
 
 include( "consts.jl")
 include( "ccall.jl" )
@@ -32,6 +33,7 @@ include( "twtree.jl" )
 include( "twfunc.jl" )
 include( "twpopup.jl" )
 include( "twcalendar.jl")
+include( "twdftable.jl" )
 
 export tshow, newTwViewer, newTwScreen, activateTwObj, unregisterTwObj
 export trun
@@ -39,6 +41,7 @@ export TwObj, TwScreen
 export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 export newTwCalendar
 export newTwPopup
+export newTwDfTable, DataFrameAggr, uniqvalue
 export twFuncFactory, registerTwObj
 export COLOR_PAIR
 
@@ -225,6 +228,10 @@ function tshow_( ms::Array{Method,1}; title="Methods" )
     newTwFunc( rootTwScreen, ms, 25, 80, :staggered, :staggered, title=title )
 end
 
+function tshow_( df::DataFrame; title="DataFrame", kwargs... )
+    newTwDfTable( rootTwScreen, df, 1.0, 1.0, :center,:center; title=title, kwargs... )
+end
+
 function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
     global rootwin
     (maxy, maxx) = getwinmaxyx( rootwin )
@@ -285,14 +292,14 @@ function titleof( x::Any )
     end
 end
 
-function tshow( x::Any; title=titleof( x ) )
+function tshow( x::Any; title=titleof( x ), kwargs... )
     global callcount, rootwin, rootTwScreen
     if callcount == 0
         initsession()
         callcount += 1
         werase( rootwin )
         try
-            widget = tshow_( x, title=title )
+            widget = tshow_( x; title=title, kwargs... )
             if widget != nothing
                 activateTwObj( rootTwScreen )
             end
