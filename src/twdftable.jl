@@ -390,7 +390,7 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
 
     # construct colInfo for each col in finalcolorder
     for c in finalcolorder
-        if VERSION <= v"0.3"
+        if VERSION < v"0.4.0-dev+1930"
             @lintpragma( "DataFrame is a container type" )
         else
             @lintpragma( "DataFrames.DataFrame is a container type" )
