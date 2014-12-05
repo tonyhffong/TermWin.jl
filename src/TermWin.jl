@@ -18,6 +18,9 @@ end
 using DataArrays
 using DataFrames
 
+macro lintpragma( s )
+end
+
 include( "consts.jl")
 include( "ccall.jl" )
 include( "twtypes.jl")
@@ -44,8 +47,6 @@ export newTwDfTable, DataFrameAggr, uniqvalue
 export twFuncFactory, registerTwObj
 export COLOR_PAIR
 
-macro lintpragma( s )
-end
 
 rootwin = nothing
 rootTwScreen = nothing
