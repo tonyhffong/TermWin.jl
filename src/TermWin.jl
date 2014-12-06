@@ -43,7 +43,7 @@ export TwObj, TwScreen
 export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 export newTwCalendar
 export newTwPopup
-export newTwDfTable, DataFrameAggr, uniqvalue
+export newTwDfTable, DataFrameAggr, uniqvalue, unionall
 export twFuncFactory, registerTwObj
 export COLOR_PAIR
 

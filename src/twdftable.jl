@@ -74,6 +74,22 @@ function applyformat( v::Union(Date,DateTime), fmt::FormatHints )
     Dates.format( v, fmt.conversion )
 end
 
+function applyformat{T<:String}( v::T, fmt::FormatHints )
+    return v
+end
+
+function applyformat( v::AbstractArray, fmt::FormatHints )
+    strs = UTF8String[]
+    for s in v
+        push!( strs, applyformat( s, fmt ) )
+    end
+    join( strs, "," )
+end
+
+function applyformat( v, fmt::FormatHints )
+    return string( v )
+end
+
 #=
 @doc """
 Facilities to help map GUI input / expression into a function that aggregates columns.
@@ -185,7 +201,7 @@ function DataFrameAggr( ex::Union( Expr, Symbol ) )
             return ( DataFrameAggrCache[ex] = DataFrameAggr( l, (DataFrame,) ) )
         end
     end
-    error( "No usable method. Accepts (DataArray/PDA,) or (DataFrame,args...)" )
+    error( string( v ) * ": No usable method. Accepts (DataArray/PDA,) or (DataFrame,args...)" )
 end
 
 function DataFrameAggr( ::Type{} )
@@ -194,6 +210,29 @@ end
 
 function DataFrameAggr{T<:Real}( ::Type{T} )
     DataFrameAggr( "sum" )
+end
+
+function DataFrameAggr{T}( ::Type{Array{T,1}} )
+    DataFrameAggr( "unionall" )
+end
+
+function unionall( x::AbstractDataArray )
+    l = dropna( x )
+    t = eltype( eltype( x ) )
+    s = Set{t}()
+    for el in l
+        push!( s, el... )
+    end
+    collect( s )
+end
+
+function unionall( x::Array )
+    t = eltype( eltype( x ) )
+    s = Set{t}()
+    for el in x
+        push!( s, el... )
+    end
+    collect( s )
 end
 
 function uniqvalue( x::AbstractDataArray; skipna::Bool=true )
@@ -211,7 +250,7 @@ function uniqvalue( x::AbstractDataArray; skipna::Bool=true )
     return NA
 end
 
-function uniqvalue{T<:String}( x::Union( DataArray{T}, PooledDataArray{T} ); skipna::Bool=true, skipempty::Bool=true )
+function uniqvalue{T<:String}( x::Union( Array{T}, DataArray{T}, PooledDataArray{T} ); skipna::Bool=true, skipempty::Bool=true )
     levels = DataArrays.levels(x)
     if skipna
         l = dropna( levels )
@@ -674,10 +713,9 @@ function drawTwDfTable( o::TwObj )
                     str = repeat( " ", width - length(str) ) * str
                 end
                 isred =  v < 0
-            elseif typeof( v ) <: String
-                str = ensure_length( v, width )
             else
-                str = ensure_length( string(v), width )
+                str = applyformat( v, o.data.colInfo[col].format )
+                str = ensure_length( str, width )
             end
             flags = 0
             if col == o.data.currentCol && r == o.data.currentLine
