@@ -7,7 +7,7 @@ End        : jump to the end
 ctrl_left/right arrow: paginate to left/right
 [, ]       : make current column narrower/wider
 ctrl_up    : move up to the start of the current branch or previous branch
-ctrl_down  : move up to the next branch
+ctrl_down  : move down to the next branch
 _          : collapse all
 /          : search dialog
 F2         : Change pivot
@@ -898,7 +898,49 @@ function injectTwDfTable( o::TwObj, token::Any )
             beep()
         end
     elseif token == :ctrl_down
+        curr = o.data.currentLine
+        stack = o.data.datalist[curr][2]
+        if isempty( stack )
+            beep()
+        else
+            if o.data.datalist[curr][3] == :single
+                tmpstack = copy( stack )
+                pop!( tmpstack )
+            else
+                tmpstack = stack
+            end
+            for r in curr+1:length(o.data.datalist )
+                rstack = o.data.datalist[r][2]
+                if o.data.datalist[r][3] != :single && ( length(rstack) <= length( tmpstack) || rstack[ 1:length( tmpstack ) ] == tmpstack )
+                    if r != curr
+                        o.data.currentLine = r
+                        checkTop()
+                        dorefresh = true
+                    end
+                    break
+                end
+            end
+        end
     elseif token == :ctrl_up
+        curr = o.data.currentLine
+        stack = o.data.datalist[curr][2]
+        if isempty( stack )
+            beep()
+        else
+            tmpstack = copy( stack )
+            pop!( tmpstack )
+            for r in curr-1:-1:1
+                rstack = o.data.datalist[r][2]
+                if o.data.datalist[r][3] != :single && length(rstack) <= length( tmpstack)
+                    if r != curr
+                        o.data.currentLine = r
+                        checkTop()
+                        dorefresh = true
+                    end
+                    break
+                end
+            end
+        end
     elseif token == :F1
         helper = newTwViewer( o.screen.value, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
