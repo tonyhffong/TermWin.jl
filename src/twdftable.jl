@@ -42,7 +42,14 @@ end
 function FormatHints{T<:Rational}( ::Type{T} )
     FormatHints( 12, 1, 0, false, false, false, true, true, false, true, "s" )
 end
-#TODO: date
+function FormatHints( ::Type{Date} )
+    FormatHints( 10, 1, 0, false, false, false, false, false, false, false,
+       "yyyy-mm-dd" )
+end
+function FormatHints( ::Type{DateTime} )
+    FormatHints( 20, 1, 0, false, false, false, false, false, false, false,
+       "yyyy-mm-dd HH:MM:SS" )
+end
 function FormatHints( ::Type{} )
     FormatHints( 14, 1, 0, false, false, false, true, true, false, false, "s" )
 end
@@ -61,6 +68,10 @@ function applyformat{T<:Number}( v::T, fmt::FormatHints )
             conversion    = fmt.conversion
             )
     end
+end
+
+function applyformat( v::Union(Date,DateTime), fmt::FormatHints )
+    Dates.format( v, fmt.conversion )
 end
 
 #=
@@ -389,7 +400,8 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
     move_columns( removed, hidecols, finalcolorder )
 
     # construct colInfo for each col in finalcolorder
-    for c in finalcolorder
+    allcols = names( df )
+    for c in allcols
         if VERSION < v"0.4.0-dev+1930"
             @lintpragma( "DataFrame is a container type" )
         else
@@ -397,14 +409,20 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
         end
 
         t = eltype( df[ c ] )
+
         hdr = get( headerHints, c, string( c ) )
         fmt = get( formatHints, c,
                 get( formatHints, t, FormatHints( t ) ) )
         agr = get( aggrHints, c,
                 get( aggrHints, t, DataFrameAggr( t ) ) )
-        ci = TwTableColInfo( c, hdr, true, fmt, agr )
+        ci = TwTableColInfo( c, hdr, false, fmt, agr )
+        obj.data.allcolInfo[c] = ci
+    end
+
+    for c in finalcolorder
+        ci = obj.data.allcolInfo[c]
+        ci.visible = true
         push!( obj.data.colInfo, ci )
-        obj.data.allcolInfo[ c ] = ci
     end
 
     updateTableDimensions( obj )
@@ -564,22 +582,28 @@ function drawTwDfTable( o::TwObj )
         nlines= length(lines)
         width = ci.format.width
 
-        islastcol = ( startx+width+1 > viewContentWidth ) || col == length( o.data.colInfo )
+        islastcol = ( startx+width+6 > viewContentWidth ) || col == length( o.data.colInfo )
         if islastcol
-            width = min( width, viewContentWidth-startx )
+            width = min( width, viewContentWidth-startx+2 )
         end
         o.data.currentRight = lastcol = col
         lastwidth = width
 
         if o.data.currentCol == col
-            wattron( o.window, A_BOLD )
+            wattron( o.window, A_REVERSE )
         end
         for (i,line) in enumerate( lines )
             s = ensure_length( line, width )
-            mvwprintw( o.window, i+(o.data.headerlines-nlines), startx, "%s", s )
+            if i == nlines
+                wattron( o.window, A_UNDERLINE )
+            end
+            mvwprintw( o.window, i+o.data.headerlines-nlines, startx, "%s", s )
+            if i == nlines
+                wattroff( o.window, A_UNDERLINE )
+            end
         end
         if o.data.currentCol == col
-            wattroff( o.window, A_BOLD )
+            wattroff( o.window, A_REVERSE )
         end
         if !islastcol
             for i = 1:o.data.headerlines
@@ -629,10 +653,11 @@ function drawTwDfTable( o::TwObj )
         # other columns
         # get the node or DataFrameRow first
         node = o.data.datalist[r][5]
+        isnode = (o.data.datalist[r][3] != :single)
         startx = 1+o.data.datatreewidth
         for col = o.data.currentLeft:lastcol
             cn = o.data.colInfo[ col ].name
-            if o.data.datalist[r][3] != :single # just the node
+            if isnode
                 v = node[ cn ]
             else
                 v = node.subdataframesorted[ cn ][ o.data.datalist[r][2][end] ]
@@ -654,27 +679,46 @@ function drawTwDfTable( o::TwObj )
             else
                 str = ensure_length( string(v), width )
             end
+            flags = 0
             if col == o.data.currentCol && r == o.data.currentLine
-                wattron( o.window, A_BOLD | COLOR_PAIR(15) )
+                flags = A_BOLD
+                if isred
+                    flags |= COLOR_PAIR(17)
+                else
+                    flags |= COLOR_PAIR(15)
+                end
+            elseif isnode
+                if  mod( length( o.data.datalist[r][2] ), 2 ) == 0
+                    flags = A_BOLD
+                    if isred
+                        flags |= COLOR_PAIR(1)
+                    else
+                        flags |= COLOR_PAIR(7)
+                    end
+                else
+                    if isred
+                        flags = COLOR_PAIR(29)
+                    else
+                        flags = COLOR_PAIR(13)
+                    end
+                end
             end
-            if isred
-                wattron( o.window, COLOR_PAIR( 1 ) )
-            end
+            wattron( o.window, flags )
             mvwprintw( o.window, o.data.headerlines + 1+r-o.data.currentTop, startx, "%s", str )
-            if isred
-                wattroff( o.window, COLOR_PAIR( 1 ) )
-            end
-            if col == o.data.currentCol && r == o.data.currentLine
-                wattroff( o.window, A_BOLD | COLOR_PAIR(15) )
-            end
+            wattroff( o.window, flags )
             if col != lastcol
                 mvwaddch( o.window, o.data.headerlines + 1+ r-o.data.currentTop, startx+width, get_acs_val( 'x' ) )
             end
             startx += width + 1
         end
     end
-    if length( o.data.bottomText ) != 0 && o.box
-        mvwprintw( o.window, o.height-1, int( (o.width - length(o.data.bottomText))/2 ), "%s", o.data.bottomText )
+    if length( o.data.bottomText ) != 0
+        mvwprintw( o.window, o.height-1, 3, "%s", o.data.bottomText )
+    end
+    if !isempty( o.data.pivots )
+        s = " Pvt:"*join( o.data.pivots, "⇾" )
+        s = ensure_length( s, 35, false )
+        mvwprintw( o.window, o.height-1, o.width - 37, "%s", s )
     end
 end
 
@@ -793,9 +837,10 @@ function injectTwDfTable( o::TwObj, token::Any )
         else
             # page left
             revcumwidths = cumsum( map( x->x+1, reverse( widths[1:o.data.currentLeft] ) ) ) # with boundary
-            widthrng = searchsorted( revcumwidths, o.data.datatreewidth )
-            o.data.currentLeft = o.data.currentCol = o.data.currentLeft - widthrng.start + 1
+            widthrng = searchsorted( revcumwidths, viewContentWidth )
+            o.data.currentLeft = o.data.currentCol = max( 1, o.data.currentLeft - widthrng.start + 1 )
             checkLeft()
+            dorefresh=true
         end
     elseif token == :right
         dorefresh = movehorizontal(1)
@@ -807,9 +852,10 @@ function injectTwDfTable( o::TwObj, token::Any )
             beep()
         else
             cumwidths = cumsum( map( x->x+1, reverse( widths[o.data.currentRight:end] ) ) ) # with boundary
-            widthrng = searchsorted( cumwidths, o.data.datatreewidth )
-            o.data.currentRight = o.data.currentCol = o.data.currentRight + widthrng.stop
+            widthrng = searchsorted( cumwidths, viewContentWidth )
+            o.data.currentRight = o.data.currentCol = min( o.data.currentRight + widthrng.stop, length( o.data.colInfo ) )
             checkLeft()
+            dorefresh=true
         end
     elseif token == :pageup
         dorefresh = movevertical( -viewContentHeight + o.data.headerlines)
@@ -844,7 +890,7 @@ function injectTwDfTable( o::TwObj, token::Any )
         end
     elseif token == "]"
         width = o.data.colInfo[ o.data.currentCol ].format.width
-        if width < viewContentHeight-1
+        if width < viewContentWidth-1
             width +=1
             o.data.colInfo[ o.data.currentCol ].format.width = width
             dorefresh = true

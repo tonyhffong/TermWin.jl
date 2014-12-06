@@ -95,17 +95,17 @@ function initsession()
         init_pair( 5, COLOR_MAGENTA, COLOR_BLACK )
         init_pair( 6, COLOR_CYAN,   COLOR_BLACK )
         init_pair( 7, COLOR_WHITE,  COLOR_BLACK )
-        if COLOR_PAIRS >= 16 && COLORS >= 64 # dark blue background
+        if COLOR_PAIRS >= 16 && COLORS >= 256 # dark blue background
             init_pair( 8, COLOR_BLACK,  21 ) # black on BRIGHT blue
             init_pair( 9, COLOR_RED,    17 ) # red on dark blue
             init_pair( 10, COLOR_GREEN,  17 ) # green on dark blue
             init_pair( 11, COLOR_YELLOW, 17 ) # yellow on dark blue
             init_pair( 12, COLOR_WHITE,   52 ) # white on dark RED
-            init_pair( 13, COLOR_WHITE,  8 ) # white on dark gray
+            init_pair( 13, COLOR_WHITE,  235 ) # white on dark gray
             init_pair( 14, COLOR_CYAN,   17 ) # cyan on dark blue
             init_pair( 15, COLOR_WHITE,  17 ) # white on dark blue
         end
-        if COLOR_PAIRS >= 24 && COLORS >= 64 # dark red background
+        if COLOR_PAIRS >= 24 && COLORS >= 256 # dark red background
             init_pair( 16, COLOR_BLACK,  52 )
             init_pair( 17, COLOR_RED,    52 )
             init_pair( 18, COLOR_GREEN,  52 )
@@ -115,12 +115,13 @@ function initsession()
             init_pair( 22, COLOR_CYAN,   52 )
             init_pair( 23, COLOR_WHITE,  52 )
         end
-        if COLOR_PAIRS >= 32 && COLORS >= 64 # dark red background
+        if COLOR_PAIRS >= 32 && COLORS >= 256 # dark red background
             init_pair( 24, 56,  COLOR_BLACK ) # light purple on black
             init_pair( 25, 56,  17 ) # light purple on dark blue
             init_pair( 26, COLOR_GREEN,  17 ) # purple on dark blue
             init_pair( 27, COLOR_YELLOW,  17 ) # yellow on dark blue
             init_pair( 28, 8,  17 ) # gray on dark blue
+            init_pair( 29, COLOR_RED, 235 ) # red on dark gray
         end
         keypad( rootwin, true )
         mouseinterval( 0 )
