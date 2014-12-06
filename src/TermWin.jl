@@ -192,26 +192,26 @@ end
 
 tshow_( x::Symbol; title="Symbol" ) = tshow_( ":"*string(x), title=title )
 tshow_( x::Ptr; title="Ptr" ) = tshow_( string(x), title=title )
-function tshow_( x::WeakRef; title="WeakRef" )
+function tshow_( x::WeakRef; title="WeakRef", kwargs... )
     if x.value == nothing
         tshow_( "WeakRef: nothing", title=title )
     else
-        tshow_( x.value, title=title )
+        tshow_( x.value; title=title, kwargs... )
     end
 end
-function tshow_( x; title = string( typeof( x ) ) )
-    newTwTree( rootTwScreen, x, 25, 80, :staggered, :staggered, bottomText = "F1: Help  Esc: Exit", title=title )
+function tshow_( x; title = string( typeof( x ) ), kwargs... )
+    newTwTree( rootTwScreen, x, 25, 80, :staggered, :staggered; bottomText = "F1: Help  Esc: Exit", title=title, kwargs... )
 end
 
-function tshow_( x::String; title = string(typeof( x )) )
+function tshow_( x::String; title = string(typeof( x )), kwargs... )
     pos = :center
     if length(x) > 100
         pos = :staggered
     end
-    newTwViewer( rootTwScreen, x, pos, pos, bottomText = "F1: Help  Esc: Exit", title=title )
+    newTwViewer( rootTwScreen, x, pos, pos; bottomText = "F1: Help  Esc: Exit", title=title, kwargs... )
 end
 
-function tshow_( f::Function; title="Function" )
+function tshow_( f::Function; title="Function", kwargs... )
     funloc = "(anonymous)"
     try
         funloc = string( functionloc( f ) )
@@ -219,17 +219,17 @@ function tshow_( f::Function; title="Function" )
     if funloc == "(anonymous)"
         return tshow_( string(f) * ":" * funloc, title=title )
     else
-        return newTwFunc( rootTwScreen, f, 25, 80, :staggered, :staggered,
-            title=title, bottomText = "F1: Help  F6: Explore  F8: Edit" )
+        return newTwFunc( rootTwScreen, f, 25, 80, :staggered, :staggered;
+            title=title, bottomText = "F1: Help  F6: Explore  F8: Edit", kwargs... )
     end
 end
 
-function tshow_( mt::MethodTable; title="MethodTable" )
-    newTwFunc( rootTwScreen, mt, 25, 80, :staggered, :staggered, title=title )
+function tshow_( mt::MethodTable; title="MethodTable", kwargs... )
+    newTwFunc( rootTwScreen, mt, 25, 80, :staggered, :staggered; title=title, kwargs... )
 end
 
-function tshow_( ms::Array{Method,1}; title="Methods" )
-    newTwFunc( rootTwScreen, ms, 25, 80, :staggered, :staggered, title=title )
+function tshow_( ms::Array{Method,1}; title="Methods", kwargs... )
+    newTwFunc( rootTwScreen, ms, 25, 80, :staggered, :staggered; title=title, kwargs... )
 end
 
 function tshow_( df::DataFrame; title="DataFrame", kwargs... )
