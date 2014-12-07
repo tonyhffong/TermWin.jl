@@ -352,15 +352,17 @@ type TwDfTableData
     bottomText::String
     helpText::String
     searchText::String
+    expanddepth::Int
     # calculated dimension
     TwDfTableData() = new( TwDfTableNode(),
         Symbol[], (Symbol,Symbol)[], Any[], 0, 10, 1, 1, 1, 1, 1, 1, TwTableColInfo[],
-        Dict{Symbol,TwTableColInfo}(), "", defaultTreeHelpText, "" )
+        Dict{Symbol,TwTableColInfo}(), "", defaultTreeHelpText, "", 1 )
 end
 
 #TODO: allow Regex in formatHints and aggrHints
 function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::Any;
         pivots = Symbol[],
+        expanddepth = 1,
         colorder = Any[ "*" ], # mix of symbol, regex, and "*" (the rest), "*" can be in the middle
         hidecols = Any[], # anything here trumps colorder, Symbol, or Regex
         title = "DataFrame",
@@ -379,7 +381,9 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
     obj.data.rootnode.subdataframe = df
     obj.data.rootnode.context = WeakRef( obj.data )
     obj.data.pivots = pivots
-    expandnode( obj.data.rootnode )
+    obj.data.expanddepth = expanddepth
+    expandnode( obj.data.rootnode, expanddepth )
+    ordernode( obj.data.rootnode )
     builddatalist( obj.data )
 
     # construct visible columns in the right order
@@ -466,8 +470,13 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
     obj
 end
 
-function expandnode( n::TwDfTableNode )
+function expandnode( n::TwDfTableNode, depth::Int=1 )
     if n.isOpen # nothing to do
+        if depth > 1
+            for r in n.children
+                expandnode( r, depth-1 )
+            end
+        end
         return
     end
     pivots = n.context.value.pivots
@@ -487,8 +496,12 @@ function expandnode( n::TwDfTableNode )
                 push!( n.children, r )
             end
         end
+        if depth > 1
+            for r in n.children
+                expandnode( r, depth-1 )
+            end
+        end
     end
-    ordernode( n )
     n.isOpen = true
 end
 
@@ -831,6 +844,7 @@ function injectTwDfTable( o::TwObj, token::Any )
             node.isOpen = false
         else
             expandnode( node )
+            ordernode( node )
         end
         update_tree_data()
         dorefresh = true
@@ -984,7 +998,8 @@ function injectTwDfTable( o::TwObj, token::Any )
             o.data.pivots = map( x->symbol(x), newpivots )
             o.data.rootnode.children = Any[]
             o.data.rootnode.isOpen = false
-            expandnode( o.data.rootnode )
+            expandnode( o.data.rootnode, o.data.expanddepth )
+            ordernode( o.data.rootnode )
             update_tree_data()
             o.data.currentLine = 1
             checkTop()
