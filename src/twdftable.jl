@@ -754,7 +754,7 @@ function drawTwDfTable( o::TwObj )
         mvwprintw( o.window, o.height-1, 3, "%s", o.data.bottomText )
     end
     if !isempty( o.data.pivots )
-        s = " Pvt:"*join( o.data.pivots, "⇾" )
+        s = " Pvt:"*join( o.data.pivots, "▹" )
         s = ensure_length( s, 35, false )
         mvwprintw( o.window, o.height-1, o.width - 37, "%s", s )
     end

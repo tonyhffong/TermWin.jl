@@ -34,6 +34,7 @@ include( "readtoken.jl" )
 include( "twtree.jl" )
 include( "twfunc.jl" )
 include( "twpopup.jl" )
+include( "twmultiselect.jl")
 include( "twcalendar.jl")
 include( "twdftable.jl" )
 
@@ -42,7 +43,7 @@ export trun
 export TwObj, TwScreen
 export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 export newTwCalendar
-export newTwPopup
+export newTwPopup, newTwMultiSelect
 export newTwDfTable, DataFrameAggr, uniqvalue, unionall
 export twFuncFactory, registerTwObj
 export COLOR_PAIR
