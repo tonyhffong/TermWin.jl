@@ -63,7 +63,7 @@ function newTwMultiSelect{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::
     obj.data.helpText = defaultMultiSelectHelpText
     obj.data.maxchoicelength = 0
     if !isempty(arr)
-        obj.data.maxchoicelength = maximum( map(x->length(x), arr ) )
+        obj.data.maxchoicelength = maximum( map(_->length(_), arr ) )
     end
 
     h = 2 + min( length( arr ), maxheight )

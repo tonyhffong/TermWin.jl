@@ -8,12 +8,9 @@ ctrl_left/right arrow: paginate to left/right
 [, ]       : make current column narrower/wider
 ctrl_up    : move up to the start of the current branch or previous branch
 ctrl_down  : move down to the next branch
-_          : collapse all
-/          : search dialog
 F2         : Change pivot
-F3         : Change columns/order
+F4         : Change columns/order
 F6         : popup window for value
-n, p       : Move to next/previous matched line
 """
 
 type FormatHints
@@ -290,7 +287,6 @@ end
 type TwTableColInfo
     name::Symbol
     displayname::UTF8String
-    visible::Bool
     format::FormatHints
     aggr::DataFrameAggr
 end
@@ -349,9 +345,9 @@ type TwDfTableData
     currentTop::Int
     currentLine::Int
     currentCol::Int
-    currentLeft::Int
-    currentRight::Int # right most visible column
-    colInfo::Array{ TwTableColInfo, 1 } # only the visible ones
+    currentLeft::Int # left most on-screen column
+    currentRight::Int # right most on-screen column
+    colInfo::Array{ TwTableColInfo, 1 } # only the visible ones, maybe off-screen
     allcolInfo::Dict{ Symbol, TwTableColInfo } # including invisible ones
     bottomText::String
     helpText::String
@@ -371,7 +367,7 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
         formatHints = Dict{Any,FormatHints}(), # Symbol/Type -> FormatHints
         aggrHints = Dict{Any,DataFrameAggr}(), # Symbol/Type -> DataFrameAggr
         headerHints = Dict{Symbol,UTF8String}(),
-        bottomText = "F1: help" )
+        bottomText = "F1:help  F2:Pivot  F4:ColOrder" )
     obj = TwObj( twFuncFactory( :DfTable ) )
     registerTwObj( scr, obj )
     obj.value = df
@@ -454,13 +450,12 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
                 get( formatHints, t, FormatHints( t ) ) )
         agr = get( aggrHints, c,
                 get( aggrHints, t, DataFrameAggr( t ) ) )
-        ci = TwTableColInfo( c, hdr, false, fmt, agr )
+        ci = TwTableColInfo( c, hdr, fmt, agr )
         obj.data.allcolInfo[c] = ci
     end
 
     for c in finalcolorder
         ci = obj.data.allcolInfo[c]
-        ci.visible = true
         push!( obj.data.colInfo, ci )
     end
 
@@ -979,6 +974,35 @@ function injectTwDfTable( o::TwObj, token::Any )
                 end
             end
         end
+    elseif token == :F2
+        allcols = map(x->utf8(string(x)), names( o.value ) )
+        pvts = map( x->utf8(string(x)), o.data.pivots )
+        helper = newTwMultiSelect( o.screen.value, allcols, :center, :center, selected = pvts, title="Pivot order", orderable=true, substrsearch=true )
+        newpivots = activateTwObj( helper )
+        unregisterTwObj( o.screen.value, helper )
+        if newpivots != nothing && newpivots != pvts
+            o.data.pivots = map( x->symbol(x), newpivots )
+            o.data.rootnode.children = Any[]
+            o.data.rootnode.isOpen = false
+            expandnode( o.data.rootnode )
+            update_tree_data()
+            o.data.currentLine = 1
+            checkTop()
+        end
+        dorefresh = true
+    elseif token == :F4 # reorder columns
+        allcols = map(x->utf8(string(x)), names( o.value ) )
+        visiblecols = map( x->utf8(string(x.name)), o.data.colInfo )
+        helper = newTwMultiSelect( o.screen.value, allcols, :center, :center, selected = visiblecols, title="Visible columns & their order", orderable=true, substrsearch=true )
+        newcols = activateTwObj( helper )
+        unregisterTwObj( o.screen.value, helper )
+        if newcols != nothing && newcols != visiblecols
+            o.data.colInfo = TwTableColInfo[]
+            for c in newcols
+                push!( o.data.colInfo, o.data.allcolInfo[ symbol( c ) ] )
+            end
+        end
+        dorefresh = true
     elseif token == :F1
         helper = newTwViewer( o.screen.value, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
