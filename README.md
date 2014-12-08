@@ -76,6 +76,14 @@ tshow( df;
     * `pivots`, `colorder`, `hidecols`, `sortorder`, `expanddepth` with the same meaning as above.
     * `name`. String. name of the view. If not provided the views would just be `v#1`, `v#2`, and so on...
 
+Aggregation is done via `DataFrameAggr` type from this package. TermWin also provides a
+list of commonly used aggregation functions for table data presentation:
+
+* `uniqvalue`. If all non-NA values are the same, use that value, otherwise NA. For strings, empty strings
+   are treated as NA (i.e. ignored) as well. This is the default aggregation for string typed columns.
+* `unionall`. If the column's element-type is an array, union them all. This is the default aggregation for
+  array typed columns.
+
 ## Installation
 
 As stated on the tin, TermWin requires ncurses. It is being developed on MacOS/iTerm.
@@ -84,6 +92,9 @@ to unit-test a GUI than actually using it manually.)
 ```julia
 Pkg.add( "TermWin" )
 ```
+
+If you are using iTerm2 on MacOS, it is known that its `modern parser` for CSI codes are not
+compatible to this package. You should disable it.
 
 ## Using TermWin to compose dialogs and ncurses applications
 
