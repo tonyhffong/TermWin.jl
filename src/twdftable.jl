@@ -505,7 +505,7 @@ function drawTwDfTable( o::TwObj )
             if col == o.data.currentCol && r == o.data.currentLine
                 flags = A_BOLD
                 if isred
-                    flags |= COLOR_PAIR(17)
+                    flags |= COLOR_PAIR(9)
                 else
                     flags |= COLOR_PAIR(15)
                 end
@@ -523,6 +523,12 @@ function drawTwDfTable( o::TwObj )
                     else
                         flags = COLOR_PAIR(13)
                     end
+                end
+            else
+                if isred
+                    flags = COLOR_PAIR(1)
+                else
+                    flags = COLOR_PAIR(7)
                 end
             end
             wattron( o.window, flags )
