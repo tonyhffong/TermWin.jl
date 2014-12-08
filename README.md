@@ -10,6 +10,10 @@ TermWin.jl is a tool to help navigate deep data structure such as `Expr`, `Dict`
 It uses a ncurses-based user interface.
 It also contains a backend framework for composing ncurses user interfaces.
 
+It requires color support, preferably `xterm-256color`, which should be quite common these days.
+
+Most viewers have help text via the `F1` key.
+
 ```julia
 using TermWin
 ex = :( f(x) = x*x + 2x + 1 )
@@ -36,7 +40,41 @@ Date input support.
 
 Mouse support.
 
-Color support.
+### DataFrame
+
+TermWin supports a wide range of configurations in showing dataframes
+```julia
+using TermWin
+using Compat
+tshow( df;
+  pivots = [ :col1, :col2 ],
+  expanddepth = 2, # default expansion of the pivots
+  colorder = [ :col3, :col4, "*", :col5 ],
+  aggrHints = @compat(Dict{Any,DataFrameAggr}( Int => DataFrameAggr( "mean" ) ) ),
+  views = [
+      @compat(Dict{Symbol,Any}( :name => "ByCol2", :pivots => [ :col2, :col1 ], :hidecols => [:col5 ] ) )
+  ]
+  )
+```
+
+* `pivots`. Array of `Symbol`
+* `expanddepth`. Default 1. How many levels of pivots are open at initialization.
+* `colorder`. Array of `Symbol`, `Regex` and `"*"` (string). Symbols are treated as actual column name.
+   It is an error to provide a symbol that doesn't exist as a column in the data frame. Regex would
+   be used to to match multiple columns. `"*"` is the rest of the columns not covered yet. It is
+   permissible to put `"*"` in the middle of the array, but it is NOT ok to include two or more `"*"`.
+* `hidecols`. Array of `Symbol` and `Regex`. Columns that match these will be hidden. This overrules
+  `colorder`.
+* `sortorder`. Array of `(Symbol, Symbol)`, the first is the column name, the second is either `:asc` or `:desc`.
+* `title`.
+* `formatHints`. `Dict{Any,FormatHints}`. Keys of `Symbol` type are treated as column names. Keys of `DataType`
+   are backup formats when actual format hints for a name are not provided.
+* `aggrHints`. `Dict{Any,DataFrameAggr}`. Keys of `Symbol` type are treated as column names. Keys of `DataType`
+   are backup aggregation hints when actual aggregation hints for a name are not provided.
+* `headerHints`. Alternative name for the header.
+* `views`. Array of Dictionaries that provide alternative views of the same data. Overrideable keys are
+    * `pivots`, `colorder`, `hidecols`, `sortorder`, `expanddepth` with the same meaning as above.
+    * `name`. String. name of the view. If not provided the views would just be `v#1`, `v#2`, and so on...
 
 ## Installation
 
