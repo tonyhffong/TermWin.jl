@@ -1,4 +1,4 @@
-defaultTreeHelpText = """
+defaultTableHelpText = """
 PgUp/PgDn,
 Arrow keys : standard navigation
 <spc>,<rtn>: toggle leaf expansion
@@ -8,281 +8,12 @@ ctrl_left/right arrow: paginate to left/right
 [, ]       : make current column narrower/wider
 ctrl_up    : move up to the start of the current branch or previous branch
 ctrl_down  : move down to the next branch
-F2         : Change pivot
-F4         : Change columns/order
+p          : Change pivot
+c          : Change columns/order
+v          : Switch preset views
 F6         : popup window for value
 """
-
-type FormatHints
-    width         :: Int  # column width, not the format width
-    scale         :: Real
-    precision     :: Int
-    commas        :: Bool
-    stripzeros    :: Bool
-    parens        :: Bool
-    rednegative   :: Bool # print in red when negative?
-    hidezero      :: Bool
-    alternative   :: Bool
-    mixedfraction :: Bool
-    conversion    :: ASCIIString
-end
-
-function FormatHints{T<:Integer}( ::Type{T} )
-    FormatHints( 10, 1, 0, true, false, false, true, true, false, false, "d" )
-end
-function FormatHints{T<:Unsigned}( ::Type{T} )
-    FormatHints( 8, 1, 0, true, false, false, true, true, false, false, "x" )
-end
-function FormatHints{T<:FloatingPoint}( ::Type{T} )
-    FormatHints( 10, 1.0, 2, true, false, false, true, true, false, false, "f" )
-end
-function FormatHints{T<:Rational}( ::Type{T} )
-    FormatHints( 12, 1, 0, false, false, false, true, true, false, true, "s" )
-end
-function FormatHints( ::Type{Date} )
-    FormatHints( 10, 1, 0, false, false, false, false, false, false, false,
-       "yyyy-mm-dd" )
-end
-function FormatHints( ::Type{DateTime} )
-    FormatHints( 20, 1, 0, false, false, false, false, false, false, false,
-       "yyyy-mm-dd HH:MM:SS" )
-end
-function FormatHints( ::Type{} )
-    FormatHints( 14, 1, 0, false, false, false, true, true, false, false, "s" )
-end
-
-function applyformat{T<:Number}( v::T, fmt::FormatHints )
-    if fmt.hidezero && v == 0
-        ""
-    else
-        format( v * fmt.scale,
-            precision     = fmt.precision,
-            commas        = fmt.commas,
-            stripzeros    = fmt.stripzeros,
-            parens        = fmt.parens,
-            alternative   = fmt.alternative,
-            mixedfraction = fmt.mixedfraction,
-            conversion    = fmt.conversion
-            )
-    end
-end
-
-function applyformat( v::Union(Date,DateTime), fmt::FormatHints )
-    Dates.format( v, fmt.conversion )
-end
-
-function applyformat{T<:String}( v::T, fmt::FormatHints )
-    return v
-end
-
-function applyformat( v::AbstractArray, fmt::FormatHints )
-    strs = UTF8String[]
-    for s in v
-        push!( strs, applyformat( s, fmt ) )
-    end
-    join( strs, "," )
-end
-
-function applyformat( v, fmt::FormatHints )
-    return string( v )
-end
-
-#=
-@doc """
-Facilities to help map GUI input / expression into a function that aggregates columns.
-We would store that function and use it whenever we need to aggregate a column.
-
-Three ways to instantiate the DataFrameAggr
-* String: either a simple name "mean", or an expression wmean( :col, :WeightColumn )
-* Similarly, Symbol or expression, such as :mean, or :( wmean( :col, :WeightColumn ) )
-    * if just a simple name, it is assumed to be a function, we would try these signature
-        * f( x::DataArray ) -> output is the aggregated scalar
-        * f( x::Dataframe ) -> output is the aggregated scalar, rare.
-    * if expression, it must be of the form
-        * f( args..., kw1=v1, kw2=v2, ... )
-        * straightforward symbols are expected to be column names
-""" ->
-=#
-immutable DataFrameAggr
-    f::Function
-    sig::Any
-end
-
-DataFrameAggrCache = Dict{Any, DataFrameAggr}()
-
-DataFrameAggr() = DataFrameAggr( _->NA, (DataArray,) )
-
-function DataFrameAggr( x::String )
-    global DataFrameAggrCache
-    if haskey( DataFrameAggrCache, x )
-        return DataFrameAggrCache[ x ]
-    end
-    ex = parse( x )
-    ret = DataFrameAggr( ex )
-    DataFrameAggrCache[x] = ret
-    ret
-end
-
-function DataFrameAggr( ex::Union( Expr, Symbol ) )
-    global DataFrameAggrCache
-    if haskey( DataFrameAggrCache, ex )
-        return DataFrameAggrCache[ ex ]
-    end
-
-    if typeof( ex ) == Symbol
-        # assume it is a function, e.g. mean, std, uniq, countuniq, etc.
-        if contains( string(ex), "!" )
-            error( string(ex) * " seems to have side effects" )
-        end
-        if ex == :NA
-            return ( DataFrameAggrCache[ex] = DataFrameAggr() )
-        end
-        v = nothing
-        try
-            v = eval( Main, ex )
-        end
-        if typeof( v ) != Function
-            error( string( ex ) * " does not represent a function" )
-        end
-        ex = :( $ex() )
-    else
-        if !isexpr( ex, :call )
-            error( string( ex ) * " does not look like an aggregator function")
-        end
-        # disallow mutating function
-        fname = ex.args[1]
-        if Base.Meta.isexpr( fname, :curly )
-            error( "DataFrameAggr: curly not supported")
-        elseif !( typeof( fname ) <: Symbol )
-            error( "DataFrameAggr: only simple function name please")
-        end
-        if contains( string(fname), "!" )
-            error( string(fname) * " seems to have side effects" )
-        end
-        v = nothing
-        try
-            v = eval( Main, fname )
-        end
-        if typeof( v ) != Function
-            error( string( fname ) * " does not represent a function" )
-        end
-    end
-
-    mt = methods( v )
-    for m in mt
-        if isempty( m.sig )
-            continue
-        end
-        # count the non-kw signatures
-        nargs = 0
-        for i = 2:length( ex.args )
-            if !isexpr( ex.args[i], [ :parameters, :kw ] )
-                nargs += 1
-            end
-        end
-        if typeof( m.sig[1] ) <: Tuple
-            continue
-        end
-        if typeof( m.sig[1] ) <: UnionType
-            continue
-        end
-        if in( m.sig[1].name.name, [ :DataArray, :PooledDataArray, :AbstractDataArray ] ) && nargs == 0
-            ex2 = deepcopy( ex )
-            insert!( ex2.args, 2, :_ )
-            l = eval( Main,Expr( :(->), :_, ex2 ) )
-            return ( DataFrameAggrCache[ex] = DataFrameAggr( l, (DataArray,) ) )
-        elseif in( m.sig[1].name.name,[:DataFrame, :AbstractDataFrame] )
-            ex2 = deepcopy( ex )
-            insert!( ex2.args, 2, :_ )
-            l = eval( Main,Expr( :(->), :_, ex2 ) )
-            return ( DataFrameAggrCache[ex] = DataFrameAggr( l, (DataFrame,) ) )
-        end
-    end
-    error( string( v ) * ": No usable method. Accepts (DataArray/PDA,) or (DataFrame,args...)" )
-end
-
-function DataFrameAggr( ::Type{} )
-    DataFrameAggr( "uniqvalue" )
-end
-
-function DataFrameAggr{T<:Real}( ::Type{T} )
-    DataFrameAggr( "sum" )
-end
-
-function DataFrameAggr{T}( ::Type{Array{T,1}} )
-    DataFrameAggr( "unionall" )
-end
-
-function unionall( x::AbstractDataArray )
-    l = dropna( x )
-    t = eltype( eltype( x ) )
-    s = Set{t}()
-    for el in l
-        push!( s, el... )
-    end
-    collect( s )
-end
-
-function unionall( x::Array )
-    t = eltype( eltype( x ) )
-    s = Set{t}()
-    for el in x
-        push!( s, el... )
-    end
-    collect( s )
-end
-
-function uniqvalue( x::AbstractDataArray; skipna::Bool=true )
-    levels = DataArrays.levels(x)
-    if skipna
-        l = dropna( levels )
-        if length(l) == 1
-            return l[1]
-        end
-        return NA
-    end
-    if length(levels) == 1
-        return levels[1]
-    end
-    return NA
-end
-
-function uniqvalue{T<:String}( x::Union( Array{T}, DataArray{T}, PooledDataArray{T} ); skipna::Bool=true, skipempty::Bool=true )
-    levels = DataArrays.levels(x)
-    if skipna
-        l = dropna( levels )
-        if skipempty
-            emptyidx = findfirst( l, "" )
-            if length( l ) == 1 && emptyidx == 0
-                return l[1]
-            elseif length( l ) == 2 && emptyidx != 0
-                if emptyidx == 1
-                    return l[2]
-                else
-                    return l[1]
-                end
-            end
-        elseif length( l ) == 1
-            return l[1]
-        end
-        return NA
-    end
-    if skipempty
-        emptyidx = findfirst( levels, "" )
-        if length( levels ) == 1 && emptyidx == 0
-            return levels[1] # could be NA
-        elseif length( levels ) == 2 && emptyidx != 0
-            if emptyidx == 1
-                return levels[2]
-            else
-                return levels[1]
-            end
-        end
-    elseif length( levels ) == 1
-        return levels[1]
-    end
-    return NA
-end
+defaultTableBottomText = "F1:help  p:Pivot  c:ColOrder  v:Views []:ColWidth"
 
 type TwTableColInfo
     name::Symbol
@@ -332,62 +63,22 @@ function getindex( n::TwDfTableNode, c::Symbol )
     end
 end
 
-# this is the widget data. all subnodes hold a weakref back to this to
-# facilitate aggregation, ordering and output
-type TwDfTableData
-    rootnode::TwDfTableNode
-    pivots::Array{ Symbol, 1 }
+type TwTableView
+    name::UTF8String
+    pivots::Array{Symbol,1}
     sortorder::Array{ (Symbol, Symbol), 1 } # [ (:col1, :asc ), (:col2, :desc), ... ]
-    datalist::Array{Any, 1} # (tuple{symbol}, 0) -> node, (tuple{symbol},#) -> row within that sub-df
-    datalistlen::Int
-    datatreewidth::Int
-    headerlines::Int # how many lines does the header occupy, usually just 1
-    currentTop::Int
-    currentLine::Int
-    currentCol::Int
-    currentLeft::Int # left most on-screen column
-    currentRight::Int # right most on-screen column
-    colInfo::Array{ TwTableColInfo, 1 } # only the visible ones, maybe off-screen
-    allcolInfo::Dict{ Symbol, TwTableColInfo } # including invisible ones
-    bottomText::String
-    helpText::String
-    searchText::String
+    columns::Array{ Symbol, 1 }
     expanddepth::Int
-    # calculated dimension
-    TwDfTableData() = new( TwDfTableNode(),
-        Symbol[], (Symbol,Symbol)[], Any[], 0, 10, 1, 1, 1, 1, 1, 1, TwTableColInfo[],
-        Dict{Symbol,TwTableColInfo}(), "", defaultTreeHelpText, "", 1 )
 end
 
-#TODO: allow Regex in formatHints and aggrHints
-function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::Any;
-        pivots = Symbol[],
-        expanddepth = 1,
-        colorder = Any[ "*" ], # mix of symbol, regex, and "*" (the rest), "*" can be in the middle
-        hidecols = Any[], # anything here trumps colorder, Symbol, or Regex
-        title = "DataFrame",
-        formatHints = Dict{Any,FormatHints}(), # Symbol/Type -> FormatHints
-        aggrHints = Dict{Any,DataFrameAggr}(), # Symbol/Type -> DataFrameAggr
-        headerHints = Dict{Symbol,UTF8String}(),
-        bottomText = "F1:help  F2:Pivot  F4:ColOrder" )
-    obj = TwObj( twFuncFactory( :DfTable ) )
-    registerTwObj( scr, obj )
-    obj.value = df
-    obj.title = title
-    obj.box = true
-    obj.borderSizeV= 1
-    obj.borderSizeH= 2
-    obj.data = TwDfTableData()
-    obj.data.rootnode.subdataframe = df
-    obj.data.rootnode.context = WeakRef( obj.data )
-    obj.data.pivots = pivots
-    obj.data.expanddepth = expanddepth
-    expandnode( obj.data.rootnode, expanddepth )
-    ordernode( obj.data.rootnode )
-    builddatalist( obj.data )
+# convenient functions to construct views
+function TwTableView( df::AbstractDataFrame, name::String;
+    pivots = Symbol[], expanddepth=1,
+    colorder = Any[ "*" ],
+    hidecols = Any[], sortorder = (Symbol,Symbol)[] )
 
     # construct visible columns in the right order
-    function move_columns( targetarray::Array{ Symbol,1 }, sourcearray::Array{Any,1}, remaincols::Array{Symbol,1} )
+    function move_columns( targetarray::Array{ Symbol,1 }, sourcearray::Array, remaincols::Array{Symbol,1} )
         local i = 1
         local n = length( sourcearray )
         while !isempty( remaincols ) && i <= n
@@ -437,6 +128,89 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
     # remove anything in hidecols
     removed = Symbol[]
     move_columns( removed, hidecols, finalcolorder )
+
+    TwTableView( utf8(name), pivots, sortorder, finalcolorder, expanddepth )
+end
+
+# this is the widget data. all subnodes hold a weakref back to this to
+# facilitate aggregation, ordering and output
+type TwDfTableData
+    rootnode::TwDfTableNode
+    pivots::Array{ Symbol, 1 }
+    sortorder::Array{ (Symbol, Symbol), 1 } # [ (:col1, :asc ), (:col2, :desc), ... ]
+    datalist::Array{Any, 1} # (tuple{symbol}, 0) -> node, (tuple{symbol},#) -> row within that sub-df
+    datalistlen::Int
+    datatreewidth::Int
+    headerlines::Int # how many lines does the header occupy, usually just 1
+    currentTop::Int
+    currentLine::Int
+    currentCol::Int
+    currentLeft::Int # left most on-screen column
+    currentRight::Int # right most on-screen column
+    colInfo::Array{ TwTableColInfo, 1 } # only the visible ones, maybe off-screen
+    allcolInfo::Dict{ Symbol, TwTableColInfo } # including invisible ones
+    bottomText::String
+    helpText::String
+    searchText::String
+    expanddepth::Int
+    views::Array{ TwTableView, 1 }
+    # calculated dimension
+    TwDfTableData() = new( TwDfTableNode(),
+        Symbol[], (Symbol,Symbol)[], Any[], 0, 10, 1, 1, 1, 1, 1, 1, TwTableColInfo[],
+        Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, "", 1, TwTableView[] )
+end
+
+#TODO: allow Regex in formatHints and aggrHints
+function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::Any;
+        pivots = Symbol[],
+        expanddepth = 1,
+        colorder = Any[ "*" ], # mix of symbol, regex, and "*" (the rest), "*" can be in the middle
+        hidecols = Any[], # anything here trumps colorder, Symbol, or Regex
+        sortorder = (Symbol,Symbol)[],
+        title = "DataFrame",
+        formatHints = Dict{Any,FormatHints}(), # Symbol/Type -> FormatHints
+        aggrHints = Dict{Any,DataFrameAggr}(), # Symbol/Type -> DataFrameAggr
+        headerHints = Dict{Symbol,UTF8String}(),
+        bottomText = defaultTableBottomText,
+        views = Array{Dict{Symbol,Any},1}() )
+    obj = TwObj( twFuncFactory( :DfTable ) )
+    registerTwObj( scr, obj )
+    obj.value = df
+    obj.title = title
+    obj.box = true
+    obj.borderSizeV= 1
+    obj.borderSizeH= 2
+    obj.data = TwDfTableData()
+    obj.data.rootnode.subdataframe = df
+    obj.data.rootnode.context = WeakRef( obj.data )
+
+    mainV = TwTableView( df, utf8( "#Main"), pivots = pivots,
+        expanddepth=expanddepth, sortorder=sortorder, colorder=colorder, hidecols=hidecols )
+
+    obj.data.pivots = mainV.pivots
+    obj.data.expanddepth = mainV.expanddepth
+    obj.data.sortorder = mainV.sortorder
+    finalcolorder = mainV.columns
+
+    push!( obj.data.views, mainV )
+    for (i,d) in enumerate( views )
+        if isempty( d )
+            error( "nothing in view #" * string( i ) )
+        end
+        vname = get( d, :name, string( "v#" * string( i ) ) )
+        vpivots = get( d, :pivots, pivots )
+        vexpanddepth = get( d, :expanddepth, expanddepth )
+        vcolorder = get( d, :colorder, colorder )
+        vhidecols = get( d, :hidecols, hidecols )
+        vsortorder = get( d, :sortorder, sortorder )
+        v = TwTableView( df, utf8( vname ), pivots = vpivots, expanddepth = vexpanddepth,
+            sortorder=vsortorder, colorder = vcolorder, hidecols = vhidecols )
+        push!( obj.data.views, v )
+    end
+
+    expandnode( obj.data.rootnode, expanddepth )
+    ordernode( obj.data.rootnode )
+    builddatalist( obj.data )
 
     # construct colInfo for each col in finalcolorder
     allcols = names( df )
@@ -587,8 +361,6 @@ function builddatalist( o::TwDfTableData )
 end
 
 function updateTableDimensions( o::TwObj )
-    global treeTypeMaxWidth, treeValueMaxWidth
-
     o.data.datalistlen = length( o.data.datalist )
     o.data.headerlines = maximum( map( x->length( split( x.displayname, "\n" ) ), o.data.colInfo ) )
     # reminder: (name, stack, exphints, skiplines, node )
@@ -988,7 +760,7 @@ function injectTwDfTable( o::TwObj, token::Any )
                 end
             end
         end
-    elseif token == :F2
+    elseif token == "p"
         allcols = map(x->utf8(string(x)), names( o.value ) )
         pvts = map( x->utf8(string(x)), o.data.pivots )
         helper = newTwMultiSelect( o.screen.value, allcols, :center, :center, selected = pvts, title="Pivot order", orderable=true, substrsearch=true )
@@ -1005,7 +777,7 @@ function injectTwDfTable( o::TwObj, token::Any )
             checkTop()
         end
         dorefresh = true
-    elseif token == :F4 # reorder columns
+    elseif token == "c"
         allcols = map(x->utf8(string(x)), names( o.value ) )
         visiblecols = map( x->utf8(string(x.name)), o.data.colInfo )
         helper = newTwMultiSelect( o.screen.value, allcols, :center, :center, selected = visiblecols, title="Visible columns & their order", orderable=true, substrsearch=true )
@@ -1018,6 +790,43 @@ function injectTwDfTable( o::TwObj, token::Any )
             end
         end
         dorefresh = true
+    elseif token == "v"
+        allviews = map( x->x.name, o.data.views )
+        helper = newTwPopup( o.screen.value, allviews, :center, :center, substrsearch=true, title = "Views" )
+        vname = activateTwObj( helper )
+        unregisterTwObj( o.screen.value, helper )
+        if vname != nothing
+            idx = findfirst( _->_.name == vname, o.data.views )
+            v = o.data.views[idx]
+            o.data.colInfo = TwTableColInfo[]
+            o.data.pivots = v.pivots
+            o.data.sortorder = v.sortorder
+            o.data.expanddepth = v.expanddepth
+            for c in v.columns
+                push!( o.data.colInfo, o.data.allcolInfo[ symbol( c ) ] )
+            end
+            o.data.rootnode.children = Any[]
+            o.data.rootnode.isOpen = false
+            expandnode( o.data.rootnode, o.data.expanddepth )
+            ordernode( o.data.rootnode )
+            update_tree_data()
+            o.data.currentLine = 1
+            checkTop()
+            dorefresh=true
+        end
+    elseif token == :F6
+        colsym = o.data.colInfo[ o.data.currentCol ].name
+        node = o.data.datalist[o.data.currentLine][5]
+        isnode = (o.data.datalist[o.data.currentLine][3] != :single)
+        if isnode
+            v = node[ colsym ]
+        else
+            v = node.subdataframesorted[ colsym ][ o.data.datalist[o.data.currentLine][2][end] ]
+        end
+        if typeof( v ) != NAtype && !in( v, [ nothing, None, Any ] )
+            tshow( v, title = string( colsym ) )
+            dorefresh = true
+        end
     elseif token == :F1
         helper = newTwViewer( o.screen.value, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )

@@ -25,6 +25,8 @@ include( "consts.jl")
 include( "ccall.jl" )
 include( "twtypes.jl")
 include( "strutils.jl")
+include( "format.jl" )
+include( "dfutils.jl" )
 include( "twobj.jl")
 include( "twscreen.jl")
 include( "twprogress.jl")
@@ -46,6 +48,7 @@ export newTwCalendar
 export newTwPopup, newTwMultiSelect
 export newTwDfTable, DataFrameAggr, uniqvalue, unionall
 export twFuncFactory, registerTwObj
+export FormatHints
 export COLOR_PAIR
 
 
