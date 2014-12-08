@@ -69,6 +69,7 @@ tshow( df;
 * `title`.
 * `formatHints`. `Dict{Any,FormatHints}`. Keys of `Symbol` type are treated as column names. Keys of `DataType`
    are backup formats when actual format hints for a name are not provided.
+* `widthHints`. `Dict{Symbol,Int}`. If present, the width will override default in formatHints.
 * `aggrHints`. `Dict{Any,DataFrameAggr}`. Keys of `Symbol` type are treated as column names. Keys of `DataType`
    are backup aggregation hints when actual aggregation hints for a name are not provided.
 * `headerHints`. Alternative name for the header.

@@ -13,7 +13,7 @@ type FormatHints
 end
 
 function FormatHints{T<:Integer}( ::Type{T} )
-    FormatHints( 10, 1, 0, true, false, false, true, true, false, false, "d" )
+    FormatHints( 8, 1, 0, true, false, false, true, true, false, false, "d" )
 end
 function FormatHints{T<:Unsigned}( ::Type{T} )
     FormatHints( 8, 1, 0, true, false, false, true, true, false, false, "x" )

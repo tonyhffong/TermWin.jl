@@ -13,7 +13,7 @@ c          : Change columns/order
 v          : Switch preset views
 F6         : popup window for value
 """
-defaultTableBottomText = "F1:help  p:Pivot  c:ColOrder  v:Views []:ColWidth"
+defaultTableBottomText = "F1:help  p:Pivot  c:ColOrder  v:Views ][:ColWidth"
 
 type TwTableColInfo
     name::Symbol
@@ -170,6 +170,7 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
         title = "DataFrame",
         formatHints = Dict{Any,FormatHints}(), # Symbol/Type -> FormatHints
         aggrHints = Dict{Any,DataFrameAggr}(), # Symbol/Type -> DataFrameAggr
+        widthHints = Dict{Symbol,Int}(),
         headerHints = Dict{Symbol,UTF8String}(),
         bottomText = defaultTableBottomText,
         views = Array{Dict{Symbol,Any},1}() )
@@ -225,7 +226,10 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
 
         hdr = get( headerHints, c, string( c ) )
         fmt = get( formatHints, c,
-                get( formatHints, t, FormatHints( t ) ) )
+                get( formatHints, t, deepcopy( FormatHints( t ) ) ) )
+        if haskey( widthHints, c )
+            fmt.width = widthHints[c]
+        end
         agr = get( aggrHints, c,
                 get( aggrHints, t, DataFrameAggr( t ) ) )
         ci = TwTableColInfo( c, hdr, fmt, agr )
