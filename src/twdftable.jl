@@ -173,7 +173,7 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
         widthHints = Dict{Symbol,Int}(),
         headerHints = Dict{Symbol,UTF8String}(),
         bottomText = defaultTableBottomText,
-        views = Array{Dict{Symbol,Any},1}() )
+        views = Dict{Symbol,Any}[] )
     obj = TwObj( twFuncFactory( :DfTable ) )
     registerTwObj( scr, obj )
     obj.value = df
