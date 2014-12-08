@@ -8,6 +8,7 @@ ctrl_left/right arrow: paginate to left/right
 [, ]       : make current column narrower/wider
 ctrl_up    : move up to the start of the current branch or previous branch
 ctrl_down  : move down to the next branch
++, -       : Expand or collapse 1 level everywhere
 p          : Change pivot
 c          : Change columns/order
 v          : Switch preset views
@@ -562,6 +563,9 @@ function injectTwDfTable( o::TwObj, token::Any )
     end
 
     checkTop = () -> begin
+        if o.data.currentLine > length( o.data.datalist )
+            o.data.currentLine = length( o.data.datalist )
+        end
         if o.data.currentTop < 1
             o.data.currentTop = 1
         elseif o.data.currentTop > o.data.datalistlen - viewContentHeight + 1
@@ -629,28 +633,48 @@ function injectTwDfTable( o::TwObj, token::Any )
             ordernode( node )
         end
         update_tree_data()
-        dorefresh = true
-    elseif token == "_"
-        currentstack = copy(o.data.datalist[ o.data.currentLine ][4])
-        if length( currentstack ) > 1
-            currentstack = Any[ currentstack[1] ]
-        end
-        o.data.openstatemap = Dict{Any,Bool}()
-        o.data.openstatemap[ Any[] ] = true
-        update_tree_data()
-        prevline = o.data.currentLine
-        o.data.currentLine = 1
-        for i in 1:min(prevline,o.data.datalistlen)
-            if currentstack == o.data.datalist[ i ][4]
-                o.data.currentLine = i
-                if abs( i-prevline ) > viewContentHeight
-                    o.data.currentTop = o.data.currentLine - int(viewContentHeight / 2)
-                end
-                break
-            end
-        end
         checkTop()
         dorefresh = true
+    elseif token == "+"
+        somethingchanged=false
+        for r in 1:length( o.data.datalist )
+            if o.data.datalist[r][3] == :close
+                node = o.data.datalist[r][5]
+                expandnode( node )
+                ordernode( node )
+                somethingchanged=true
+            end
+        end
+        if somethingchanged
+            update_tree_data()
+            checkTop()
+            dorefresh = true
+        else
+            beep()
+        end
+    elseif token == "-"
+        somethingchanged=false
+        for r in 1:length( o.data.datalist )
+            if o.data.datalist[r][3] == :open
+                node = o.data.datalist[r][5]
+                if !isempty( node.children )
+                    if all( x->!x.isOpen, node.children )
+                        node.isOpen = false
+                        somethingchanged=true
+                    end
+                else
+                    node.isOpen = false
+                    somethingchanged=true
+                end
+            end
+        end
+        if somethingchanged
+            update_tree_data()
+            checkTop()
+            dorefresh = true
+        else
+            beep()
+        end
     elseif token == :up
         dorefresh = movevertical(-1)
     elseif token == :down
