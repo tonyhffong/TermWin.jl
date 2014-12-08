@@ -48,7 +48,7 @@ using TermWin
 using Compat
 tshow( df;
   pivots = [ :col1, :col2 ],
-  expanddepth = 2, # default expansion of the pivots
+  initdepth = 2, # initial expansion of the pivots
   colorder = [ :col3, :col4, "*", :col5 ],
   aggrHints = @compat(Dict{Any,DataFrameAggr}( Int => DataFrameAggr( "mean" ) ) ),
   views = [
@@ -58,7 +58,7 @@ tshow( df;
 ```
 
 * `pivots`. Array of `Symbol`
-* `expanddepth`. Default 1. How many levels of pivots are open at initialization.
+* `initdepth`. Default 1. How many levels of pivots are open at initialization.
 * `colorder`. Array of `Symbol`, `Regex` and `"*"` (string). Symbols are treated as actual column name.
    It is an error to provide a symbol that doesn't exist as a column in the data frame. Regex would
    be used to to match multiple columns. `"*"` is the rest of the columns not covered yet. It is
@@ -74,7 +74,7 @@ tshow( df;
    are backup aggregation hints when actual aggregation hints for a name are not provided.
 * `headerHints`. Alternative name for the header.
 * `views`. Array of Dictionaries that provide alternative views of the same data. Overrideable keys are
-    * `pivots`, `colorder`, `hidecols`, `sortorder`, `expanddepth` with the same meaning as above.
+    * `pivots`, `colorder`, `hidecols`, `sortorder`, `initdepth` with the same meaning as above.
     * `name`. String. name of the view. If not provided the views would just be `v#1`, `v#2`, and so on...
 
 Aggregation is done via `DataFrameAggr` type from this package. TermWin also provides a

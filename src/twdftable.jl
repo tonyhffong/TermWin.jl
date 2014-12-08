@@ -68,12 +68,12 @@ type TwTableView
     pivots::Array{Symbol,1}
     sortorder::Array{ (Symbol, Symbol), 1 } # [ (:col1, :asc ), (:col2, :desc), ... ]
     columns::Array{ Symbol, 1 }
-    expanddepth::Int
+    initdepth::Int
 end
 
 # convenient functions to construct views
 function TwTableView( df::AbstractDataFrame, name::String;
-    pivots = Symbol[], expanddepth=1,
+    pivots = Symbol[], initdepth=1,
     colorder = Any[ "*" ],
     hidecols = Any[], sortorder = (Symbol,Symbol)[] )
 
@@ -129,7 +129,7 @@ function TwTableView( df::AbstractDataFrame, name::String;
     removed = Symbol[]
     move_columns( removed, hidecols, finalcolorder )
 
-    TwTableView( utf8(name), pivots, sortorder, finalcolorder, expanddepth )
+    TwTableView( utf8(name), pivots, sortorder, finalcolorder, initdepth )
 end
 
 # this is the widget data. all subnodes hold a weakref back to this to
@@ -152,7 +152,7 @@ type TwDfTableData
     bottomText::String
     helpText::String
     searchText::String
-    expanddepth::Int
+    initdepth::Int
     views::Array{ TwTableView, 1 }
     # calculated dimension
     TwDfTableData() = new( TwDfTableNode(),
@@ -163,7 +163,7 @@ end
 #TODO: allow Regex in formatHints and aggrHints
 function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::Any;
         pivots = Symbol[],
-        expanddepth = 1,
+        initdepth = 1,
         colorder = Any[ "*" ], # mix of symbol, regex, and "*" (the rest), "*" can be in the middle
         hidecols = Any[], # anything here trumps colorder, Symbol, or Regex
         sortorder = (Symbol,Symbol)[],
@@ -186,10 +186,10 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
     obj.data.rootnode.context = WeakRef( obj.data )
 
     mainV = TwTableView( df, utf8( "#Main"), pivots = pivots,
-        expanddepth=expanddepth, sortorder=sortorder, colorder=colorder, hidecols=hidecols )
+        initdepth=initdepth, sortorder=sortorder, colorder=colorder, hidecols=hidecols )
 
     obj.data.pivots = mainV.pivots
-    obj.data.expanddepth = mainV.expanddepth
+    obj.data.initdepth = mainV.initdepth
     obj.data.sortorder = mainV.sortorder
     finalcolorder = mainV.columns
 
@@ -200,16 +200,16 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
         end
         vname = get( d, :name, string( "v#" * string( i ) ) )
         vpivots = get( d, :pivots, pivots )
-        vexpanddepth = get( d, :expanddepth, expanddepth )
+        vinitdepth = get( d, :initdepth, initdepth )
         vcolorder = get( d, :colorder, colorder )
         vhidecols = get( d, :hidecols, hidecols )
         vsortorder = get( d, :sortorder, sortorder )
-        v = TwTableView( df, utf8( vname ), pivots = vpivots, expanddepth = vexpanddepth,
+        v = TwTableView( df, utf8( vname ), pivots = vpivots, initdepth = vinitdepth,
             sortorder=vsortorder, colorder = vcolorder, hidecols = vhidecols )
         push!( obj.data.views, v )
     end
 
-    expandnode( obj.data.rootnode, expanddepth )
+    expandnode( obj.data.rootnode, initdepth )
     ordernode( obj.data.rootnode )
     builddatalist( obj.data )
 
@@ -780,7 +780,7 @@ function injectTwDfTable( o::TwObj, token::Any )
             o.data.pivots = map( x->symbol(x), newpivots )
             o.data.rootnode.children = Any[]
             o.data.rootnode.isOpen = false
-            expandnode( o.data.rootnode, o.data.expanddepth )
+            expandnode( o.data.rootnode, o.data.initdepth )
             ordernode( o.data.rootnode )
             update_tree_data()
             o.data.currentLine = 1
@@ -811,13 +811,13 @@ function injectTwDfTable( o::TwObj, token::Any )
             o.data.colInfo = TwTableColInfo[]
             o.data.pivots = v.pivots
             o.data.sortorder = v.sortorder
-            o.data.expanddepth = v.expanddepth
+            o.data.initdepth = v.initdepth
             for c in v.columns
                 push!( o.data.colInfo, o.data.allcolInfo[ symbol( c ) ] )
             end
             o.data.rootnode.children = Any[]
             o.data.rootnode.isOpen = false
-            expandnode( o.data.rootnode, o.data.expanddepth )
+            expandnode( o.data.rootnode, o.data.initdepth )
             ordernode( o.data.rootnode )
             update_tree_data()
             o.data.currentLine = 1
