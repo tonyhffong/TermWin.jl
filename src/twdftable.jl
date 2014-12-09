@@ -476,6 +476,7 @@ function drawTwDfTable( o::TwObj )
         node = o.data.datalist[r][5]
         isnode = (o.data.datalist[r][3] != :single)
         startx = 1+o.data.datatreewidth
+        underline =  r < o.data.datalistlen && length( o.data.datalist[r+1][2] ) < stacklen
         for col = o.data.currentLeft:lastcol
             cn = o.data.colInfo[ col ].name
             if isnode
@@ -499,9 +500,9 @@ function drawTwDfTable( o::TwObj )
                 str = applyformat( v, o.data.colInfo[col].format )
                 str = ensure_length( str, width )
             end
-            flags = 0
+            flags = underline ? A_UNDERLINE : 0
             if col == o.data.currentCol && r == o.data.currentLine
-                flags = A_BOLD
+                flags |= A_BOLD
                 if isred
                     flags |= COLOR_PAIR(9)
                 else
@@ -509,7 +510,7 @@ function drawTwDfTable( o::TwObj )
                 end
             elseif isnode
                 if  mod( length( o.data.datalist[r][2] ), 2 ) == 0
-                    flags = A_BOLD
+                    flags |= A_BOLD
                     if isred
                         flags |= COLOR_PAIR(1)
                     else
@@ -517,16 +518,16 @@ function drawTwDfTable( o::TwObj )
                     end
                 else
                     if isred
-                        flags = COLOR_PAIR(29)
+                        flags |= COLOR_PAIR(29)
                     else
-                        flags = COLOR_PAIR(13)
+                        flags |= COLOR_PAIR(13)
                     end
                 end
             else
                 if isred
-                    flags = COLOR_PAIR(1)
+                    flags |= COLOR_PAIR(1)
                 else
-                    flags = COLOR_PAIR(7)
+                    flags |= COLOR_PAIR(7)
                 end
             end
             wattron( o.window, flags )
