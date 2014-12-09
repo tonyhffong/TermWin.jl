@@ -20,7 +20,7 @@ type TwTableColInfo
     name::Symbol
     displayname::UTF8String
     format::FormatHints
-    aggr::DataFrameAggr
+    aggr::Any
 end
 
 type TwDfTableNode
@@ -50,11 +50,8 @@ function getindex( n::TwDfTableNode, c::Symbol )
     else
         context = n.context.value
         aggr = context.allcolInfo[ c ].aggr
-        if aggr.sig == (DataArray,)
-            ret = aggr.f( n.subdataframe[ c ] )
-        elseif aggr.sig == (DataFrame,)
-            ret = aggr.f( n.subdataframe )
-        end
+        f = liftAggrSpecToFunc( c, aggr )
+        ret = f( n.subdataframe )
         if typeof( ret ) <: AbstractDataFrame
             ret = ret[1][1] # first col, first row
         end
@@ -170,7 +167,7 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
         sortorder = (Symbol,Symbol)[],
         title = "DataFrame",
         formatHints = Dict{Any,FormatHints}(), # Symbol/Type -> FormatHints
-        aggrHints = Dict{Any,DataFrameAggr}(), # Symbol/Type -> DataFrameAggr
+        aggrHints = Dict{Any,Any}(), # Symbol/Type -> string/symbol/expr/function
         widthHints = Dict{Symbol,Int}(),
         headerHints = Dict{Symbol,UTF8String}(),
         bottomText = defaultTableBottomText,
@@ -232,7 +229,7 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
             fmt.width = widthHints[c]
         end
         agr = get( aggrHints, c,
-                get( aggrHints, t, DataFrameAggr( t ) ) )
+                get( aggrHints, t, defaultAggr( t ) ) )
         ci = TwTableColInfo( c, hdr, fmt, agr )
         obj.data.allcolInfo[c] = ci
     end
@@ -752,15 +749,15 @@ function injectTwDfTable( o::TwObj, token::Any )
         end
     elseif token == :ctrl_down
         curr = o.data.currentLine
-        stack = o.data.datalist[curr][2]
-        if isempty( stack )
+        stck = o.data.datalist[curr][2]
+        if isempty( stck )
             beep()
         else
             if o.data.datalist[curr][3] == :single
-                tmpstack = copy( stack )
+                tmpstack = copy( stck )
                 pop!( tmpstack )
             else
-                tmpstack = stack
+                tmpstack = stck
             end
             for r in curr+1:length(o.data.datalist )
                 rstack = o.data.datalist[r][2]
@@ -776,11 +773,11 @@ function injectTwDfTable( o::TwObj, token::Any )
         end
     elseif token == :ctrl_up
         curr = o.data.currentLine
-        stack = o.data.datalist[curr][2]
-        if isempty( stack )
+        stck = o.data.datalist[curr][2]
+        if isempty( stck )
             beep()
         else
-            tmpstack = copy( stack )
+            tmpstack = copy( stck )
             pop!( tmpstack )
             for r in curr-1:-1:1
                 rstack = o.data.datalist[r][2]

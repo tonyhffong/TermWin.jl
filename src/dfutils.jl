@@ -4,124 +4,101 @@ Facilities to help map GUI input / expression into a function that aggregates co
 We would store that function and use it whenever we need to aggregate a column.
 
 Three ways to instantiate the DataFrameAggr
-* String: either a simple name "mean", or an expression wmean( :col, :WeightColumn )
-* Similarly, Symbol or expression, such as :mean, or :( wmean( :col, :WeightColumn ) )
-    * if just a simple name, it is assumed to be a function, we would try these signature
-        * f( x::DataArray ) -> output is the aggregated scalar
-        * f( x::Dataframe ) -> output is the aggregated scalar, rare.
-    * if expression, it must be of the form
-        * f( args..., kw1=v1, kw2=v2, ... )
-        * straightforward symbols are expected to be column names
+* Symbol. e.g. `:mean`. It's lowered into `mean(:_)`. See below for the meaning of `:_`
+* Expr. e.g. `:( mean(:_,:wcol) )`, `:( quantile( :_, 0.75 ) )`
+   symbols (quoted) are interpreted as the named column.
+   The underscore `:_` column is special -- it's interpreted on-the-fly as the column that
+   needs to be aggregated. So multiple columns can use the same expression `mean(_,:wcol)` and
+   they will all use the same weight (from `wcol`), but produces target specific mean.
+* Function: (most likely lambda) e.g. `df -> quantile( df[:col], 0.5 )`. It is expected
+   to generate either a value (typically a scalar consistent to the column type), or
+   a 1-row, 1-col dataframe.
 """ ->
 =#
-immutable DataFrameAggr
-    f::Function
-    sig::Any
+
+DataFrameAggrCache = Dict{Any,Function}()
+
+defaultAggr( ::Type{} ) = :uniqvalue
+defaultAggr{T<:Real}( ::Type{T} ) = :sum
+defaultAggr{T}( ::Type{Array{T,1}} ) = :unionall
+
+function liftAggrSpecToFunc( c::Symbol, dfa::String )
+    if haskey( DataFrameAggrCache, (c, dfa ) )
+        return DataFrameAggrCache[ (c, dfa ) ]
+    end
+    ret = liftAggrSpecToFunc( c, parse( dfa ) )
+    DataFrameAggrCache[ (c, dfa) ] = ret
 end
 
-DataFrameAggrCache = Dict{Any, DataFrameAggr}()
-
-DataFrameAggr() = DataFrameAggr( _->NA, (DataArray,) )
-
-function DataFrameAggr( x::String )
-    global DataFrameAggrCache
-    if haskey( DataFrameAggrCache, x )
-        return DataFrameAggrCache[ x ]
+function liftAggrSpecToFunc( c::Symbol, dfa::Union( Function, Symbol, Expr ) )
+    if typeof( dfa ) == Function
+        return dfa
     end
-    ex = parse( x )
-    ret = DataFrameAggr( ex )
-    DataFrameAggrCache[x] = ret
-    ret
-end
-
-function DataFrameAggr( ex::Union( Expr, Symbol ) )
-    global DataFrameAggrCache
-    if haskey( DataFrameAggrCache, ex )
-        return DataFrameAggrCache[ ex ]
+    if haskey( DataFrameAggrCache, (c, dfa) )
+        return DataFrameAggrCache[ (c, dfa ) ]
     end
-
-    if typeof( ex ) == Symbol
-        # assume it is a function, e.g. mean, std, uniq, countuniq, etc.
-        if contains( string(ex), "!" )
-            error( string(ex) * " seems to have side effects" )
-        end
-        if ex == :NA
-            return ( DataFrameAggrCache[ex] = DataFrameAggr() )
-        end
-        v = nothing
-        try
-            v = eval( Main, ex )
-        end
-        if typeof( v ) != Function
-            error( string( ex ) * " does not represent a function" )
-        end
-        ex = :( $ex() )
-    else
-        if !isexpr( ex, :call )
-            error( string( ex ) * " does not look like an aggregator function")
+    # "mean" or "Module.aggrfunc"
+    if typeof( dfa ) == Symbol || typeof( dfa ) == Expr && dfa.head == :(.) && all( x->typeof(x)==Symbol, dfa.args )
+        funnameouter = gensym( "DFAggr" )
+        code = :(
+            function $funnameouter( _df_::AbstractDataFrame )
+            end )
+        push!( code.args[2].args, Expr( :call, dfa, Expr( :call, :getindex, :_df_, QuoteNode(c) ) ) )
+        ret = eval( code )
+    else # expr
+        if !isexpr( dfa, :call )
+            error( string( dfa ) * " does not look like an aggregator function")
         end
         # disallow mutating function
-        fname = ex.args[1]
-        if Base.Meta.isexpr( fname, :curly )
+        fname = dfa.args[1]
+        if Base.Meta.isexpr( dfa, :curly )
             error( "DataFrameAggr: curly not supported")
-        elseif !( typeof( fname ) <: Symbol )
+        elseif !( typeof( fname ) <: Symbol ) && !Base.Meta.isexpr( fname, :(.) )
             error( "DataFrameAggr: only simple function name please")
         end
         if contains( string(fname), "!" )
             error( string(fname) * " seems to have side effects" )
         end
-        v = nothing
-        try
-            v = eval( Main, fname )
-        end
-        if typeof( v ) != Function
-            error( string( fname ) * " does not represent a function" )
-        end
-    end
 
-    mt = methods( v )
-    for m in mt
-        if isempty( m.sig )
-            continue
-        end
-        # count the non-kw signatures
-        nargs = 0
-        for i = 2:length( ex.args )
-            if !isexpr( ex.args[i], [ :parameters, :kw ] )
-                nargs += 1
+        # replace _ with _df_[$c], and then leverage @with
+
+        # before we do that, note that
+        # (A) in DataFramesMeta, macro converts :x to Expr( :quote, :x ) but
+        #     :( :x ) or parse( ":x" ) it is actually QuoteNode( :x ),
+        #     so we need to do a little conversion in order to leverage that package
+        function convertExpression!( ex::Expr )
+            for i in 1:length( ex.args )
+                a = ex.args[i]
+                if typeof( a ) == QuoteNode
+                    if a.value == :_
+                        ex.args[i] = Expr( :quote, c )
+                    else
+                        ex.args[i] = Expr( :quote, a.value )
+                    end
+                elseif typeof( a ) == Expr
+                    convertExpression!( a )
+                end
             end
         end
-        if typeof( m.sig[1] ) <: Tuple
-            continue
+        cdfa = deepcopy( dfa )
+        convertExpression!( cdfa )
+
+        membernames = Dict{Symbol, Symbol}()
+        cdfa = DataFramesMeta.replace_syms(cdfa, membernames)
+        funargs = map(x -> :( getindex( _df_, $(Meta.quot(x))) ), collect(keys(membernames)))
+        funnameouter = gensym("DFAggr")
+        funname = gensym()
+        code = quote
+            function $funnameouter( _df_::AbstractDataFrame )
+                function $funname($(collect(values(membernames))...))
+                    $cdfa
+                end
+                $funname($(funargs...))
+            end
         end
-        if typeof( m.sig[1] ) <: UnionType
-            continue
-        end
-        if in( m.sig[1].name.name, [ :DataArray, :PooledDataArray, :AbstractDataArray ] ) && nargs == 0
-            ex2 = deepcopy( ex )
-            insert!( ex2.args, 2, :_ )
-            l = eval( Main,Expr( :(->), :_, ex2 ) )
-            return ( DataFrameAggrCache[ex] = DataFrameAggr( l, (DataArray,) ) )
-        elseif in( m.sig[1].name.name,[:DataFrame, :AbstractDataFrame] )
-            ex2 = deepcopy( ex )
-            insert!( ex2.args, 2, :_ )
-            l = eval( Main,Expr( :(->), :_, ex2 ) )
-            return ( DataFrameAggrCache[ex] = DataFrameAggr( l, (DataFrame,) ) )
-        end
+        ret = eval( code )
     end
-    error( string( v ) * ": No usable method. Accepts (DataArray/PDA,) or (DataFrame,args...)" )
-end
-
-function DataFrameAggr( ::Type{} )
-    DataFrameAggr( "uniqvalue" )
-end
-
-function DataFrameAggr{T<:Real}( ::Type{T} )
-    DataFrameAggr( "sum" )
-end
-
-function DataFrameAggr{T}( ::Type{Array{T,1}} )
-    DataFrameAggr( "unionall" )
+    DataFrameAggrCache[ (c, dfa) ] = ret
 end
 
 function unionall( x::AbstractDataArray )
@@ -144,24 +121,24 @@ function unionall( x::Array )
 end
 
 function uniqvalue( x::AbstractDataArray; skipna::Bool=true )
-    levels = DataArrays.levels(x)
+    lvls = DataArrays.levels(x)
     if skipna
-        l = dropna( levels )
+        l = dropna( lvls )
         if length(l) == 1
             return l[1]
         end
         return NA
     end
-    if length(levels) == 1
-        return levels[1]
+    if length(lvls) == 1
+        return lvls[1]
     end
     return NA
 end
 
 function uniqvalue{T<:String}( x::Union( Array{T}, DataArray{T}, PooledDataArray{T} ); skipna::Bool=true, skipempty::Bool=true )
-    levels = DataArrays.levels(x)
+    lvls = DataArrays.levels(x)
     if skipna
-        l = dropna( levels )
+        l = dropna( lvls )
         if skipempty
             emptyidx = findfirst( l, "" )
             if length( l ) == 1 && emptyidx == 0
@@ -179,18 +156,24 @@ function uniqvalue{T<:String}( x::Union( Array{T}, DataArray{T}, PooledDataArray
         return NA
     end
     if skipempty
-        emptyidx = findfirst( levels, "" )
-        if length( levels ) == 1 && emptyidx == 0
-            return levels[1] # could be NA
-        elseif length( levels ) == 2 && emptyidx != 0
+        emptyidx = findfirst( lvls, "" )
+        if length( lvls ) == 1 && emptyidx == 0
+            return lvls[1] # could be NA
+        elseif length( lvls ) == 2 && emptyidx != 0
             if emptyidx == 1
-                return levels[2]
+                return lvls[2]
             else
-                return levels[1]
+                return lvls[1]
             end
         end
-    elseif length( levels ) == 1
-        return levels[1]
+    elseif length( lvls ) == 1
+        return lvls[1]
     end
     return NA
+end
+
+type DataFrameCalcPivot
+    f::Function
+    sig::Any
+    by::Array{Symbol,1}
 end

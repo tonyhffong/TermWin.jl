@@ -50,7 +50,7 @@ tshow( df;
   pivots = [ :col1, :col2 ],
   initdepth = 2, # initial expansion of the pivots
   colorder = [ :col3, :col4, "*", :col5 ],
-  aggrHints = @compat(Dict{Any,DataFrameAggr}( Int => DataFrameAggr( "mean" ) ) ),
+  aggrHints = @compat(Dict{Any,Any}( Int => "mean" ) ),
   views = [
       @compat(Dict{Symbol,Any}( :name => "ByCol2", :pivots => [ :col2, :col1 ], :hidecols => [:col5 ] ) )
   ]
@@ -70,8 +70,11 @@ tshow( df;
 * `formatHints`. `Dict{Any,FormatHints}`. Keys of `Symbol` type are treated as column names. Keys of `DataType`
    are backup formats when actual format hints for a name are not provided.
 * `widthHints`. `Dict{Symbol,Int}`. If present, the width will override default in formatHints.
-* `aggrHints`. `Dict{Any,DataFrameAggr}`. Keys of `Symbol` type are treated as column names. Keys of `DataType`
-   are backup aggregation hints when actual aggregation hints for a name are not provided.
+* `aggrHints`. `Dict{Any,Any}`. Keys of `Symbol` type are treated as column names. Keys of `DataType`
+   are backup aggregation hints when actual aggregation hints for a name are not provided. The values
+   can be strings like `"mean"`, or `"mean(:_, :wtcol)"`, equivalent symbols or expressions
+   e.g. `:( mean(:_, :wtcol) )`, etc. Quoted symbols are interpreted as columns, similar to how
+   `DataFramesMeta` package.
 * `headerHints`. Alternative name for the header.
 * `views`. Array of Dictionaries that provide alternative views of the same data. Overrideable keys are
     * `pivots`, `colorder`, `hidecols`, `sortorder`, `initdepth` with the same meaning as above.

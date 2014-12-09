@@ -6,11 +6,11 @@ df = dataset( "Ecdat", "BudgetFood" )
 tshow( df;
     colorder = [ :Sex, :Age, :WFood, "*", :Town ],
     pivots = [ :Town, :Sex ],
-    aggrHints = @compat(Dict{Any,DataFrameAggr}(
-    :TotExp => DataFrameAggr( "mean" ),
-    :Age => DataFrameAggr( "mean" ),
-    :WFood => DataFrameAggr( "mean" ),
-    :Town => DataFrameAggr( "uniqvalue" )
+    aggrHints = @compat(Dict{Any,Any}(
+    :TotExp => "mean",
+    :Age => "mean",
+    :WFood => "mean",
+    :Town => "uniqvalue"
     ) ) )
 # =#
 
