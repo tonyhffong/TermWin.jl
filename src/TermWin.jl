@@ -17,6 +17,7 @@ end
 
 using DataArrays
 using DataFrames
+using DataFramesMeta
 
 macro lintpragma( s )
 end
@@ -46,7 +47,7 @@ export TwObj, TwScreen
 export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 export newTwCalendar
 export newTwPopup, newTwMultiSelect
-export newTwDfTable, DataFrameAggr, uniqvalue, unionall
+export newTwDfTable, uniqvalue, unionall
 export twFuncFactory, registerTwObj
 export FormatHints
 export COLOR_PAIR

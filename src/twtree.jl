@@ -413,11 +413,11 @@ function injectTwTree( o::TwObj, token::Any )
     elseif token == " " || token == symbol( "return" ) || token == :enter
         expandhint = o.data.datalist[ o.data.currentLine ][5]
         if expandhint != :single
-            stack = o.data.datalist[ o.data.currentLine ][4]
-            if !haskey( o.data.openstatemap, stack ) || !o.data.openstatemap[ stack ]
-                o.data.openstatemap[ stack ] = true
+            stck = o.data.datalist[ o.data.currentLine ][4]
+            if !haskey( o.data.openstatemap, stck ) || !o.data.openstatemap[ stck ]
+                o.data.openstatemap[ stck ] = true
             else
-                o.data.openstatemap[ stack ] = false
+                o.data.openstatemap[ stck ] = false
             end
             update_tree_data()
             dorefresh = true
@@ -428,9 +428,9 @@ function injectTwTree( o::TwObj, token::Any )
         for i in 1:o.data.datalistlen
             expandhint = o.data.datalist[ i ][5]
             if expandhint != :single
-                stack = o.data.datalist[ i ][ 4 ]
-                if !haskey( o.data.openstatemap, stack ) || !o.data.openstatemap[ stack ]
-                    o.data.openstatemap[ stack ] = true
+                stck = o.data.datalist[ i ][ 4 ]
+                if !haskey( o.data.openstatemap, stck ) || !o.data.openstatemap[ stck ]
+                    o.data.openstatemap[ stck ] = true
                     somethingchanged = true
                 end
             end
@@ -459,10 +459,10 @@ function injectTwTree( o::TwObj, token::Any )
         if maxstackdepth > 1
             for i in 1:o.data.datalistlen
                 expandhint = o.data.datalist[ i ][5]
-                stack = o.data.datalist[ i ][ 4 ]
-                if expandhint != :single && length(stack) == maxstackdepth-1
-                    if haskey( o.data.openstatemap, stack ) && o.data.openstatemap[ stack ]
-                        o.data.openstatemap[ stack ] = false
+                stck = o.data.datalist[ i ][ 4 ]
+                if expandhint != :single && length(stck) == maxstackdepth-1
+                    if haskey( o.data.openstatemap, stck ) && o.data.openstatemap[ stck ]
+                        o.data.openstatemap[ stck ] = false
                         somethingchanged = true
                     end
                 end
@@ -517,16 +517,16 @@ function injectTwTree( o::TwObj, token::Any )
         maxmatch = 0
         bestline = 0
         for i in 1:o.data.datalistlen
-            stack = o.data.datalist[i][4]
-            if length( prevstack ) > maxmatch && length( stack )> maxmatch &&
-                isequal( prevstack[1:maxmatch+1], stack[1:maxmatch+1] )
+            stck = o.data.datalist[i][4]
+            if length( prevstack ) > maxmatch && length( stck )> maxmatch &&
+                isequal( prevstack[1:maxmatch+1], stck[1:maxmatch+1] )
                 maxmatch += 1
                 bestline = i
                 continue
             elseif length( prevstack ) < maxmatch
                 break
-            elseif length( prevstack ) >= maxmatch && length( stack ) >= maxmatch &&
-                !isequal( prevstack[1:maxmatch], stack[1:maxmatch] )
+            elseif length( prevstack ) >= maxmatch && length( stck ) >= maxmatch &&
+                !isequal( prevstack[1:maxmatch], stck[1:maxmatch] )
                 break
             end
         end
@@ -534,13 +534,13 @@ function injectTwTree( o::TwObj, token::Any )
         checkTop()
         dorefresh = true
     elseif token == :F6
-        stack = copy( o.data.datalist[ o.data.currentLine ][4] )
-        if !isempty( stack )
-            lastkey = stack[end]
+        stck = copy( o.data.datalist[ o.data.currentLine ][4] )
+        if !isempty( stck )
+            lastkey = stck[end]
         else
             lastkey = o.title
         end
-        v = getvaluebypath( o.value, stack )
+        v = getvaluebypath( o.value, stck )
         if typeof( v ) == Method
             try
                 f = eval( v.func.code.name )
@@ -555,13 +555,13 @@ function injectTwTree( o::TwObj, token::Any )
             dorefresh = true
         end
     elseif token == :shift_F6
-        stack = copy( o.data.datalist[ o.data.currentLine ][4] )
-        if !isempty( stack )
-            lastkey = stack[end]
+        stck = copy( o.data.datalist[ o.data.currentLine ][4] )
+        if !isempty( stck )
+            lastkey = stck[end]
         else
             lastkey = o.title
         end
-        v = getvaluebypath( o.value, stack )
+        v = getvaluebypath( o.value, stck )
         vtyp = typeof( v )
         if !in( v, [ nothing, None, Any ] )
             tshow( vtyp )

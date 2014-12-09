@@ -57,6 +57,7 @@ function applyformat( v::Union(Date,DateTime), fmt::FormatHints )
 end
 
 function applyformat{T<:String}( v::T, fmt::FormatHints )
+    @lintpragma( "Ignore unused fmt" )
     return v
 end
 
@@ -69,5 +70,6 @@ function applyformat( v::AbstractArray, fmt::FormatHints )
 end
 
 function applyformat( v, fmt::FormatHints )
+    @lintpragma( "Ignore unused fmt" )
     return string( v )
 end
