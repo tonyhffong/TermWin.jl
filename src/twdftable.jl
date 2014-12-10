@@ -509,8 +509,8 @@ function drawTwDfTable( o::TwObj )
                     flags |= COLOR_PAIR(15)
                 end
             elseif isnode
+                flags |= A_BOLD
                 if  mod( length( o.data.datalist[r][2] ), 2 ) == 0
-                    flags |= A_BOLD
                     if isred
                         flags |= COLOR_PAIR(1)
                     else

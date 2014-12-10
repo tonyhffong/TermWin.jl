@@ -106,7 +106,7 @@ function initsession()
             init_pair( 10, COLOR_GREEN,  17 ) # green on dark blue
             init_pair( 11, COLOR_YELLOW, 17 ) # yellow on dark blue
             init_pair( 12, COLOR_WHITE,   52 ) # white on dark RED
-            init_pair( 13, COLOR_WHITE,  235 ) # white on dark gray
+            init_pair( 13, COLOR_WHITE,  234 ) # white on dark gray
             init_pair( 14, COLOR_CYAN,   17 ) # cyan on dark blue
             init_pair( 15, COLOR_WHITE,  17 ) # white on dark blue
         end
