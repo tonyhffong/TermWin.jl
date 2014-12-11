@@ -9,31 +9,33 @@ type FormatHints
     hidezero      :: Bool
     alternative   :: Bool
     mixedfraction :: Bool
+    suffix        :: UTF8String
+    autoscale     :: Symbol
     conversion    :: ASCIIString
 end
 
 function FormatHints{T<:Integer}( ::Type{T} )
-    FormatHints( 8, 1, 0, true, false, false, true, true, false, false, "d" )
+    FormatHints( 8, 1, 0, true, false, false, true, true, false, false, "", :none, "d" )
 end
 function FormatHints{T<:Unsigned}( ::Type{T} )
-    FormatHints( 8, 1, 0, true, false, false, true, true, false, false, "x" )
+    FormatHints( 8, 1, 0, true, false, false, true, true, false, false, "", :none, "x" )
 end
 function FormatHints{T<:FloatingPoint}( ::Type{T} )
-    FormatHints( 10, 1.0, 2, true, false, false, true, true, false, false, "f" )
+    FormatHints( 10, 1.0, 2, true, false, false, true, true, false, false, "", :none, "f" )
 end
 function FormatHints{T<:Rational}( ::Type{T} )
-    FormatHints( 12, 1, 0, false, false, false, true, true, false, true, "s" )
+    FormatHints( 12, 1, 0, false, false, false, true, true, false, true, "", :none, "s" )
 end
 function FormatHints( ::Type{Date} )
-    FormatHints( 10, 1, 0, false, false, false, false, false, false, false,
+    FormatHints( 10, 1, 0, false, false, false, false, false, false, false,"", :none,
        "yyyy-mm-dd" )
 end
 function FormatHints( ::Type{DateTime} )
-    FormatHints( 20, 1, 0, false, false, false, false, false, false, false,
+    FormatHints( 20, 1, 0, false, false, false, false, false, false, false,"", :none,
        "yyyy-mm-dd HH:MM:SS" )
 end
 function FormatHints( ::Type{} )
-    FormatHints( 14, 1, 0, false, false, false, true, true, false, false, "s" )
+    FormatHints( 14, 1, 0, false, false, false, true, true, false, false, "", :none, "s" )
 end
 
 function applyformat{T<:Number}( v::T, fmt::FormatHints )
@@ -47,6 +49,8 @@ function applyformat{T<:Number}( v::T, fmt::FormatHints )
             parens        = fmt.parens,
             alternative   = fmt.alternative,
             mixedfraction = fmt.mixedfraction,
+            suffix        = fmt.suffix,
+            autoscale     = fmt.autoscale,
             conversion    = fmt.conversion
             )
     end
