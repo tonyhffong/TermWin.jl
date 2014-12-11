@@ -14,7 +14,7 @@ c          : Change columns/order
 v          : Switch preset views
 F6         : popup window for value
 """
-defaultTableBottomText = "F1:help  p:Pivot  c:ColOrder  v:Views ][:ColWidth"
+defaultTableBottomText = "F1:help p:Pivot c:ColOrd v:Views ][:Width"
 
 type TwTableColInfo
     name::Symbol
@@ -152,10 +152,11 @@ type TwDfTableData
     searchText::String
     initdepth::Int
     views::Array{ TwTableView, 1 }
+    calcpivots::Dict{ Symbol, CalcPivot }
     # calculated dimension
     TwDfTableData() = new( TwDfTableNode(),
         Symbol[], (Symbol,Symbol)[], Any[], 0, 10, 1, 1, 1, 1, 1, 1, TwTableColInfo[],
-        Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, "", 1, TwTableView[] )
+        Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, "", 1, TwTableView[], Dict{Symbol,CalcPivot}() )
 end
 
 #TODO: allow Regex in formatHints and aggrHints
@@ -171,7 +172,8 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
         widthHints = Dict{Symbol,Int}(),
         headerHints = Dict{Symbol,UTF8String}(),
         bottomText = defaultTableBottomText,
-        views = Dict{Symbol,Any}[] )
+        views = Dict{Symbol,Any}[],
+        calcpivots = Dict{Symbol,CalcPivot}() )
     obj = TwObj( twFuncFactory( :DfTable ) )
     registerTwObj( scr, obj )
     obj.value = df
@@ -189,6 +191,7 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
     obj.data.pivots = mainV.pivots
     obj.data.initdepth = mainV.initdepth
     obj.data.sortorder = mainV.sortorder
+    obj.data.calcpivots = calcpivots
     finalcolorder = mainV.columns
 
     push!( obj.data.views, mainV )
@@ -207,10 +210,6 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
         push!( obj.data.views, v )
     end
 
-    expandnode( obj.data.rootnode, initdepth )
-    ordernode( obj.data.rootnode )
-    builddatalist( obj.data )
-
     # construct colInfo for each col in finalcolorder
     allcols = names( df )
     for c in allcols
@@ -218,6 +217,10 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
             @lintpragma( "DataFrame is a container type" )
         else
             @lintpragma( "DataFrames.DataFrame is a container type" )
+        end
+
+        if haskey( calcpivots, c )
+            error( "calcpivots interfere with an existing column " * string( c ) )
         end
 
         t = eltype( df[ c ] )
@@ -238,6 +241,10 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
         ci = obj.data.allcolInfo[c]
         push!( obj.data.colInfo, ci )
     end
+
+    expandnode( obj.data.rootnode, initdepth )
+    ordernode( obj.data.rootnode )
+    builddatalist( obj.data )
 
     updateTableDimensions( obj )
     obj.data.bottomText = bottomText
@@ -260,8 +267,31 @@ function expandnode( n::TwDfTableNode, depth::Int=1 )
     if length( npivots ) < length( pivots ) # populate children nodes
         if isempty( n.children )
             nextpivots = deepcopy( npivots )
-            push!( nextpivots, pivots[ length( npivots )+1 ] )
-            gd = groupby( n.subdataframe, nextpivots )
+            nextpivot = pivots[ length( npivots ) + 1 ]
+            push!( nextpivots, nextpivot )
+
+            if haskey( n.context.value.calcpivots, nextpivot )
+                spec = n.context.value.calcpivots[ nextpivot ]
+                f = liftCalcPivotToFunc( spec )
+                if isempty( spec.by )
+                    colvalues = f( n.subdataframe )
+                    n.subdataframe[ nextpivot ] = colvalues
+                    gd = groupby( n.subdataframe, nextpivots )
+                else
+                    # figure out the aggregation dependency
+                    # the lift function just now ensures we have this cache.
+                    aggrs = CalcPivotAggrDepCache[ (spec.spec, spec.by) ]
+                    kwargs = Any[]
+                    for a in aggrs
+                        push!( kwargs, ( a, n.context.value.allcolInfo[ a ].aggr ) )
+                    end
+
+                    df = f( n.subdataframe, nextpivot; kwargs... )
+                    gd = groupby( join( n.subdataframe, df, on=spec.by, kind=:left ), nextpivots )
+                end
+            else
+                gd = groupby( n.subdataframe, nextpivots )
+            end
             for g in gd
                 dfr = DataFrameRow( g[ gd.cols ], 1 )
                 valtuple = tuple( [ x[2] for x in dfr ]... )
@@ -794,6 +824,7 @@ function injectTwDfTable( o::TwObj, token::Any )
         end
     elseif token == "p"
         allcols = map(x->utf8(string(x)), names( o.value ) )
+        append!( allcols, map( x->utf8(string(x)), collect( keys( o.data.calcpivots ) ) ) )
         pvts = map( x->utf8(string(x)), o.data.pivots )
         helper = newTwMultiSelect( o.screen.value, allcols, :center, :center, selected = pvts, title="Pivot order", orderable=true, substrsearch=true )
         newpivots = activateTwObj( helper )

@@ -47,7 +47,9 @@ export TwObj, TwScreen
 export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 export newTwCalendar
 export newTwPopup, newTwMultiSelect
-export newTwDfTable, uniqvalue, unionall
+export newTwDfTable
+export uniqvalue, unionall
+export CalcPivot, discretize
 export twFuncFactory, registerTwObj
 export FormatHints
 export COLOR_PAIR
