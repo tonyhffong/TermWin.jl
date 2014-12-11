@@ -15,7 +15,7 @@ tshow( df;
         ) ),
     calcpivots = @compat( Dict{Symbol,Any}(
         :CountyStrBuckets => CalcPivot( :(discretize( :Str, [ 14,16,18,20,22,24 ], rank=true, compact=true )), by=[ :County ] ),
-        :CountyTestScrBuckets => CalcPivot( :(discretize( :TestScr, [ 600, 620, 640, 660, 680, 700], rank=true, compact=true, reverse=true )), by=[ :County ] )
+        :CountyTestScrBuckets => CalcPivot( :(discretize( :TestScr, [ 600, 620, 640, 660, 680, 700], label="score", rank=true, compact=false, reverse=true )), by=[ :County ] )
         ) ),
     views = [
         @compat(Dict{Symbol,Any}( :name => "ByStr", :pivots => [ :CountyStrBuckets, :County, :District] ) )

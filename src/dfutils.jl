@@ -412,9 +412,9 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
         end
         if leftequal
             compareL = "≤"
-            compareR = "<"
+            compareR = utf8("<")
         else
-            compareL = "<"
+            compareL = utf8("<")
             compareR = "≤"
         end
         pool[1] = rankprefixfunc( 1 ) * label2 * compareR * breakstrs[1]
