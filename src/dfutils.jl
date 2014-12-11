@@ -301,7 +301,6 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
     if !issorted(breaks)
         sort!(breaks)
     end
-    min_x, max_x = minimum(x), maximum(x)
     refs = fill(zero(DataArrays.DEFAULT_POOLED_REF_TYPE), length(x))
     n = length(breaks)
     if absolute
@@ -319,7 +318,7 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
             elseif x2[i] >= breaks[end]
                 refs[i] = n+1
             else
-                refs[i] = searchsortedfirst(breaks, x2[i])
+                refs[i] = searchsortedlast(breaks, x2[i]) + 1
             end
         end
     else
@@ -331,7 +330,7 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
             elseif x2[i] >  breaks[end]
                 refs[i] = n+1
             else
-                refs[i] = searchsortedlast(breaks, x2[i])
+                refs[i] = searchsortedfirst(breaks, x2[i])
             end
         end
     end
@@ -366,7 +365,7 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
                 for b in breaks
                     push!( breakminus1strs, formatter( b-1 ) )
                 end
-                pool[1] = rankprefixfunc(1) * breakminus1strs[1] * "-"
+                pool[1] = rankprefixfunc(1) * "≤ " * breakminus1strs[1]
                 for i in 2:n
                     if breaks[i-1] == breaks[i]-1
                         pool[i] = rankprefixfunc(i)*breakstrs[i-1]
@@ -411,11 +410,11 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
             label2 = label
         end
         if leftequal
-            compareL = "≤"
-            compareR = utf8("<")
+            compareL = " ≤ "
+            compareR = utf8(" < ")
         else
-            compareL = utf8("<")
-            compareR = "≤"
+            compareL = utf8(" < ")
+            compareR = " ≤ "
         end
         pool[1] = rankprefixfunc( 1 ) * label2 * compareR * breakstrs[1]
         for i in 2:n
