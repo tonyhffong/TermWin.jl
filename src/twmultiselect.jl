@@ -52,7 +52,7 @@ function newTwMultiSelect{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::
     obj.title = title
     obj.borderSizeV= 1
     obj.borderSizeH= 1
-    obj.data = TwMultiSelectData( arr, map(_->utf8(_),selected ) )
+    obj.data = TwMultiSelectData( arr, UTF8String[ utf8(string(_)) for _ in selected ] )
     if  orderable
         obj.data.selectmode |= SELECTEDORDERABLE
     end
