@@ -77,3 +77,19 @@ result = topnames( name, score, 2, dense=false )
 @test result[ 2 ] == "1. Bob"
 @test result[ 3 ] == "1. Jane"
 @test result[ 4 ] == "Others"
+
+name=@data( [ "Alice", "Bob", "Jane", "Joe" ] )
+score=@data( [ 7, 8, -9, 5 ] )
+result = topnames( name, score, 2, absolute=true )
+@test result[ 1 ] == "Others"
+@test result[ 2 ] == "1. Bob" # because it's positive
+@test result[ 3 ] == "2. Jane" # because it's by magnitude the largest
+@test result[ 4 ] == "Others"
+
+name=@data( [ "Alice", "Bob", "Jane", "Joe" ] )
+score=@data( [ 7, 8, -9, 5 ] )
+result = topnames( name, score, 2, absolute=true, parens=true )
+@test result[ 1 ] == "Others"
+@test result[ 2 ] == "1. Bob" # because it's positive
+@test result[ 3 ] == "2. (Jane)" # because it's by magnitude the largest
+@test result[ 4 ] == "Others"

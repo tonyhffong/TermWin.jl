@@ -451,15 +451,16 @@ function topnames{S<:String,T<:Real}( name::AbstractArray{S,1}, measure::Abstrac
     ranksep = ". ",
     dense = true, # if there is a tie in the 2nd place, do we do "1,2,2,4", or "1,2,2,3"
     tol = 0,  # if absolute, what is the smallest contribution that we would consider
-    others = "Others"
+    others = "Others",
+    parens = false # put parentheses around names with negative measure?
     )
 
     if absolute
-        df = DataFrame( name = name, measure = measure, absmeasure = abs(measures) )
+        df = DataFrame( name = name, measure = measure, absmeasure = abs(measure) )
         if tol > 0 # filter out too small names
-            dfsorted = sort( df[ df[ :absmeasure ] >= tol ], cols = [:absmeasure ], rev=[true] )
+            dfsorted = sort( df[ df[ :absmeasure ] >= tol ], cols = [:absmeasure, :measure ], rev=[true,true] )
         else
-            dfsorted = sort( df, cols = [ :absmeasure ], rev = [ true ] )
+            dfsorted = sort( df, cols = [ :absmeasure, :measure ], rev = [ true, true ] )
         end
     else
         df = DataFrame( name = name, measure = measure )
@@ -467,36 +468,100 @@ function topnames{S<:String,T<:Real}( name::AbstractArray{S,1}, measure::Abstrac
     end
 
     rankcount = 1
-    nr = nrow( dfsorted )
-    pool = UTF8String[]
-    refs = fill(zero(DataArrays.DEFAULT_POOLED_REF_TYPE), nr )
-    lastval  = zero( T )
-    lastrank = 0
     rankwidth = length( string( n ) )
-    for r in 1:nr
-        if isna( dfsorted[:measure], r )
-            continue
-        else
-            val = dfsorted[ r, :measure ]
-            if lastrank != 0 && lastval == val # tie
-                push!( pool, format( lastrank, width=rankwidth ) * ranksep * dfsorted[ r, :name ] )
-                refs[r] = length( pool )
-                if !dense
+    nr = nrow( dfsorted )
+
+    if !absolute
+        pool = UTF8String[]
+        refs = fill(zero(DataArrays.DEFAULT_POOLED_REF_TYPE), nr )
+        lastval  = zero( T )
+        lastrank = 0
+        for r in 1:nr
+            if isna( dfsorted[:measure], r )
+                continue
+            else
+                val = dfsorted[ r, :measure ]
+                if lastrank != 0 && lastval == val # tie
+                    push!( pool, format( lastrank, width=rankwidth ) * ranksep * dfsorted[ r, :name ] )
+                    refs[r] = length( pool )
+                    if !dense
+                        rankcount += 1
+                    end
+                elseif rankcount > n
+                    break
+                else
+                    push!( pool, format( rankcount, width=rankwidth ) * ranksep * dfsorted[ r, :name ] )
+                    lastrank = rankcount
+                    lastval = val
+                    refs[r] = length( pool )
                     rankcount += 1
                 end
-            elseif rankcount > n
-                break
-            else
-                push!( pool, format( rankcount, width=rankwidth ) * ranksep * dfsorted[ r, :name ] )
-                lastrank = rankcount
-                lastval = val
-                refs[r] = length( pool )
-                rankcount += 1
             end
         end
+        dfsorted[ :rankstr ] = DataArrays.PooledDataArray(DataArrays.RefArray(refs), pool)
+        jdf = join( df, dfsorted[ [:name,:rankstr] ], on = :name, kind = :left )
+    else
+        rankedflag = fill( zero( Bool ), nr )
+        lastval  = zero( T )
+        lastrank = 0
+        for r in 1:nr
+            if isna( dfsorted[:measure], r )
+                continue
+            else
+                val = dfsorted[ r, :measure ]
+                if lastrank != 0 && lastval == val # tie
+                    rankedflag[r] = true
+                    if !dense
+                        rankcount += 1
+                    end
+                elseif rankcount > n
+                    break
+                else
+                    rankedflag[r] = true
+                    lastrank = rankcount
+                    lastval = val
+                    rankcount += 1
+                end
+            end
+        end
+        dfsorted[ :rankedflag ] = rankedflag
+        dfsorted2 = sort( dfsorted, cols = [ :measure ], rev = [ true ] )
+        rankstr = DataArray(UTF8String,nr)
+        rankcount = 1
+        lastval  = zero( T )
+        lastrank = 0
+        for r in 1:nr
+            if isna( dfsorted2[ :measure ], r )
+                continue
+            elseif dfsorted2[ r, :rankedflag ]
+                val = dfsorted2[ r, :measure ]
+                if lastrank != 0 && lastval == val # tie
+                    if parens && val < 0
+                        rankstr[r] = format( lastrank, width=rankwidth ) * ranksep * "("*dfsorted2[r,:name]*")"
+                    else
+                        rankstr[r] = format( lastrank, width=rankwidth ) * ranksep * dfsorted2[r,:name]
+                    end
+                    if !dense
+                        rankcount += 1
+                    end
+                elseif rankcount > n
+                    break
+                else
+                    if parens && val < 0
+                        rankstr[r] = format( rankcount, width=rankwidth ) * ranksep * "("*dfsorted2[r,:name]*")"
+                    else
+                        rankstr[r] = format( rankcount, width=rankwidth ) * ranksep * dfsorted2[r,:name]
+                    end
+                    lastrank = rankcount
+                    lastval = val
+                    rankcount += 1
+                end
+            end
+        end
+        dfsorted2[ :rankstr ] = rankstr
+        jdf = join( df, dfsorted2[ [:name, :rankstr] ], on = :name, kind=:left )
     end
-    dfsorted[ :rankstr ] = DataArrays.PooledDataArray(DataArrays.RefArray(refs), pool)
-    jdf = join( df, dfsorted, on = :name, kind = :left )
+
     # replace NA with "others"
     ret = DataArrays.PooledDataArray( jdf[ :rankstr ] )
     push!( ret.pool, others )
