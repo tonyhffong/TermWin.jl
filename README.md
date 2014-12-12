@@ -105,8 +105,27 @@ TermWin provides a few commonly used aggregation functions for table data presen
   array typed columns.
 
 On **CalcPivot**, TermWin provides
-* `discretize`. Similar to `cut`, with the following options
-* `topnames`.
+* `discretize`. It needs `:measure` column and a break vector. Similar to `cut`, with the following options
+   * leftequal. Default true, meaning the boundary values are interpreted as `t1 <= x < t2`
+   * absolute. Default false. Do we want `t1 <= |x| < t2`
+   * rank. Default true. The bucket strings are prefixed with consecutive numbers to easier sorting.
+   * ranksep. Default ". ". The string between the rank number and the range description
+   * label. Default is an empty string. If set, it is expected we want to show the long-form range description
+   * compact. Default is true. Compact range looks terser, like `[1,5)`. Integers range with interval size 1
+      is further compacted to just that number.
+   * reverse. Default is false. If set to true, the higher ranges come first.
+   * prefix, suffix, scale, precision, commas, stripzeros, parens, mixedfraction, autoscale, conversion. These are options from `Formatting.jl`
+* `topnames`. It requires a `:name` column, a `:measure` column and an integer (typically small). Keyward arguments
+  include:
+   * absolute. Default false. If true, large negatives will be included in the top names too. Please note that
+      the sort order will always put negative values below positive ones. See `test/dftests.jl` for more details.
+   * ranksep. Default ". ".
+   * dense = true. Whether it skip numbers when encountering ties.
+   * tol. Tolerance. Default zero. If set positive and absolute is true, measures that are below this
+      tolerance threshold will not be included, no matter what.
+   * others. Default "Others". How data not in the top N will look like.
+   * parens. Default false. If the measure is negative and this is set, parentheses will be added around
+     the name.
 
 
 ## Installation
