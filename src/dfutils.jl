@@ -175,44 +175,60 @@ function uniqvalue{T<:String}( x::Union( Array{T}, DataArray{T}, PooledDataArray
 end
 
 immutable CalcPivot
-    spec::Any
+    spec::Expr
     by::Array{Symbol,1}
-    CalcPivot( x; by=Symbol[] ) = new( x, by )
+    CalcPivot( x::String, by::Array{Symbol,1}=Symbol[] ) = CalcPivot( parse(x), by )
+    CalcPivot( x::String, by::Symbol ) = CalcPivot( parse(x), Symbol[ by ] )
+    function CalcPivot( x::Expr, by::Symbol )
+        CalcPivot( x, Symbol[ by ] )
+    end
+    function CalcPivot( ex::Expr, by::Array{Symbol,1}=Symbol[] )
+        if !Base.Meta.isexpr( ex, :call )
+            error( string( ex ) * " does not look like an aggregator function")
+        end
+        # disallow mutating function
+        fname = ex.args[1]
+        if Base.Meta.isexpr( ex, :curly )
+            error( "CalcPivot: curly not supported")
+        elseif !( typeof( fname ) <: Symbol ) && !Base.Meta.isexpr( fname, :(.) )
+            error( "CalcPivot: only simple function name please")
+        end
+        if contains( string(fname), "!" )
+            error( string(fname) * " seems to have side effects" )
+        end
+
+        if fname == :topnames # ensure we have the name in "by"
+            # expect the first argument is a QuoteNode, or Expr( :quote, symbol )
+            if typeof( ex.args[2] ) == QuoteNode
+                name_col = ex.args[2].value
+            elseif Base.Meta.isexpr( ex.args[2], :quote )
+                name_col = ex.args[2].args[1]
+            else
+                throw( "topnames: 1st argument expects a symbol (name column)")
+            end
+            if !in( name_col, by )
+                new( ex, Symbol[ by..., name_col ] )
+            else
+                new( ex, by )
+            end
+        else
+            new( ex, by )
+        end
+    end
 end
 
 CalcPivotFuncCache = Dict{ Any, Function }()
 CalcPivotAggrDepCache = Dict{ Any, Array{Symbol,1} }()
 
-# CalcPivot is a more complicated beast compared to aggregation.
-# CalcPivot is always a function call. It makes no sense to have
-# a default column. It is always generated from some existing column(s)
-function liftCalcPivotToFunc( cp::CalcPivot )
-    liftCalcPivotToFunc( cp.spec, cp.by )
-end
+# lifting a CalcPivot is a more complicated beast compared to aggregation.
+# It is basically the fancier "apply" component of the # split-apply-combine strategy,
+# with the "apply" also doing its nested split-apply-combine steps if necessary.
 
-function liftCalcPivotToFunc( cpspec::Union(String,Expr), by::Array{Symbol,1} )
-    if haskey( CalcPivotFuncCache, (cpspec, by ) )
-        return CalcPivotFuncCache[ (cpspec, by ) ]
-    end
-    if typeof( cpspec ) <: String
-        ex = parse( cpspec )
-    else
-        ex = cpspec
+function liftCalcPivotToFunc( ex::Expr, by::Array{Symbol,1} )
+    if haskey( CalcPivotFuncCache, (ex, by ) )
+        return CalcPivotFuncCache[ (ex, by ) ]
     end
 
-    if !Base.Meta.isexpr( ex, :call )
-        error( string( ex ) * " does not look like an aggregator function")
-    end
-    # disallow mutating function
-    fname = ex.args[1]
-    if Base.Meta.isexpr( ex, :curly )
-        error( "CalcPivot: curly not supported")
-    elseif !( typeof( fname ) <: Symbol ) && !Base.Meta.isexpr( fname, :(.) )
-        error( "CalcPivot: only simple function name please")
-    end
-    if contains( string(fname), "!" )
-        error( string(fname) * " seems to have side effects" )
-    end
     cex = deepcopy( ex )
     convertExpression!( cex )
     funnameouter = gensym("calcpvt")
@@ -222,20 +238,19 @@ function liftCalcPivotToFunc( cpspec::Union(String,Expr), by::Array{Symbol,1} )
     cex = DataFramesMeta.replace_syms(cex, membernames)
     # keys are the columns. values are the unique gensyms
 
-    if !isempty( by )
+    if !isempty( by ) # micro split-apply-combine
         funargs = map(x -> :( getindex( byf, $(Meta.quot(x))) ), collect(keys(membernames)))
         aggregates = setdiff( collect( keys( membernames ) ), by )
-        CalcPivotAggrDepCache[ (cpspec, by ) ] = aggregates
+        CalcPivotAggrDepCache[ (ex, by ) ] = aggregates
+        # basically we want to do
+        # byf = by(_df_, by, lambdadf -> DataFrame(b = aggrfuncs[:b](lambdadf), c = aggrfuncs[:c](lambdadf), ... )
         aggr_args = Any[]
         lambdasym = gensym( "lambdadf" )
         for a in aggregates
-            # basically we want to do
-            # byf = by(_df_, by, lambdadf -> DataFrame(b = aggrfuncs[:b](lambdadf), c = aggrfuncs[:c](lambdadf), ... )
             push!( aggr_args, Expr( :kw, a, Expr( :call, Expr( :ref, :aggrfuncs, QuoteNode( a ) ), lambdasym ) ) )
         end
 
         bycolsexpr=Expr( :vcat, map( _->QuoteNode(_), by )... ) # [ :a, :b, :c ... ]
-        #bycolsexpr=Expr( :vcat, by... ) # [ :a, :b, :c ... ]
         aggrcode = Expr( :->, lambdasym, Expr( :call, DataFrame, aggr_args... ) )
         code = :(
             function $funnameouter( _df_::AbstractDataFrame, c::Symbol; kwargs... ) # we need kwargs here for aggregate specs
@@ -253,15 +268,15 @@ function liftCalcPivotToFunc( cpspec::Union(String,Expr), by::Array{Symbol,1} )
                 ret = byf[ $bycolsexpr ]
                 ret[ c ] = vals
                 ret # This has all the "by" columns and the result, named by c
-                # joining is done elsewhere
+                # combine is done by the caller
             end
         )
-    else # much simplier, we are doing line-by-line calculation.
+    else # much simplier, we are doing line-by-line apply.
         # Common use case: a simple bucketing, or a line by line ranking.
         # a "pure" reading on empty "by" array may mean we aggregate everything in the
         # dataframe into one row, and then attach this row's value (a constant) into every row.
-        # I wonder if there's a legitimate use case for this.
-        CalcPivotAggrDepCache[ (cpspec, by )] = Symbol[]
+        # However, I have not known any legitimate use case for this.
+        CalcPivotAggrDepCache[ (ex, by )] = Symbol[]
         funargs = map(x -> :( getindex( _df_, $(Meta.quot(x))) ), collect(keys(membernames)))
         code = :(
             function $funnameouter( _df_::AbstractDataFrame ) # we need kwargs here for aggregate specs
@@ -269,12 +284,12 @@ function liftCalcPivotToFunc( cpspec::Union(String,Expr), by::Array{Symbol,1} )
                     $cex
                 end
                 $funname($(funargs...))
-                # the creation of column is done elsewhere
+                # the creation of column is done by the caller
             end
         )
     end
     ret = eval( code )
-    CalcPivotFuncCache[ (cpspec, by ) ] = ret
+    CalcPivotFuncCache[ (ex, by ) ] = ret
 end
 
 # useful CalcPivot examples
@@ -289,9 +304,9 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
     absolute=false, # t1 <= |x| < t2?
     rank=true, # add a rank to the string output for easier sorting?
     ranksep = ". ", # "1. t1 <= x < t2"?
-    compact=true, # <t1, [t1,t2), t2+. Further shortened for integer intervals
-    reverse=false, # reverse the rank from the largest first?
     label = "", # if not compact, what label do we use for x?
+    compact=(label==""), # <t1, [t1,t2), t2+. Further shortened for integer intervals with length=1
+    reverse=false, # reverse the rank from the largest first?
     # the following format the boundary numbers
     # see Formatting.jl
     prefix="", suffix="", scale=1, precision=-1,
@@ -379,7 +394,7 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
                 for b in breaks
                     push!( breakminus1strs, formatter( b+1 ) )
                 end
-                pool[1] = rankprefixfunc(1) * breakstrs[1] * "-"
+                pool[1] = rankprefixfunc(1) *"≤ "* breakstrs[1]
                 for i in 2:n
                     if breaks[i-1]+1 == breaks[i]
                         pool[i] = rankprefixfunc(i)*breakstrs[i]
@@ -393,15 +408,19 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
             if leftequal
                 brackL = "["
                 brackR = ")"
+                compareL = utf8( "<" )
+                compareR = "≥"
             else
                 brackL = "("
                 brackR = "]"
+                compareL = "≤"
+                compareR = utf8(">")
             end
-            pool[1] = rankprefixfunc(1) * breakstrs[1] * brackR
+            pool[1] = rankprefixfunc(1) * compareL * breakstrs[1]
             for i in 2:n
                 pool[i] = rankprefixfunc(i) * brackL * breakstrs[i-1]* "," *breakstrs[i] * brackR
             end
-            pool[n+1] = rankprefixfunc(n+1) * brackL * breakstrs[n]
+            pool[n+1] = rankprefixfunc(n+1) * compareR * breakstrs[n]
         end
     else
         if absolute
@@ -423,4 +442,69 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
         pool[n+1] = rankprefixfunc(n+1) * breakstrs[n] * compareL * label2
     end
     DataArrays.PooledDataArray(DataArrays.RefArray(refs), pool)
+end
+
+# names are expected to be unique
+# n is the maximum rank number to report. Actual outcome may depend on existence of a tie, and dense option
+function topnames{S<:String,T<:Real}( name::AbstractArray{S,1}, measure::AbstractArray{T,1}, n::Int;
+    absolute=false,
+    ranksep = ". ",
+    dense = true, # if there is a tie in the 2nd place, do we do "1,2,2,4", or "1,2,2,3"
+    tol = 0,  # if absolute, what is the smallest contribution that we would consider
+    others = "Others"
+    )
+
+    if absolute
+        df = DataFrame( name = name, measure = measure, absmeasure = abs(measures) )
+        if tol > 0 # filter out too small names
+            dfsorted = sort( df[ df[ :absmeasure ] >= tol ], cols = [:absmeasure ], rev=[true] )
+        else
+            dfsorted = sort( df, cols = [ :absmeasure ], rev = [ true ] )
+        end
+    else
+        df = DataFrame( name = name, measure = measure )
+        dfsorted = sort( df, cols = [ :measure ], rev = [ true ] )
+    end
+
+    rankcount = 1
+    nr = nrow( dfsorted )
+    pool = UTF8String[]
+    refs = fill(zero(DataArrays.DEFAULT_POOLED_REF_TYPE), nr )
+    lastval  = zero( T )
+    lastrank = 0
+    rankwidth = length( string( n ) )
+    for r in 1:nr
+        if isna( dfsorted[:measure], r )
+            continue
+        else
+            val = dfsorted[ r, :measure ]
+            if lastrank != 0 && lastval == val # tie
+                push!( pool, format( lastrank, width=rankwidth ) * ranksep * dfsorted[ r, :name ] )
+                refs[r] = length( pool )
+                if !dense
+                    rankcount += 1
+                end
+            elseif rankcount > n
+                break
+            else
+                push!( pool, format( rankcount, width=rankwidth ) * ranksep * dfsorted[ r, :name ] )
+                lastrank = rankcount
+                lastval = val
+                refs[r] = length( pool )
+                rankcount += 1
+            end
+        end
+    end
+    dfsorted[ :rankstr ] = DataArrays.PooledDataArray(DataArrays.RefArray(refs), pool)
+    jdf = join( df, dfsorted, on = :name, kind = :left )
+    # replace NA with "others"
+    ret = DataArrays.PooledDataArray( jdf[ :rankstr ] )
+    push!( ret.pool, others )
+    poollen = length( ret.pool )
+    for i = 1:length( ret.refs )
+        if ret.refs[i] == 0
+            ret.refs[i] = poollen
+        end
+    end
+    ret
 end

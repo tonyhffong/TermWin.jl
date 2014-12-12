@@ -11,3 +11,5 @@ if !isempty( msgs )
     sumseverity = sum( x->x.level, msgs )
 end
 @test sumseverity == 0
+
+include( "dftests.jl" )

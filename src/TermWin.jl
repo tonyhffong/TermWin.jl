@@ -49,7 +49,7 @@ export newTwCalendar
 export newTwPopup, newTwMultiSelect
 export newTwDfTable
 export uniqvalue, unionall
-export CalcPivot, discretize
+export CalcPivot, discretize, topnames
 export twFuncFactory, registerTwObj
 export FormatHints
 export COLOR_PAIR

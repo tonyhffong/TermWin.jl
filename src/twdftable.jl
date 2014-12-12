@@ -271,23 +271,39 @@ function expandnode( n::TwDfTableNode, depth::Int=1 )
             push!( nextpivots, nextpivot )
 
             if haskey( n.context.value.calcpivots, nextpivot )
-                spec = n.context.value.calcpivots[ nextpivot ]
-                f = liftCalcPivotToFunc( spec )
-                if isempty( spec.by )
+                calcpvt = n.context.value.calcpivots[ nextpivot ]
+                pvtspec = calcpvt.spec
+                # if we have already pivoted :a, then including it
+                # again in *by* would not do anything.
+                pvtby   = setdiff( calcpvt.by, npivots )
+                f = liftCalcPivotToFunc( pvtspec, pvtby )
+                if isempty( pvtby )
                     colvalues = f( n.subdataframe )
-                    n.subdataframe[ nextpivot ] = colvalues
+                    if typeof( n.subdataframe ) == DataFrame
+                        n.subdataframe[ nextpivot ] = colvalues
+                    else
+                        # TODO: setindex! doesn't work for subdataframe!!!
+                        # some sort of composit data frame is needed to
+                        # avoid inefficient copying
+                        ns = names( n.subdataframe )
+                        localdf = DataFrame( [ n.subdataframe[i] for i in 1:length(ns)], ns )
+                        localdf[ nextpivot ] = colvalues
+                        n.subdataframe = localdf
+                    end
                     gd = groupby( n.subdataframe, nextpivots )
                 else
                     # figure out the aggregation dependency
                     # the lift function just now ensures we have this cache.
-                    aggrs = CalcPivotAggrDepCache[ (spec.spec, spec.by) ]
+                    aggrs = CalcPivotAggrDepCache[ (pvtspec, pvtby) ]
                     kwargs = Any[]
                     for a in aggrs
                         push!( kwargs, ( a, n.context.value.allcolInfo[ a ].aggr ) )
                     end
-
+                    # the lifted function expects us to provide
+                    # the aggregation spec on all needed columns,
+                    # as keyword arguments
                     df = f( n.subdataframe, nextpivot; kwargs... )
-                    gd = groupby( join( n.subdataframe, df, on=spec.by, kind=:left ), nextpivots )
+                    gd = groupby( join( n.subdataframe, df, on=pvtby, kind=:left ), nextpivots )
                 end
             else
                 gd = groupby( n.subdataframe, nextpivots )
