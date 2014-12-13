@@ -768,6 +768,29 @@ function injectTwDfTable( o::TwObj, token::Any )
         else
             beep()
         end
+    elseif token == :KEY_MOUSE
+        (mstate,x,y, bs ) = getmouse()
+        if mstate == :scroll_up
+            dorefresh = movevertical( -int( viewContentHeight/10 ) )
+        elseif mstate == :scroll_down
+            dorefresh = movevertical( int( viewContentHeight/10 ) )
+        elseif mstate == :button1_pressed
+            begy,begx = getwinbegyx( o.window )
+            relx = x - begx
+            rely = y - begy
+            if 1<=relx<o.width-1 && o.data.headerlines<=rely<o.height-1
+                o.data.currentLine = min( o.data.datalistlen, o.data.currentTop + rely - o.borderSizeH + 1 - o.data.headerlines )
+                checkTop()
+                dorefresh = true
+            end
+            if o.data.datatreewidth+1<relx<o.width-1 && o.data.headerlines<=rely<o.height-1
+                cumwidths = cumsum( map( x->x+1, widths[o.data.currentLeft:end] ) ) # with boundary
+                widthrng = searchsorted( cumwidths, relx - o.data.datatreewidth - 1)
+                o.data.currentCol = min( length( o.data.colInfo ), o.data.currentLeft + widthrng.start - 1 )
+                checkLeft()
+                dorefresh = true
+            end
+        end
     elseif in( token, Any[ symbol("end") ] )
         if o.data.currentTop + viewContentHeight -1 < o.data.datalistlen
             o.data.currentTop = o.data.datalistlen - viewContentHeight + 1
