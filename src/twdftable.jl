@@ -778,7 +778,7 @@ function injectTwDfTable( o::TwObj, token::Any )
             begy,begx = getwinbegyx( o.window )
             relx = x - begx
             rely = y - begy
-            if 1<=relx<o.width-1 && o.data.headerlines<=rely<o.height-1
+            if 1<=relx<o.width-1 && o.data.headerlines<rely<o.height-1
                 o.data.currentLine = min( o.data.datalistlen, o.data.currentTop + rely - o.borderSizeH + 1 - o.data.headerlines )
                 checkTop()
                 dorefresh = true
