@@ -20,6 +20,13 @@ N          : search next occurence on any row. may expand more nodes
 F6         : popup window for value
 """
 defaultTableBottomText = "F1:help p:Pivot c:ColOrd v:Views ][:Width"
+if VERSION < v"0.4.0-dev+1930"
+    @lintpragma( "DataFrame is a container type" )
+    @lintpragma( "AbstractDataFrame is a container type" )
+else
+    @lintpragma( "DataFrames.DataFrame is a container type" )
+    @lintpragma( "DataFrames.AbstractDataFrame is a container type" )
+end
 
 type TwTableColInfo
     name::Symbol
@@ -219,11 +226,6 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
     # construct colInfo for each col in finalcolorder
     allcols = names( df )
     for c in allcols
-        if VERSION < v"0.4.0-dev+1930"
-            @lintpragma( "DataFrame is a container type" )
-        else
-            @lintpragma( "DataFrames.DataFrame is a container type" )
-        end
 
         if haskey( calcpivots, c )
             error( "calcpivots interfere with an existing column " * string( c ) )
@@ -705,10 +707,10 @@ function injectTwDfTable( o::TwObj, token::Any )
     # deep search always go forward
     function searchNextDeep( trivialstop::Bool )
         local st = o.data.currentLine
-        local step = 1
+        local stp = 1
 
         o.data.searchText = lowercase(o.data.searchText)
-        i = trivialstop ? st : ( mod( st-1+step, o.data.datalistlen ) + 1 )
+        i = trivialstop ? st : ( mod( st-1+stp, o.data.datalistlen ) + 1 )
         ncols = length( o.data.colInfo )
         function checknode( nd::TwDfTableNode, substack::Array{Int,1} )
             function searchdfstring( df::AbstractDataFrame )
@@ -793,7 +795,7 @@ function injectTwDfTable( o::TwObj, token::Any )
                     end
                 end
             end
-            i = mod( i-1+step, o.data.datalistlen ) + 1
+            i = mod( i-1+stp, o.data.datalistlen ) + 1
             if i == st
                 beep()
                 return 0
