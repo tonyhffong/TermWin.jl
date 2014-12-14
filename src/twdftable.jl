@@ -12,6 +12,11 @@ ctrl_down  : move down to the next branch
 p          : Change pivot
 c          : Change columns/order
 v          : Switch preset views
+/          : search text (on string columns) on exposed rows
+?          : DEEP search text (on string columns), may expand nodes
+ctrl_n     : search next occurence on exposed rows
+ctrl_p     : search previous occurence on exposed rows
+N          : search next occurence on any row. may expand more nodes
 F6         : popup window for value
 """
 defaultTableBottomText = "F1:help p:Pivot c:ColOrd v:Views ][:Width"
@@ -153,10 +158,11 @@ type TwDfTableData
     initdepth::Int
     views::Array{ TwTableView, 1 }
     calcpivots::Dict{ Symbol, CalcPivot }
+    searchText::UTF8String
     # calculated dimension
     TwDfTableData() = new( TwDfTableNode(),
         Symbol[], (Symbol,Symbol)[], Any[], 0, 10, 1, 1, 1, 1, 1, 1, TwTableColInfo[],
-        Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, "", 1, TwTableView[], Dict{Symbol,CalcPivot}() )
+        Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, "", 1, TwTableView[], Dict{Symbol,CalcPivot}(),utf8("") )
 end
 
 #TODO: allow Regex in formatHints and aggrHints
@@ -589,7 +595,7 @@ function drawTwDfTable( o::TwObj )
         mvwprintw( o.window, o.height-1, 3, "%s", o.data.bottomText )
     end
     if !isempty( o.data.pivots )
-        s = " Pvt:"*join( o.data.pivots, "▹" )
+        s = " ▾"*join( o.data.pivots, "▾" )
         s = ensure_length( s, 35, false )
         mvwprintw( o.window, o.height-1, o.width - 37, "%s", s )
     end
@@ -661,6 +667,140 @@ function injectTwDfTable( o::TwObj, token::Any )
         else
             beep()
             return false
+        end
+    end
+
+    function searchNext( step::Int, trivialstop::Bool )
+        local st = o.data.currentLine
+        o.data.searchText = lowercase(o.data.searchText)
+        i = trivialstop ? st : ( mod( st-1+step, o.data.datalistlen ) + 1 )
+        while true
+            node = o.data.datalist[i][5]
+            isnode = (o.data.datalist[i][3] != :single)
+            # only visible columns and exposed rows are search
+            for col in 1:length( o.data.colInfo )
+                cn = o.data.colInfo[ col ].name
+                if isnode
+                    v = node[ cn ]
+                else
+                    v = node.subdataframesorted[ cn ][ o.data.datalist[i][2][end] ]
+                end
+                if !( typeof( v ) <: String )
+                    continue
+                end
+
+                if contains( lowercase( v ), o.data.searchText )
+                    o.data.currentLine = i
+                    o.data.currentCol = col
+                    checkTop()
+                    checkLeft()
+                    return i
+                end
+            end
+            i = mod( i-1+step, o.data.datalistlen ) + 1
+            if i == st
+                beep()
+                return 0
+            end
+        end
+    end
+
+    # deep search always go forward
+    function searchNextDeep( trivialstop::Bool )
+        local st = o.data.currentLine
+        local step = 1
+
+        o.data.searchText = lowercase(o.data.searchText)
+        i = trivialstop ? st : ( mod( st-1+step, o.data.datalistlen ) + 1 )
+        ncols = length( o.data.colInfo )
+        function checknode( nd::TwDfTableNode, substack::Array{Int,1} )
+            function searchdfstring( df::AbstractDataFrame )
+                for j in 1:nrow( df )
+                    for col in 1:ncols
+                        cn = o.data.colInfo[ col ].name
+                        v = df[cn][j]
+                        if !(typeof(v)<:String)
+                            continue
+                        end
+                        if contains( lowercase( v ), o.data.searchText )
+                            o.data.currentCol = col
+                            return j
+                        end
+                    end
+                end
+                return 0
+            end
+            if searchdfstring( nd.subdataframe ) != 0
+                if !nd.isOpen
+                    expandnode( nd )
+                    ordernode( nd )
+                end
+                if !isempty( nd.children )
+                    substacktmp = copy( substack )
+                    push!( substacktmp, 0 )
+                    for (k,c) in enumerate( nd.children )
+                        substacktmp[end] = k
+                        ret = checknode( c, substacktmp )
+                        if ret != nothing
+                            return ret
+                        end
+                    end
+                else
+                    therow = searchdfstring( nd.subdataframesorted )
+                    substacktmp = copy( substack )
+                    push!( substacktmp, therow )
+                    #log( "found on " * string( substacktmp ) )
+                    return substacktmp
+                end
+            end
+            return nothing
+        end
+        while true
+            node = o.data.datalist[i][5]
+            isnode = (o.data.datalist[i][3] != :single)
+            if isnode && !node.isOpen
+                foundstack = checknode( node, o.data.datalist[i][2] )
+                if foundstack != nothing
+                    builddatalist( o.data )
+                    o.data.currentLine = searchsortedfirst( o.data.datalist, Any[ nothing, foundstack ], by=y->y[2], lt=(s1,s2)->begin
+                        #log( "comparing " * string(s1) * " with " * string(s2) )
+                        for j in 1:min( length(s1), length(s2) )
+                            if s1[j] == s2[j]
+                                continue
+                            end
+                            #log( "Pivot level " * string( j ) * " index is different" )
+                            return s1[j] < s2[j]
+                        end
+                        #log( "All common indices are equal. Pivot lengths are compared" )
+                        return length(s1) < length(s2)
+                    end )
+                    checkTop()
+                    checkLeft()
+                    return o.data.currentLine
+                end
+            end
+            if !isnode
+                for col in 1:ncols
+                    cn = o.data.colInfo[ col ].name
+                    v = node.subdataframesorted[ cn ][ o.data.datalist[i][2][end] ]
+                    if !( typeof( v ) <: String )
+                        continue
+                    end
+
+                    if contains( lowercase( v ), o.data.searchText )
+                        o.data.currentLine = i
+                        o.data.currentCol = col
+                        checkTop()
+                        checkLeft()
+                        return i
+                    end
+                end
+            end
+            i = mod( i-1+step, o.data.datalistlen ) + 1
+            if i == st
+                beep()
+                return 0
+            end
         end
     end
 
@@ -784,7 +924,7 @@ function injectTwDfTable( o::TwObj, token::Any )
                 dorefresh = true
             end
             if o.data.datatreewidth+1<relx<o.width-1 && o.data.headerlines<=rely<o.height-1
-                cumwidths = cumsum( map( x->x+1, widths[o.data.currentLeft:end] ) ) # with boundary
+                cumwidths = cumsum( map( _->_+1, widths[o.data.currentLeft:end] ) ) # with boundary
                 widthrng = searchsorted( cumwidths, relx - o.data.datatreewidth - 1)
                 o.data.currentCol = min( length( o.data.colInfo ), o.data.currentLeft + widthrng.start - 1 )
                 checkLeft()
@@ -862,14 +1002,14 @@ function injectTwDfTable( o::TwObj, token::Any )
             end
         end
     elseif token == "p"
-        allcols = map(x->utf8(string(x)), names( o.value ) )
-        append!( allcols, map( x->utf8(string(x)), collect( keys( o.data.calcpivots ) ) ) )
-        pvts = map( x->utf8(string(x)), o.data.pivots )
+        allcols = map(_->utf8(string(_)), names( o.value ) )
+        append!( allcols, map( _->utf8(string(_)), collect( keys( o.data.calcpivots ) ) ) )
+        pvts = map( _->utf8(string(_)), o.data.pivots )
         helper = newTwMultiSelect( o.screen.value, allcols, :center, :center, selected = pvts, title="Pivot order", orderable=true, substrsearch=true )
         newpivots = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
         if newpivots != nothing && newpivots != pvts
-            o.data.pivots = map( x->symbol(x), newpivots )
+            o.data.pivots = Symbol[ symbol( _ ) for _ in newpivots ]
             o.data.rootnode.children = Any[]
             o.data.rootnode.isOpen = false
             expandnode( o.data.rootnode, o.data.initdepth )
@@ -880,8 +1020,8 @@ function injectTwDfTable( o::TwObj, token::Any )
         end
         dorefresh = true
     elseif token == "c"
-        allcols = map(x->utf8(string(x)), names( o.value ) )
-        visiblecols = map( x->utf8(string(x.name)), o.data.colInfo )
+        allcols = map(_->utf8(string(_)), names( o.value ) )
+        visiblecols = map( _->utf8(string(_.name)), o.data.colInfo )
         helper = newTwMultiSelect( o.screen.value, allcols, :center, :center, selected = visiblecols, title="Visible columns & their order", orderable=true, substrsearch=true )
         newcols = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
@@ -893,7 +1033,7 @@ function injectTwDfTable( o::TwObj, token::Any )
         end
         dorefresh = true
     elseif token == "v"
-        allviews = map( x->x.name, o.data.views )
+        allviews = map( _->_.name, o.data.views )
         helper = newTwPopup( o.screen.value, allviews, :center, :center, substrsearch=true, title = "Views" )
         vname = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
@@ -916,6 +1056,37 @@ function injectTwDfTable( o::TwObj, token::Any )
             checkTop()
             dorefresh=true
         end
+    elseif token == "/"
+        helper = newTwEntry( o.screen.value, String, 30, :center, :center, title = "Search: " )
+        helper.data.inputText = o.data.searchText
+        s = activateTwObj( helper )
+        unregisterTwObj( o.screen.value, helper )
+        if s != nothing
+            if s != "" && o.data.searchText != s
+                o.data.searchText = s
+                searchNext( 1, true )
+            end
+        end
+        dorefresh = true
+    elseif token == "?"
+        helper = newTwEntry( o.screen.value, String, 30, :center, :center, title = "Search: " )
+        helper.data.inputText = o.data.searchText
+        s = activateTwObj( helper )
+        unregisterTwObj( o.screen.value, helper )
+        if s != nothing
+            o.data.searchText = s
+            searchNextDeep( true )
+        end
+        dorefresh = true
+    elseif token == :ctrl_n
+        searchNext( 1, false )
+        dorefresh = true
+    elseif token == :ctrl_p
+        searchNext( -1, false )
+        dorefresh = true
+    elseif token == "N"
+        searchNextDeep( false )
+        dorefresh = true
     elseif token == :F6
         colsym = o.data.colInfo[ o.data.currentCol ].name
         node = o.data.datalist[o.data.currentLine][5]

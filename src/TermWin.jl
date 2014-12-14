@@ -22,6 +22,25 @@ using DataFramesMeta
 macro lintpragma( s )
 end
 
+debugloghandle = nothing
+
+function logstart()
+    global debugloghandle
+    debugloghandle = open( joinpath( Pkg.dir( "TermWin" ), "debug.log" ), "a+" )
+end
+
+function log( s::String )
+    global debugloghandle
+    if debugloghandle != nothing
+        write( debugloghandle, s )
+        write( debugloghandle, "\n" )
+        flush( debugloghandle )
+    end
+end
+
+# uncomment this to provide logging functionality
+#logstart()
+
 include( "consts.jl")
 include( "ccall.jl" )
 include( "twtypes.jl")
@@ -187,60 +206,59 @@ function endsession()
     endwin()
 end
 
-function tshow_( x::Number; title = string(typeof( x )) )
+function tshow_( x::Number; kwargs... )
     typx = typeof( x )
     if typx <: Integer && typx <: Unsigned
         s = @sprintf( "0x%x", x )
     else
         s = string( x )
     end
-    tshow_( s, title=title )
+    tshow_( s; kwargs... )
 end
 
 tshow_( x::Symbol; title="Symbol" ) = tshow_( ":"*string(x), title=title )
 tshow_( x::Ptr; title="Ptr" ) = tshow_( string(x), title=title )
-function tshow_( x::WeakRef; title="WeakRef", kwargs... )
+function tshow_( x::WeakRef; kwargs... )
     if x.value == nothing
-        tshow_( "WeakRef: nothing", title=title )
+        tshow_( "WeakRef: nothing"; kwargs... )
     else
-        tshow_( x.value; title=title, kwargs... )
+        tshow_( x.value; kwargs... )
     end
 end
-function tshow_( x; title = string( typeof( x ) ), kwargs... )
-    newTwTree( rootTwScreen, x, 25, 80, :staggered, :staggered; bottomText = "F1: Help  Esc: Exit", title=title, kwargs... )
+function tshow_( x; kwargs... )
+    newTwTree( rootTwScreen, x, 0.8, 0.8, :staggered, :staggered; kwargs... )
 end
 
-function tshow_( x::String; title = string(typeof( x )), kwargs... )
+function tshow_( x::String; kwargs... )
     pos = :center
     if length(x) > 100
         pos = :staggered
     end
-    newTwViewer( rootTwScreen, x, pos, pos; bottomText = "F1: Help  Esc: Exit", title=title, kwargs... )
+    newTwViewer( rootTwScreen, x, pos, pos; kwargs... )
 end
 
-function tshow_( f::Function; title="Function", kwargs... )
+function tshow_( f::Function; kwargs... )
     funloc = "(anonymous)"
     try
         funloc = string( functionloc( f ) )
     end
     if funloc == "(anonymous)"
-        return tshow_( string(f) * ":" * funloc, title=title )
+        return tshow_( string(f) * ":" * funloc; kwargs... )
     else
-        return newTwFunc( rootTwScreen, f, 25, 80, :staggered, :staggered;
-            title=title, bottomText = "F1: Help  F6: Explore  F8: Edit", kwargs... )
+        return newTwFunc( rootTwScreen, f, 0.8, 0.8, :staggered, :staggered; kwargs... )
     end
 end
 
-function tshow_( mt::MethodTable; title="MethodTable", kwargs... )
-    newTwFunc( rootTwScreen, mt, 25, 80, :staggered, :staggered; title=title, kwargs... )
+function tshow_( mt::MethodTable; kwargs... )
+    newTwFunc( rootTwScreen, mt, 0.8, 0.8, :staggered, :staggered; kwargs... )
 end
 
 function tshow_( ms::Array{Method,1}; title="Methods", kwargs... )
-    newTwFunc( rootTwScreen, ms, 25, 80, :staggered, :staggered; title=title, kwargs... )
+    newTwFunc( rootTwScreen, ms, 0.8, 0.8, :staggered, :staggered; title=title, kwargs... )
 end
 
-function tshow_( df::DataFrame; title="DataFrame", kwargs... )
-    newTwDfTable( rootTwScreen, df, 1.0, 1.0, :center,:center; title=title, kwargs... )
+function tshow_( df::DataFrame; kwargs... )
+    newTwDfTable( rootTwScreen, df, 1.0, 1.0, :center,:center; kwargs... )
 end
 
 function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
@@ -333,11 +351,11 @@ function tshow( x::Any; title=titleof( x ), kwargs... )
         if !found
             widget = nothing
             try
-                widget = tshow_(x, title=title )
+                widget = tshow_(x; title=title, kwargs... )
             catch err
                 bt = catch_backtrace()
                 msg = string(err) * "\n" * string( bt )
-                widget = tshow_( msg, title="Error" )
+                widget = tshow_( msg; title="Error" )
             end
             if widget != nothing
                 if widget.acceptsFocus
