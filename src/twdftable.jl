@@ -285,18 +285,15 @@ function expandnode( n::TwDfTableNode, depth::Int=1 )
                 f = liftCalcPivotToFunc( pvtspec, pvtby )
                 if isempty( pvtby )
                     colvalues = f( n.subdataframe )
-                    if typeof( n.subdataframe ) == DataFrame
-                        n.subdataframe[ nextpivot ] = colvalues
-                    else
-                        # TODO: setindex! doesn't work for subdataframe!!!
-                        # some sort of composit data frame is needed to
-                        # avoid inefficient copying
-                        ns = names( n.subdataframe )
-                        localdf = DataFrame( [ n.subdataframe[i] for i in 1:length(ns)], ns )
-                        localdf[ nextpivot ] = colvalues
-                        n.subdataframe = localdf
-                    end
-                    gd = groupby( n.subdataframe, nextpivots )
+                    # Note that setindex! doesn't work for subdataframe
+                    # And we most certainly don't want to mutate the original
+                    # dataframe (if the node n here is the rootnode)
+                    # some sort of composit data frame is needed to
+                    # avoid inefficient copying (or is it that bad?)
+                    ns = names( n.subdataframe )
+                    localdf = DataFrame( [ n.subdataframe[i] for i in 1:length(ns)], ns )
+                    localdf[ nextpivot ] = colvalues
+                    gd = groupby( localdf, nextpivots )
                 else
                     # figure out the aggregation dependency
                     # the lift function just now ensures we have this cache.
