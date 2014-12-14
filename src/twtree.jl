@@ -23,7 +23,7 @@ typefields[ LambdaStaticData ] = [ :name, :module, :file, :line ]
 typefields[ DataType ] = [ :name, :super, symbol( "abstract" ), :mutable, :parameters ]
 typefields[ TypeName ] = [ :name, :module, :primary ]
 
-treeTypeMaxWidth = 40
+treeTypeMaxWidth = 30
 treeValueMaxWidth = 40
 
 type TwTreeData
@@ -272,7 +272,7 @@ function updateTreeDimensions( o::TwObj )
     global treeTypeMaxWidth, treeValueMaxWidth
 
     o.data.datalistlen = length( o.data.datalist )
-    o.data.datatreewidth = maximum( map( x->length(x[1]) + 2 +2 * length(x[4]), o.data.datalist ) )
+    o.data.datatreewidth = maximum( map( x->length(x[1]) + 1 +2 * length(x[4]), o.data.datalist ) )
     o.data.datatypewidth = min( treeTypeMaxWidth, max( 15, maximum( map( x->length(x[2]), o.data.datalist ) ) ) )
     o.data.datavaluewidth= min( treeValueMaxWidth, maximum( map( x->length(x[3]), o.data.datalist ) ) )
     nothing
@@ -281,6 +281,7 @@ end
 function drawTwTree( o::TwObj )
     updateTreeDimensions( o )
     viewContentHeight = o.height - 2 * o.borderSizeV
+    viewContentWidth = o.width - 2 * o.borderSizeV
 
     if o.box
         box( o.window, 0,0 )
@@ -307,18 +308,19 @@ function drawTwTree( o::TwObj )
     end
     for r in o.data.currentTop:min( o.data.currentTop + viewContentHeight - 1, o.data.datalistlen )
         stacklen = length( o.data.datalist[r][4])
-        s = ensure_length( repeat( " ", 2*stacklen + 1) * o.data.datalist[r][1], o.data.datatreewidth ) * "|"
-        t = ensure_length( o.data.datalist[r][2], o.data.datatypewidth ) * "|"
-        v = ensure_length( o.data.datalist[r][3], o.data.datavaluewidth, false )
-        rest = t*v
-        rest = rest[ chr2ind( rest, o.data.currentLeft ) : end ]
-        rest = ensure_length( rest, o.width - o.borderSizeH * 2 - o.data.datatreewidth  -1, false )
-        line = s * rest
+        s = ensure_length( repeat( " ", 2*stacklen + 1) * o.data.datalist[r][1], o.data.datatreewidth )
+        t = ensure_length( o.data.datalist[r][2], o.data.datatypewidth )
+        v = ensure_length( o.data.datalist[r][3], viewContentWidth-o.data.datatreewidth- o.data.datatypewidth-3, false )
 
         if r == o.data.currentLine
             wattron( o.window, A_BOLD | COLOR_PAIR(15) )
         end
-        mvwprintw( o.window, 1+r-o.data.currentTop, 2, "%s", line )
+        mvwprintw( o.window, 1+r-o.data.currentTop, 2, "%s", s )
+        mvwaddch( o.window, 1+r-o.data.currentTop, 2+o.data.datatreewidth, get_acs_val( 'x' ) )
+        mvwprintw( o.window, 1+r-o.data.currentTop, 2+o.data.datatreewidth+1, "%s", t )
+        mvwaddch( o.window, 1+r-o.data.currentTop, 2+o.data.datatreewidth+o.data.datatypewidth+1, get_acs_val( 'x' ) )
+        mvwprintw( o.window, 1+r-o.data.currentTop, 2+o.data.datatreewidth+o.data.datatypewidth+2, "%s", v )
+
         for i in 1:stacklen - 1
             if !in( i, o.data.datalist[r][6] ) # skiplines
                 mvwaddch( o.window, 1+r-o.data.currentTop, 2*i, get_acs_val( 'x' ) ) # vertical line
