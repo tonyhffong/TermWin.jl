@@ -41,21 +41,21 @@ Shft-dn: If configured, decrease value by a tick-size
 type TwEntryData
     valueType::DataType
     showHelp::Bool
-    helpText::String
-    inputText::String
+    helpText::UTF8String
+    inputText::UTF8String
     cursorPos::Int # where is the next char going to be
     fieldLeftPos::Int # what is the position of the first char on the field
     tickSize::Any
     titleLeft::Bool
     overwriteMode::Bool
     limitToWidth::Bool # TODO: not implemented yet
-    precision::Any
+    precision::Int
     commas::Bool
     stripzeros::Bool
     conversion::ASCIIString
     function TwEntryData( dt::DataType )
         o = new( dt, false, "", "", 1, 1, 0, true, false, false,
-        nothing, true, true, "" )
+           -1, true, true, "" )
         if dt <: String
             o.helpText = defaultEntryStringHelpText
             o.conversion = "s"
@@ -82,7 +82,7 @@ end
 # w include title width, if it's shown on the left
 function newTwEntry( scr::TwScreen, dt::DataType, w::Real,y::Any,x::Any;
     box=true, showHelp=true, titleLeft = true, title = "",
-    precision=nothing, stripzeros= (precision == nothing), conversion="" )
+    precision=-1, stripzeros= (precision == -1), conversion="" )
     obj = TwObj( twFuncFactory( :Entry ) )
     registerTwObj( scr, obj )
     obj.box = box
@@ -109,7 +109,7 @@ end
 # y and x is relative to parentwin
 function newTwEntry( parentwin::Ptr{Void}, dt::DataType, w::Real, y::Any,x::Any;
     box=true, showHelp=true, titleLeft=true, title = "",
-    precision=nothing, stripzeros= (precision == nothing ), conversion="" )
+    precision=-1, stripzeros= (precision == -1), conversion="" )
     obj = TwObj( twFuncFactory( :Entry ) )
     parbegy, parbegx = getwinbegyx( parentwin )
     obj.data = TwEntryData( dt )
