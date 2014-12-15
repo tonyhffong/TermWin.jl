@@ -139,6 +139,7 @@ function TwTableView( df::AbstractDataFrame, name::String;
     removed = Symbol[]
     move_columns( removed, hidecols, finalcolorder )
 
+    @lintpragma( "Ignore unstable type variable actualsortorder")
     if eltype( sortorder ) == Symbol
         actualsortorder = (Symbol,Symbol)[]
         for s in sortorder
