@@ -19,7 +19,7 @@ ctrl_p     : search previous occurence on exposed rows
 N          : search next occurence on any row. may expand more nodes
 F6         : popup window for value
 """
-defaultTableBottomText = "F1:help p:Pivot c:ColOrd v:Views ][:Width"
+defaultTableBottomText = "F1:help p:Pivot c:ColOrd v:Views"
 if VERSION < v"0.4.0-dev+1930"
     @lintpragma( "DataFrame is a container type" )
     @lintpragma( "AbstractDataFrame is a container type" )
@@ -610,13 +610,24 @@ function drawTwDfTable( o::TwObj )
             startx += width + 1
         end
     end
-    if length( o.data.bottomText ) != 0
-        mvwprintw( o.window, o.height-1, 3, "%s", o.data.bottomText )
-    end
+    bottomtext = o.data.bottomText
+    pivottext = ""
     if !isempty( o.data.pivots )
-        s = " ▾"*join( o.data.pivots, "▾" )
-        s = ensure_length( s, 35, false )
-        mvwprintw( o.window, o.height-1, o.width - 37, "%s", s )
+        pivottext = "▾"*join( o.data.pivots, "▾" )
+    end
+    if length( bottomtext ) + length( pivottext ) > o.width-4
+        if length( pivottext ) < o.width - 12 # just shorten helptext
+            bottomtext = ensure_length( bottomtext, o.width-4-length(pivottext ) )
+        else
+            bottomtext = ensure_length( bottomtext, 8 )
+            pivottext = ensure_length( pivottext, o.width-12 )
+        end
+    end
+    if length( bottomtext ) != 0
+        mvwprintw( o.window, o.height-1, 3, "%s", bottomtext )
+    end
+    if length( pivottext ) != 0
+        mvwprintw( o.window, o.height-1, o.width - length( pivottext ) - 1, "%s", pivottext )
     end
 end
 
