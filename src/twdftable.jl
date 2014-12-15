@@ -85,7 +85,7 @@ end
 function TwTableView( df::AbstractDataFrame, name::String;
     pivots = Symbol[], initdepth=1,
     colorder = Any[ "*" ],
-    hidecols = Any[], sortorder = (Symbol,Symbol)[] )
+    hidecols = Any[], sortorder = Any[] )
 
     # construct visible columns in the right order
     function move_columns( targetarray::Array{ Symbol,1 }, sourcearray::Array, remaincols::Array{Symbol,1} )
@@ -139,7 +139,18 @@ function TwTableView( df::AbstractDataFrame, name::String;
     removed = Symbol[]
     move_columns( removed, hidecols, finalcolorder )
 
-    TwTableView( utf8(name), pivots, sortorder, finalcolorder, initdepth )
+    if eltype( sortorder ) == Symbol
+        actualsortorder = (Symbol,Symbol)[]
+        for s in sortorder
+            push!( actualsortorder, (s, :asc ) )
+        end
+    elseif eltype( sortorder ) == (Symbol,Symbol)
+        actualsortorder = sortorder
+    else
+        error( "sortorder eltype expects Symbol, or (Symbol,Symbol): " * string( eltype( sortorder ) ) )
+    end
+
+    TwTableView( utf8(name), pivots, actualsortorder, finalcolorder, initdepth )
 end
 
 # this is the widget data. all subnodes hold a weakref back to this to
@@ -341,6 +352,15 @@ function ordernode( n::TwDfTableNode )
     if length( npivots ) < length( pivots ) # populate children nodes
         sort!( n.children, lt = (x,y) -> begin
             for sc in sortorder
+                if isna( x[sc[1]] )
+                    if !isna( y[sc[1]] )
+                        return false
+                    else
+                        continue
+                    end
+                elseif isna( y[sc[1]] )
+                    return true
+                end
                 if x[sc[1]] == y[sc[1]]
                     continue
                 end
@@ -363,8 +383,8 @@ function ordernode( n::TwDfTableNode )
             n.subdataframesorted = n.subdataframe
         else
             n.subdataframesorted = sort(n.subdataframe,
-                cols=( map( _->_[1], sortorder)...),
-                rev=( map(_->_[2]==:desc, sortorder )... ) )
+                cols=Symbol[x[1] for x in sortorder],
+                rev=Bool[x[2]==:desc for x in sortorder ] )
         end
     end
 end
