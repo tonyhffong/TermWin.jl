@@ -444,6 +444,11 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
     DataArrays.PooledDataArray(DataArrays.RefArray(refs), pool)
 end
 
+# quantile-based auto-breaks
+function discretize{S<:Real}(x::AbstractArray{S,1}; ngroups=4, kwargs ... )
+    discretize( x, quantile( x, [1:ngroups-1]/ngroups ); kwargs... )
+end
+
 # names are expected to be unique
 # n is the maximum rank number to report. Actual outcome may depend on existence of a tie, and dense option
 function topnames{S<:String,T<:Real}( name::AbstractArray{S,1}, measure::AbstractArray{T,1}, n::Int;

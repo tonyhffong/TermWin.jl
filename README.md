@@ -74,6 +74,7 @@ tshow( df;
 * `hidecols`. Array of `Symbol` and `Regex`. Columns that match these will be hidden. This overrules
   `colorder`.
 * `sortorder`. Array of `(Symbol, Symbol)`, the first is the column name, the second is either `:asc` or `:desc`.
+   If only a `Symbol[]` is provided, all are assumed in `:asc` order
 * `title`.
 * `formatHints`. `Dict{Any,FormatHints}`. Keys of `Symbol` type are treated as column names. Keys of `DataType`
    are backup formats when actual format hints for a name are not provided.
@@ -112,13 +113,14 @@ On **CalcPivot**, TermWin provides
    * ranksep. Default ". ". The string between the rank number and the range description
    * label. Default is an empty string. If set, it is expected we want to show the long-form range description
    * compact. Default is true. Compact range looks terser, like `[1,5)`. Integers range with interval size 1
-      is further compacted to just that number.
+     is further compacted to just that number.
    * reverse. Default is false. If set to true, the higher ranges come first.
    * prefix, suffix, scale, precision, commas, stripzeros, parens, mixedfraction, autoscale, conversion. These are options from `Formatting.jl`
+   * ngroups. **Default to 4 when breaks are not provided**. Generate breaks based on number of groups.
 * `topnames`. It requires a `:name` column, a `:measure` column and an integer (typically small). Keyward arguments
   include:
    * absolute. Default false. If true, large negatives will be included in the top names too. Please note that
-      the sort order will always put negative values below positive ones. See `test/dftests.jl` for more details.
+   the sort order will always put negative values below positive ones. See `test/dftests.jl` for more details.
    * ranksep. Default ". ".
    * dense = true. Whether it skip numbers when encountering ties.
    * tol. Tolerance. Default zero. If set positive and absolute is true, measures that are below this
