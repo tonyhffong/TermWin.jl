@@ -347,29 +347,33 @@ function ordernode( n::TwDfTableNode )
     npivots = n.pivotcols # this is the node's pivot. length <= length( pivots )
     sortorder = n.context.value.sortorder
     if length( npivots ) < length( pivots ) # populate children nodes
-        sort!( n.children, lt = (x,y) -> begin
-            for sc in sortorder
-                if isna( x[sc[1]] )
-                    if !isna( y[sc[1]] )
-                        return false
-                    else
+        if length( sortorder ) > 0
+            sort!( n.children, lt = (x,y) -> begin
+                for sc in sortorder
+                    if isna( x[sc[1]] )
+                        if !isna( y[sc[1]] )
+                            return false
+                        else
+                            continue
+                        end
+                    elseif isna( y[sc[1]] )
+                        return true
+                    end
+                    if x[sc[1]] == y[sc[1]]
                         continue
                     end
-                elseif isna( y[sc[1]] )
-                    return true
-                end
-                if x[sc[1]] == y[sc[1]]
-                    continue
-                end
 
-                if sc[2] == :desc
-                    return y[sc[1]] < x[sc[1]]
-                else
-                    return x[sc[1]] < y[sc[1]]
+                    if sc[2] == :desc
+                        return y[sc[1]] < x[sc[1]]
+                    else
+                        return x[sc[1]] < y[sc[1]]
+                    end
                 end
-            end
-            return false
-        end )
+                return false
+            end )
+        else
+            sort!( n.children, lt = (x,y) -> x.pivotvals[end] < y.pivotvals[end] )
+        end
         for c in n.children
             if c.isOpen
                 ordernode( c )
