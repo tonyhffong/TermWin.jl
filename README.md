@@ -20,6 +20,7 @@ using TermWin
 ex = :( f(x) = x*x + 2x + 1 )
 tshow(ex)
 ```
+![expression](https://cloud.githubusercontent.com/assets/7191122/5458271/62ae80c0-8583-11e4-8ebb-a996d0d63f5e.png)
 
 ### Functions and Methods
 For `Function` and `MethodTable`, this would show a searchable (fuzzy) window, based on
@@ -30,7 +31,6 @@ tshow( deleteat! ) # searchable methods table
 tshow( methods( deleteat! ) ) # ditto
 tshow( methodswith( Set ) ) # searchable, too!
 ```
-
 
 ### DataFrame
 
