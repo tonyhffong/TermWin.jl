@@ -65,6 +65,26 @@ tshow( df;
     )
 ```
 
+which will generate this output:
+
+![caschool](https://cloud.githubusercontent.com/assets/7191122/5457618/8f136f72-857e-11e4-8a27-5c4666f0386b.png)
+
+Here the "top5district" pivot (after County) is a "calculated pivot". It is not static.
+It is generated based on the path of the tree nodes, so
+as the user moves this pivot further up or down the pivot chain, the
+ranking would be adjusted to the context/subdataframe
+correctly. Another example of calculated pivot is discretization on aggregated values "CountyTestScrBuckets",
+which can be found on the view selector ('v' keyboard shortcut) in the same example.
+You can also change the pivot ordering without restarting the view using the 'p' shortcut.
+
+Also, note that aggregation `aggrHints` is done via an expression that will be lifted into a compiled function. The
+argument column `:_` is always replaced with the column name at compilation.
+Other required columns for the aggregation function (such as weights in this case) must be explicitly
+named. The convention of using colons to denote columns follows 
+[DataFramesMeta.jl](https://github.com/JuliaStats/DataFramesMeta.jl)
+
+The dataframe viewer supports a large range of options:
+
 * `pivots`. Array of `Symbol`. They can be a **calcpivot**. (see below)
 * `initdepth`. Default 1. How many levels of pivots are open at initialization.
 * `colorder`. Array of `Symbol`, `Regex` and `"*"` (string). Symbols are treated as actual column name.
@@ -85,14 +105,7 @@ tshow( df;
    e.g. `:( mean(:_, weights( :wtcol ) ) )`, etc. Quoted symbols are interpreted as columns, similar to how
    `DataFramesMeta` package.
 * `calcpivots`. Dynamic pivotable quantity. This generates a computed column that can be included
-   in the `pivots` above. This is useful when the desired pivotable values depend on the pivots
-   up to the point where we need them. In other words they are not static. For example,
-   * the top district by the average test score would depend on whether we pivot by county first, or
-      nothing (i.e. the top districts in the entire data set).
-   * In addition, the data may be in `district x test x testscore` format. In other words, there may be multiple
-     test scores per district So we must provide the aggregation rule (e.g. mean) and group-by
-     granularity (student in this case). Aggregation rule is done by the same aggrHints above.
-     Granularity is provided using the `by` keyword argument in the CalcPivot type constructor.
+   in the `pivots` above.
 * `headerHints`. Alternative name for the header.
 * `views`. Array of Dictionaries that provide alternative views of the same data. Overrideable keys are
     * `pivots`, `colorder`, `hidecols`, `sortorder`, `initdepth` with the same meaning as above.
@@ -128,7 +141,6 @@ On **CalcPivot**, TermWin provides
    * others. Default "Others". How data not in the top N will look like.
    * parens. Default false. If the measure is negative and this is set, parentheses will be added around
      the name.
-
 
 ## Installation
 
