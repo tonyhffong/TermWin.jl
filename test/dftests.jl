@@ -21,6 +21,100 @@ arr = unionall(arr)
 sort!(arr)
 @test arr == [1,2,3]
 
+# cut_categories
+@test TermWin.cut_categories( Float64, [ 0,1,2,3] ) ==
+[
+"1. <0",
+"2. [0,1)",
+"3. [1,2)",
+"4. [2,3)",
+"5. ≥3",
+]
+@test TermWin.cut_categories( Int, [ 0,1,2,3] ) ==
+[
+"1. ≤-1",
+"2. 0",
+"3. 1",
+"4. 2",
+"5. 3+"
+]
+@test TermWin.cut_categories( Float64, [ 0,1,2,3], boundedness = :bounded ) ==
+[
+"1. [0,1)",
+"2. [1,2)",
+"3. [2,3]"
+]
+@test TermWin.cut_categories( Float64, [ 0,1,2,3], boundedness = :bounded ) ==
+[
+"1. [0,1)",
+"2. [1,2)",
+"3. [2,3]"
+]
+@test TermWin.cut_categories( Float64, [ 0,1,2,3], boundedness = :boundedbelow ) ==
+[
+"1. [0,1)",
+"2. [1,2)",
+"3. [2,3)",
+"4. ≥3",
+]
+@test TermWin.cut_categories( Float64, [ 0,1,2,3], boundedness = :boundedabove ) ==
+[
+"1. <0",
+"2. [0,1)",
+"3. [1,2)",
+"4. [2,3]"
+]
+@test TermWin.cut_categories( Float64, [ 0,1,2,3], boundedness = :bounded, leftequal = false) ==
+[
+"1. [0,1]",
+"2. (1,2]",
+"3. (2,3]"
+]
+@test TermWin.cut_categories( Float64, [ 0.0,.25,0.5,0.75,1.0], boundedness = :bounded, scale=100.0, suffix="%" ) ==
+[
+"1. [0%,25%)",
+"2. [25%,50%)",
+"3. [50%,75%)",
+"4. [75%,100%]"
+]
+
+arr = [-1.0,0.0,0.5,1.,1.5,2.,3.]
+result = discretize( arr, [0,1,2] )
+@test result[1] == "1. <0"
+@test result[2] == "2. [0,1)"
+@test result[3] == "2. [0,1)"
+@test result[4] == "3. [1,2)"
+@test result[5] == "3. [1,2)"
+@test result[6] == "4. ≥2"
+@test result[7] == "4. ≥2"
+
+result = discretize( arr, [0,1,2], boundedness = :bounded )
+@test isna( result[1] )
+@test result[2] == "1. [0,1)"
+@test result[3] == "1. [0,1)"
+@test result[4] == "2. [1,2]"
+@test result[5] == "2. [1,2]"
+@test result[6] == "2. [1,2]"
+@test isna( result[7] )
+
+result = discretize( arr, [0,1,2], boundedness = :boundedbelow )
+@test isna( result[1] )
+@test result[2] == "1. [0,1)"
+@test result[3] == "1. [0,1)"
+@test result[4] == "2. [1,2)"
+@test result[5] == "2. [1,2)"
+@test result[6] == "3. ≥2"
+@test result[7] == "3. ≥2"
+
+result = discretize( arr, [0,1,2], boundedness = :boundedabove )
+@test result[1] == "1. <0"
+@test result[2] == "2. [0,1)"
+@test result[3] == "2. [0,1)"
+@test result[4] == "3. [1,2]"
+@test result[5] == "3. [1,2]"
+@test result[6] == "3. [1,2]"
+@test isna( result[7] )
+
 arr = @data( [ 1,2,3, NA] )
 result = discretize( arr, [ 0,1,2,3])
 @test result[1] == "3. 1"

@@ -292,14 +292,170 @@ function liftCalcPivotToFunc( ex::Expr, by::Array{Symbol,1} )
     CalcPivotFuncCache[ (ex, by ) ] = ret
 end
 
-# useful CalcPivot examples
-# discretize( :measure, label="x", leftequal=true, abs=false, rank=true, compact=true,
-#     reverse=false,
-#     prefix="$", suffix="m", formatscale=1e-6, log=false, ... )
-# topnames( :name, :measure, 3, abs=false )
-# boolpivot( :measure .> 0, true_str = "measure > 0" )
+function cut_categories{S<:Real, T<:Real}( ::Type{S}, breaks::Vector{T};
+    boundedness = :unbounded,
+    leftequal=true, # t1 <= x < t2 or t1 < x <= t2?
+    absolute=false, # t1 <= |x| < t2?
+    rank=true, # add a rank to the string output for easier sorting?
+    ranksep = ". ", # "1. t1 <= x < t2"?
+    label = "", # if not compact, what label do we use for x?
+    compact=(label==""), # <t1, [t1,t2), t2+. Further shortened for integer intervals with length=1
+    reverse=false, # reverse the rank from the largest first?
+    # the following format the boundary numbers
+    # see Formatting.jl
+    prefix="", suffix="", scale=1, precision=-1,
+    commas=false,stripzeros=(precision==-1),parens=false,
+    mixedfraction=false,autoscale=:none,conversion=""
+    )
+    n = length(breaks)
+    breakstrs = UTF8String[]
+    function formatter(_)
+        prefix * format( _*scale,
+            precision=precision,
+            commas=commas,
+            stripzeros=stripzeros,
+            parens=parens,
+            mixedfraction=mixedfraction,
+            autoscale=autoscale,
+            conversion=conversion ) * suffix
+    end
+    for b in breaks
+        push!( breakstrs, formatter( b ) )
+    end
+    if boundedness == :unbounded
+        ncategories = n + 1
+    elseif boundedness == :bounded
+        ncategories = n-1
+    else
+        ncategories = n
+    end
+    pool = Array(UTF8String, ncategories )
+    if rank
+        rankwidth = length(string(ncategories))
+    end
+    if !rank
+        rankprefixfunc = _->""
+    elseif reverse
+        rankprefixfunc = j -> format( n+2-j, width=rankwidth ) * ranksep
+    else
+        rankprefixfunc = j -> format( j, width=rankwidth ) * ranksep
+    end
+    if compact
+        if S <: Integer && T <: Integer && scale == 1
+            # we use 1...5, 6, 7...10, 11+etc.
+            if leftequal
+                breakminus1strs = UTF8String[]
+                for b in breaks
+                    push!( breakminus1strs, formatter( b-1 ) )
+                end
+                poolindexshift = -1
+                if boundedness in [ :unbounded, :boundedabove ]
+                    pool[1] = rankprefixfunc(1) * "≤" * breakminus1strs[1]
+                    poolindexshift = 0
+                end
+                for i in 2:n
+                    if breaks[i-1] == breaks[i]-1
+                        pool[i+poolindexshift] = rankprefixfunc(i+poolindexshift)*breakstrs[i-1]
+                    else
+                        pool[i+poolindexshift] = rankprefixfunc(i+poolindexshift)*breakstrs[i-1]*"…"*breakminus1strs[i]
+                    end
+                end
+                if boundedness in [ :unbounded, :boundedbelow ]
+                    pool[n+1+poolindexshift] = rankprefixfunc(n+1+poolindexshift)*breakstrs[n]*"+"
+                end
+            else
+                breakplus1strs = UTF8String[]
+                for b in breaks
+                    push!( breakminus1strs, formatter( b+1 ) )
+                end
+                poolindexshift = -1
+                if boundedness in [ :unbounded, :boundedabove ]
+                    pool[1] = rankprefixfunc(1) *"≤ "* breakstrs[1]
+                    poolindexshift = 0
+                end
+                for i in 2:n
+                    if breaks[i-1]+1 == breaks[i]
+                        pool[i+poolindexshift] = rankprefixfunc(i+poolindexshift)*breakstrs[i]
+                    else
+                        pool[i+poolindexshift] = rankprefixfunc(i+poolindexshift)*breakplus1strs[i-1]*"…"*breakstrs[i]
+                    end
+                end
+                if boundedness in [ :unbounded, :boundedbelow ]
+                    pool[n+1+poolindexshift] = rankprefixfunc(n+1+poolindexshift)*breakplus1strs[n]*"+"
+                end
+            end
+        else # by the way, we don't show absolute in compact
+            if leftequal
+                brackL = "["
+                brackR = ")"
+                compareL = utf8( "<" )
+                compareR = "≥"
+            else
+                brackL = "("
+                brackR = "]"
+                compareL = "≤"
+                compareR = utf8(">")
+            end
+            poolindexshift = -1
+            if boundedness in [ :unbounded, :boundedabove ]
+                pool[1] = rankprefixfunc(1) * compareL * breakstrs[1]
+                poolindexshift = 0
+            end
+            for i in 2:n
+                if i == 2 && boundedness in [ :boundedbelow, :bounded ]
+                    pool[i+poolindexshift] = rankprefixfunc(i+poolindexshift) * "[" * breakstrs[i-1]* "," *breakstrs[i] * brackR
+                elseif i == n && boundedness in [ :boundedabove, :bounded ]
+                    pool[i+poolindexshift] = rankprefixfunc(i+poolindexshift) * brackL * breakstrs[i-1]* "," *breakstrs[i] * "]"
+                else
+                    pool[i+poolindexshift] = rankprefixfunc(i+poolindexshift) * brackL * breakstrs[i-1]* "," *breakstrs[i] * brackR
+                end
+            end
+            if boundedness in [ :unbounded, :boundedbelow ]
+                pool[n+1+poolindexshift] = rankprefixfunc(n+1+poolindexshift) * compareR * breakstrs[n]
+            end
+        end
+    else
+        if absolute
+            label2 = "|"*label*"|"
+        else
+            label2 = label
+        end
+        if leftequal
+            compareL = " ≤ "
+            compareR = utf8(" < ")
+        else
+            compareL = utf8(" < ")
+            compareR = " ≤ "
+        end
+        poolindexshift = -1
+        if boundedness in [ :unbounded, :boundedabove ]
+            pool[1] = rankprefixfunc( 1 ) * label2 * compareR * breakstrs[1]
+            poolindexshift = 0
+        end
+        for i in 2:n
+            if i == 2 && boundedness in [ :boundedbelow, :bounded ]
+                pool[i+poolindexshift] = rankprefixfunc(i+poolindexshift) * breakstrs[i-1] * " ≤ " * label2 * compareR * breakstrs[i]
+            elseif i == n && boundedness in [ :boundedabove, :bounded ]
+                pool[i+poolindexshift] = rankprefixfunc(i+poolindexshift) * breakstrs[i-1] * compareL * label2 * " ≤ " * breakstrs[i]
+            else
+                pool[i+poolindexshift] = rankprefixfunc(i+poolindexshift) * breakstrs[i-1] * compareL * label2 * compareR * breakstrs[i]
+            end
+        end
+        if boundedness in [ :unbounded, :boundedbelow ]
+            pool[n+1+poolindexshift] = rankprefixfunc(n+1+poolindexshift) * breakstrs[n] * compareL * label2
+        end
+    end
+    return pool
+end
 
+# boundedness:
+#    unbounded    gives n+1 categories for n breaks.
+#    boundedbelow gives n   categories for n breaks. Values below min will be NA
+#    boundedabove gives n   categories for n breaks. Values above max will be NA
+#    bounded      gives n-1 categories for n breaks. Values below min or above max will be NA
 function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
+    boundedness = :unbounded,
+    bucketstrs = UTF8String[], # if provided, all of below will be ignored. length must be length(breaks)+1
     leftequal=true, # t1 <= x < t2 or t1 < x <= t2?
     absolute=false, # t1 <= |x| < t2?
     rank=true, # add a rank to the string output for easier sorting?
@@ -324,129 +480,122 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
         x2 = x
     end
 
+    if boundedness == :unbounded
+        below_min_mult = 1
+        above_max_mult = 1
+        ref_shift = 1
+        ncategories = length( breaks ) + 1
+    elseif boundedness == :boundedbelow
+        below_min_mult = 0
+        above_max_mult = 1
+        ref_shift = 0
+        ncategories = length( breaks )
+    elseif boundedness == :boundedabove
+        below_min_mult = 1
+        above_max_mult = 0
+        ref_shift = 1
+        ncategories = length( breaks )
+    elseif boundedness == :bounded
+        below_min_mult = 0
+        above_max_mult = 0
+        ref_shift = 0
+        ncategories = length( breaks ) - 1
+    end
+
+    if ncategories < 1
+        error( "Too few categories. Change boundedness or add breaks")
+    end
+
     if leftequal
         for i in 1:length(x)
             if isna( x, i )
                 refs[i] = 0
             elseif x2[i] <  breaks[1]
-                refs[i] = 1
-            elseif x2[i] >= breaks[end]
-                refs[i] = n+1
+                refs[i] = below_min_mult
+            elseif x2[i] > breaks[end]
+                refs[i] = (n+ref_shift) * above_max_mult
+            elseif x2[i] == breaks[end]
+                if boundedness in [ :bounded, :boundedabove ]
+                    refs[i] = ncategories
+                else
+                    refs[i] = n+ref_shift
+                end
             else
-                refs[i] = searchsortedlast(breaks, x2[i]) + 1
+                refs[i] = searchsortedlast(breaks, x2[i]) + ref_shift
             end
         end
     else
         for i in 1:length(x)
             if isna( x, i )
                 refs[i] = 0
-            elseif x2[i] <= breaks[1]
-                refs[i] = 1
-            elseif x2[i] >  breaks[end]
-                refs[i] = n+1
+            elseif x2[i] < breaks[1]
+                refs[i] = below_min_mult
+            elseif x2[i] > breaks[end]
+                refs[i] = (n+ref_shift) * above_max_mult
             else
                 refs[i] = searchsortedfirst(breaks, x2[i])
             end
         end
     end
-    breakstrs = UTF8String[]
-    formatter = _ -> prefix * format( _*scale,
-            precision=precision,
-            commas=commas,
-            stripzeros=stripzeros,
-            parens=parens,
-            mixedfraction=mixedfraction,
-            autoscale=autoscale,
-            conversion=conversion ) * suffix
-    for b in breaks
-        push!( breakstrs, formatter( b ) )
-    end
-    pool = Array(UTF8String, n + 1)
-    if rank
-        rankwidth = length(string(n+1))
-    end
-    if !rank
-        rankprefixfunc = _->""
-    elseif reverse
-        rankprefixfunc = j -> format( n+2-j, width=rankwidth ) * ranksep
-    else
-        rankprefixfunc = j -> format( j, width=rankwidth ) * ranksep
-    end
-    if compact
-        if S <: Integer && scale == 1
-            # we use 1...5, 6, 7...10, 11+etc.
-            if leftequal
-                breakminus1strs = UTF8String[]
-                for b in breaks
-                    push!( breakminus1strs, formatter( b-1 ) )
-                end
-                pool[1] = rankprefixfunc(1) * "≤ " * breakminus1strs[1]
-                for i in 2:n
-                    if breaks[i-1] == breaks[i]-1
-                        pool[i] = rankprefixfunc(i)*breakstrs[i-1]
-                    else
-                        pool[i] = rankprefixfunc(i)*breakstrs[i-1]*"…"*breakminus1strs[i]
-                    end
-                end
-                pool[n+1] = rankprefixfunc(n+1)*breakstrs[n]*"+"
-            else
-                breakplus1strs = UTF8String[]
-                for b in breaks
-                    push!( breakminus1strs, formatter( b+1 ) )
-                end
-                pool[1] = rankprefixfunc(1) *"≤ "* breakstrs[1]
-                for i in 2:n
-                    if breaks[i-1]+1 == breaks[i]
-                        pool[i] = rankprefixfunc(i)*breakstrs[i]
-                    else
-                        pool[i] = rankprefixfunc(i)*breakplus1strs[i-1]*"…"*breakstrs[i]
-                    end
-                end
-                pool[n+1] = rankprefixfunc(n+1)*breakplus1strs[n]*"+"
-            end
-        else # by the way, we don't show absolute in compact
-            if leftequal
-                brackL = "["
-                brackR = ")"
-                compareL = utf8( "<" )
-                compareR = "≥"
-            else
-                brackL = "("
-                brackR = "]"
-                compareL = "≤"
-                compareR = utf8(">")
-            end
-            pool[1] = rankprefixfunc(1) * compareL * breakstrs[1]
-            for i in 2:n
-                pool[i] = rankprefixfunc(i) * brackL * breakstrs[i-1]* "," *breakstrs[i] * brackR
-            end
-            pool[n+1] = rankprefixfunc(n+1) * compareR * breakstrs[n]
+
+    if length( bucketstrs ) != 0
+        if length( bucketstrs ) != ncategories
+            error( "bucketstrs expected to have size " * string( ncategories ) *
+                 ". Got " * string( length( bucketstrs ) ) )
         end
-    else
-        if absolute
-            label2 = "|"*label*"|"
-        else
-            label2 = label
+        if maximum( refs ) > ncategories
+            maxref = maximum( refs )
+            s = "ncategories < max refs \n maxref="  * string( maxref ) * "\n ncategories=" * string( ncategories )
+            s *= "\n buckets = " * string( bucketstrs )
+            idx = findfirst( refs, maxref )
+            s *= "\n Example x = " * string(x2[idx] )
+            s *= "\n breaks" * string( breaks )
+            error( s )
         end
-        if leftequal
-            compareL = " ≤ "
-            compareR = utf8(" < ")
-        else
-            compareL = utf8(" < ")
-            compareR = " ≤ "
-        end
-        pool[1] = rankprefixfunc( 1 ) * label2 * compareR * breakstrs[1]
-        for i in 2:n
-            pool[i] = rankprefixfunc(i) * breakstrs[i-1] * compareL * label2 * compareR * breakstrs[i]
-        end
-        pool[n+1] = rankprefixfunc(n+1) * breakstrs[n] * compareL * label2
+        return DataArrays.PooledDataArray(DataArrays.RefArray(refs), bucketstrs )
     end
+    pool = cut_categories( S, breaks,
+        boundedness = boundedness,
+        leftequal   = leftequal,
+        absolute    = absolute,
+        rank        = rank,
+        ranksep     = ranksep,
+        label       = label,
+        compact     = compact,
+        reverse     = reverse,
+        prefix=prefix, suffix=suffix, scale=scale, precision=precision,
+        commas=commas,stripzeros=stripzeros,parens=parens,
+        mixedfraction=mixedfraction,autoscale=autoscale,conversion=conversion
+        )
+
     DataArrays.PooledDataArray(DataArrays.RefArray(refs), pool)
 end
 
 # quantile-based auto-breaks
-function discretize{S<:Real}(x::AbstractArray{S,1}; ngroups=4, kwargs ... )
-    discretize( x, quantile( x, [1:ngroups-1]/ngroups ); kwargs... )
+# weighted quantile is not implemented
+# use scale=100.0, suffix="%", to express the quantiles in percentages
+function discretize{S<:Real}(x::AbstractArray{S,1}; quantiles = Float64[], ngroups::Int = 4, kwargs ... )
+    if length( quantiles ) != 0
+        if any( _ -> _ < 0.0 || _ > 1.0 , quantiles )
+            error( "illegal quantile numbers outside [0,1]")
+        end
+        if !issorted(quantiles)
+            sort!(quantiles)
+        end
+        if quantiles[1] != 0.0
+            prepend!( quantiles, 0.0 )
+        end
+
+        if quantiles[end] != 1.0
+            push!( quantiles, 1.0 )
+        end
+        bucketstrs = cut_categories( Float64, quantiles; boundedness = :bounded, kwargs... )
+        discretize( x, quantile( x, quantiles ); bucketstrs = bucketstrs, boundedness = :bounded, kwargs... )
+    else
+        qs = [0:ngroups]/ngroups
+        bucketstrs = cut_categories( Float64, qs; boundedness = :bounded, kwargs... )
+        discretize( x, quantile( x, qs); bucketstrs = bucketstrs, boundedness = :bounded, kwargs... )
+    end
 end
 
 # names are expected to be unique
@@ -504,7 +653,8 @@ function topnames{S<:String,T<:Real}( name::AbstractArray{S,1}, measure::Abstrac
             end
         end
         dfsorted[ :rankstr ] = DataArrays.PooledDataArray(DataArrays.RefArray(refs), pool)
-        jdf = join( df, dfsorted[ [:name,:rankstr] ], on = :name, kind = :left )
+        rdf = dfsorted[ [:name, :rankstr ] ]
+        jdf = join( df, rdf, on = :name, kind = :left )
     else
         rankedflag = fill( zero( Bool ), nr )
         lastval  = zero( T )

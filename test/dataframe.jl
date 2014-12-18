@@ -17,7 +17,7 @@ tshow( df;
     calcpivots = @compat( Dict{Symbol,Any}(
         :CountyStrBuckets => CalcPivot( :(discretize( :Str, [ 14,16,18,20,22,24 ], rank=true, compact=true )), :County ),
         :CountyTestScrBuckets => CalcPivot( :(discretize( :TestScr, [ 600, 620, 640, 660, 680, 700], label="score", rank=true, compact=false, reverse=true )), :County ),
-        :TestScrQuantiles => CalcPivot( :(discretize( :TestScr, ngroups = 4, label="score", rank=true, compact=false, reverse=true, precision=1)) ),
+        :TestScrQuantiles => CalcPivot( :(discretize( :TestScr, ngroups = 4 )) ),
         :top5districts => CalcPivot( :( topnames( :District, :TestScr, 5 ) ) )
         ) ),
     views = [
