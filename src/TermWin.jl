@@ -39,7 +39,7 @@ function log( s::String )
 end
 
 # uncomment this to provide logging functionality
-#logstart()
+# logstart()
 
 include( "consts.jl")
 include( "ccall.jl" )
@@ -73,13 +73,22 @@ export twFuncFactory, registerTwObj
 export FormatHints
 export COLOR_PAIR
 
-
 rootwin = nothing
 rootTwScreen = nothing
 callcount = 0
 acs_map_arr = Uint8[]
 COLORS = 8
 COLOR_PAIRS = 16
+
+function extractkwarg!( kwargs::Array{Any,1}, sym::Symbol, def::Any )
+    for (i,t) in enumerate( kwargs )
+        if t[1] == sym
+            deleteat!( kwargs, i )
+            return t[2]
+        end
+    end
+    return def
+end
 
 function initsession()
     global rootwin, libncurses, acs_map_arr, COLORS, COLOR_PAIRS
@@ -226,7 +235,11 @@ function tshow_( x::WeakRef; kwargs... )
     end
 end
 function tshow_( x; kwargs... )
-    newTwTree( rootTwScreen, x, 0.8, 0.8, :staggered, :staggered; kwargs... )
+    height = extractkwarg!( kwargs, :height, 0.8 )
+    width = extractkwarg!( kwargs, :width, 0.8 )
+    posx  = extractkwarg!( kwargs, :x, :staggered )
+    posy  = extractkwarg!( kwargs, :y, :staggered )
+    newTwTree( rootTwScreen, x, height, width, posy, posx; kwargs... )
 end
 
 function tshow_( x::String; kwargs... )
@@ -234,7 +247,9 @@ function tshow_( x::String; kwargs... )
     if length(x) > 100
         pos = :staggered
     end
-    newTwViewer( rootTwScreen, x, pos, pos; kwargs... )
+    posx  = extractkwarg!( kwargs, :x, pos )
+    posy  = extractkwarg!( kwargs, :y, pos )
+    newTwViewer( rootTwScreen, x, posy, posx; kwargs... )
 end
 
 function tshow_( f::Function; kwargs... )
@@ -245,20 +260,37 @@ function tshow_( f::Function; kwargs... )
     if funloc == "(anonymous)"
         return tshow_( string(f) * ":" * funloc; kwargs... )
     else
-        return newTwFunc( rootTwScreen, f, 0.8, 0.8, :staggered, :staggered; kwargs... )
+        height = extractkwarg!( kwargs, :height, 0.8 )
+        width = extractkwarg!( kwargs, :width, 0.8 )
+        posx  = extractkwarg!( kwargs, :x, :staggered )
+        posy  = extractkwarg!( kwargs, :y, :staggered )
+        return newTwFunc( rootTwScreen, f, height,width,posy,posx; kwargs... )
     end
 end
 
 function tshow_( mt::MethodTable; kwargs... )
-    newTwFunc( rootTwScreen, mt, 0.8, 0.8, :staggered, :staggered; kwargs... )
+    height = extractkwarg!( kwargs, :height, 0.8 )
+    width = extractkwarg!( kwargs, :width, 0.8 )
+    posx  = extractkwarg!( kwargs, :x, :staggered )
+    posy  = extractkwarg!( kwargs, :y, :staggered )
+    newTwFunc( rootTwScreen, mt, height,width,posy,posx; kwargs... )
 end
 
-function tshow_( ms::Array{Method,1}; title="Methods", kwargs... )
-    newTwFunc( rootTwScreen, ms, 0.8, 0.8, :staggered, :staggered; title=title, kwargs... )
+function tshow_( ms::Array{Method,1}; kwargs... )
+    height = extractkwarg!( kwargs, :height, 0.8 )
+    width = extractkwarg!( kwargs, :width, 0.8 )
+    posx  = extractkwarg!( kwargs, :x, :staggered )
+    posy  = extractkwarg!( kwargs, :y, :staggered )
+    title = extractkwarg!( kwargs, :title, "Methods" )
+    newTwFunc( rootTwScreen, ms, height,width,posy,posx; kwargs... )
 end
 
 function tshow_( df::DataFrame; kwargs... )
-    newTwDfTable( rootTwScreen, df, 1.0, 1.0, :center,:center; kwargs... )
+    height = extractkwarg!( kwargs, :height, 1.0 )
+    width = extractkwarg!( kwargs, :width, 1.0 )
+    posx  = extractkwarg!( kwargs, :x, :center)
+    posy  = extractkwarg!( kwargs, :y, :center)
+    newTwDfTable( rootTwScreen, df, height,width,posy,posx; kwargs... )
 end
 
 function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )

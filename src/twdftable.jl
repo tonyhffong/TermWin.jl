@@ -1129,7 +1129,7 @@ function injectTwDfTable( o::TwObj, token::Any )
             v = node.subdataframesorted[ colsym ][ o.data.datalist[o.data.currentLine][2][end] ]
         end
         if typeof( v ) != NAtype && !in( v, [ nothing, None, Any ] )
-            tshow( v, title = string( colsym ) )
+            tshow( v, title = string( colsym ); x=:center, y=:center )
             dorefresh = true
         end
     elseif token == :F7
@@ -1142,14 +1142,14 @@ function injectTwDfTable( o::TwObj, token::Any )
             println( out, "\nRoot table stats" )
             describe( out, o.data.rootnode.subdataframe[ colsym ] )
         end
-        tshow( takebuf_string( out ), title = string( colsym )  * " stats")
+        tshow( takebuf_string( out ), title = string( colsym )  * " stats"; x=:center,y=:center)
         dorefresh = true
     elseif token == :F1
         helper = newTwViewer( o.screen.value, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
         dorefresh = true
-        #TODO search, jump to line, etc.
+        #TODO jump to line, etc.
     else
         retcode = :pass # I don't know what to do with it
     end
