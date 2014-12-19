@@ -293,6 +293,12 @@ function tshow_( df::DataFrame; kwargs... )
     newTwDfTable( rootTwScreen, df, height,width,posy,posx; kwargs... )
 end
 
+function tshow_( o::TwObj; kwargs... )
+    @lintpragma( "Ignore unused kwargs")
+    registerTwObj( rootTwScreen, o )
+    return o
+end
+
 function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
     global rootwin
     (maxy, maxx) = getwinmaxyx( rootwin )
@@ -353,8 +359,10 @@ function titleof( x::Any )
     end
 end
 
+# it'd return the widget, which can be displayed again.
 function tshow( x::Any; title=titleof( x ), kwargs... )
     global callcount, rootwin, rootTwScreen
+    widget = nothing
     if callcount == 0
         initsession()
         callcount += 1
@@ -371,12 +379,14 @@ function tshow( x::Any; title=titleof( x ), kwargs... )
         end
         callcount -= 1
         endsession()
+        return widget
     else
         found = false
         for o in rootTwScreen.data.objects
             if !in( objtype( o ), [ :Entry, :Viewer, :Calendar ] ) && isequal( o.value, x )
                 raiseTwObject( o )
                 found = true
+                widget = o
                 break
             end
         end
@@ -400,8 +410,8 @@ function tshow( x::Any; title=titleof( x ), kwargs... )
                 end
             end
         end
+        return widget
     end
-    nothing
 end
 
 # f is a no-arg function

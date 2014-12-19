@@ -297,6 +297,10 @@ function del_panel( panel::Ptr{Void} )
     ccall(dlsym( libpanel, :del_panel ), Void, (Ptr{Void}, ), panel )
 end
 
+function show_panel( panel::Ptr{Void} )
+    ccall(dlsym( libpanel, :show_panel ), Int, (Ptr{Void}, ), panel )
+end
+
 function hide_panel( panel::Ptr{Void} )
     ccall(dlsym( libpanel, :hide_panel ), Int, (Ptr{Void}, ), panel )
 end
