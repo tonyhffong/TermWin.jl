@@ -142,6 +142,28 @@ On **CalcPivot**, TermWin provides
    * parens. Default false. If the measure is negative and this is set, parentheses will be added around
      the name.
 
+## Other usage tips
+
+`tshow` accepts at the minimum the following keyword arguments:
+* title
+* height. When floating point, it must be within [0.0, 1.0] i.e. relative screen size. When integer, they mean character height.
+* width. ditto
+* x. When integer, it is the x (horizontal) location. 0 is the left edge. It also supports symbols such as
+    * `:staggered`
+    * `:center`
+    * `:left`
+    * `:right`
+    * `:random`
+* y. When integer, it is the y (vertical) location. 0 is the top edge.
+    * `:staggered`
+    * `:center`
+    * `:top`
+    * `:bottom`
+    * `:random`
+
+`tshow` returns the widget which can be re-shown. This is especially useful with the dataframe viewer,
+which remembers the pivot states, the column order, etc.
+
 ## Installation
 
 As stated on the tin, TermWin requires ncurses. It is being developed on MacOS/iTerm.
