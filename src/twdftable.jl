@@ -18,6 +18,7 @@ ctrl_n     : search next occurence on exposed rows
 ctrl_p     : search previous occurence on exposed rows
 N          : search next occurence on any row. may expand more nodes
 F6         : popup window for value
+F7         : popup window for leaf & root node stats
 """
 defaultTableBottomText = "F1:help p:Pivot c:ColOrd v:Views"
 if VERSION < v"0.4.0-dev+1930"
@@ -1131,6 +1132,18 @@ function injectTwDfTable( o::TwObj, token::Any )
             tshow( v, title = string( colsym ) )
             dorefresh = true
         end
+    elseif token == :F7
+        colsym = o.data.colInfo[ o.data.currentCol ].name
+        node = o.data.datalist[o.data.currentLine][5]
+        out = IOBuffer()
+        describe( out, node.subdataframe[ colsym ] )
+
+        if node != o.data.rootnode
+            println( out, "\nRoot table stats" )
+            describe( out, o.data.rootnode.subdataframe[ colsym ] )
+        end
+        tshow( takebuf_string( out ), title = string( colsym )  * " stats")
+        dorefresh = true
     elseif token == :F1
         helper = newTwViewer( o.screen.value, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
