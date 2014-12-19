@@ -583,7 +583,7 @@ function discretize{S<:Real}(x::AbstractArray{S,1}; quantiles = Float64[], ngrou
             sort!(quantiles)
         end
         if quantiles[1] != 0.0
-            prepend!( quantiles, 0.0 )
+            insert!( quantiles, 1, 0.0 )
         end
 
         if quantiles[end] != 1.0
