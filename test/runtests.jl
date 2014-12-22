@@ -13,3 +13,4 @@ end
 @test sumseverity == 0
 
 include( "dftests.jl" )
+include( "strtests.jl" )

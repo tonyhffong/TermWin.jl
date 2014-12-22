@@ -212,12 +212,12 @@ function drawTwEntry( o::TwObj )
     # visual way to show there are more content beyond the field boundaries
     if o.data.valueType <: String
         if o.data.fieldLeftPos > 1
-            c = outstr[ chr2ind(outstr, 1 )]
+            c = substr_by_width( outstr, 0, 1 )
             wattron( o.window, firstflag | A_BOLD )
             mvwprintw( o.window, starty, startx, "%s", string(c) )
             wattroff( o.window, firstflag | A_BOLD )
         end
-        if o.data.fieldLeftPos + fieldcount - 1 < strwidth(o.data.inputText)
+        if o.data.fieldLeftPos + fieldcount <= strwidth(o.data.inputText)
             c = substr_by_width( outstr, fieldcount-1, 1 )
             wattron( o.window, lastflag | A_BOLD )
             mvwprintw( o.window, starty, startx+fieldcount-1, "%s", string(c) )

@@ -150,6 +150,7 @@ function substr_by_width( s::String, wskip::Int, w::Int )
                     return s[chr2ind(s,j):end]
                 end
                 startidx = j
+                endidx = j
                 if totalwidth + cw <= w
                     totalwidth += cw
                     continue
@@ -160,21 +161,26 @@ function substr_by_width( s::String, wskip::Int, w::Int )
         else
             if totalwidth + cw <= w
                 totalwidth += cw
+                endidx = j
                 continue
             else
-                endidx = j-1
                 break
             end
         end
     end
     if startidx == -1
+        if w == -1
+            return ""
+        end
         startidx = 1
+    end
+    if w == -1
+        return s[chr2ind(s,startidx):end]
     end
     if endidx < startidx
         return ""
-    else
-        return s[chr2ind(s,startidx):chr2ind(s,endidx)]
     end
+    return s[chr2ind(s,startidx):chr2ind(s,endidx)]
 end
 
 function ensure_length( s::String, w::Int, pad::Bool = true )
