@@ -134,10 +134,10 @@ end
 function getFieldDimension( o::TwObj )
     if o.data.titleLeft && !isempty( o.title )
         fieldcount = o.width - length(o.title) - o.borderSizeH* 2
-        remainspacecount = fieldcount - length( o.data.inputText )
+        remainspacecount = fieldcount - strwidth( o.data.inputText )
     else
         fieldcount = o.width - ( o.box?2: 0 )
-        remainspacecount = fieldcount - length( o.data.inputText )
+        remainspacecount = fieldcount - strwidth( o.data.inputText )
     end
     (fieldcount, remainspacecount)
 end
@@ -177,11 +177,10 @@ function drawTwEntry( o::TwObj )
     else
         if remainspacecount <= 0
             rcursPos = min( fieldcount, max(1, o.data.cursorPos - o.data.fieldLeftPos+1 ) )
-            outstr = o.data.inputText[chr2ind( o.data.inputText, o.data.fieldLeftPos):end]
-            if length(outstr) > fieldcount
-                outstr = outstr[ 1:chr2ind( outstr, fieldcount) ]
-            elseif length(outstr) < fieldcount
-                outstr *= repeat(" ", fieldcount - length(outstr) )
+            outstr = substr_by_width( o.data.inputText, o.data.fieldLeftPos-1, fieldcount )
+            strw = strwidth( outstr )
+            if strw < fieldcount
+                outstr *= repeat(" ", fieldcount - strw )
             end
         else
             outstr = o.data.inputText * repeat( " ", remainspacecount )
@@ -194,7 +193,7 @@ function drawTwEntry( o::TwObj )
     firstflag = 0
     lastflag = 0
     if o.hasFocus
-        c = outstr[chr2ind( outstr,rcursPos )]
+        c = substr_by_width( outstr, rcursPos-1, 1 )
         if o.data.overwriteMode
             flag = A_REVERSE
         else
@@ -218,8 +217,8 @@ function drawTwEntry( o::TwObj )
             mvwprintw( o.window, starty, startx, "%s", string(c) )
             wattroff( o.window, firstflag | A_BOLD )
         end
-        if o.data.fieldLeftPos + fieldcount - 1 < length(o.data.inputText)
-            c = outstr[ chr2ind( outstr, fieldcount ) ]
+        if o.data.fieldLeftPos + fieldcount - 1 < strwidth(o.data.inputText)
+            c = substr_by_width( outstr, fieldcount-1, 1 )
             wattron( o.window, lastflag | A_BOLD )
             mvwprintw( o.window, starty, startx+fieldcount-1, "%s", string(c) )
             wattroff( o.window, lastflag | A_BOLD )
@@ -228,34 +227,13 @@ function drawTwEntry( o::TwObj )
     wattroff( o.window, COLOR_PAIR(15))
 end
 
-#TODO: test this thoroughly!!
-function insertstring( str::String, c::String, p::Int, overwrite::Bool )
-    pm1 = p <= 1 ? 0 : chr2ind(str,p-1)
-    pp = nextind( str, pm1 )
-    if overwrite
-        out = str[1:pm1] * c
-        for j in 1:length(c)
-            pp = nextind( str, pp )
-        end
-        if p+length(c) <= length(str)
-            out *= str[ pp:end ]
-        end
-    else
-        out = str[1:pm1] * c
-        if p <= length(str)
-            out *= str[ pp:end]
-        end
-    end
-    return out
-end
-
 function injectTwEntry( o::TwObj, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
 
     insertchar = ( c ) -> begin
         o.data.inputText = insertstring( o.data.inputText, c, o.data.cursorPos, o.data.overwriteMode )
-        o.data.cursorPos += length( c )
+        o.data.cursorPos += strwidth( c )
     end
 
     checkcursor = ()-> begin
@@ -337,33 +315,20 @@ function injectTwEntry( o::TwObj, token::Any )
         end
     elseif token == :delete
         p = o.data.cursorPos
-        utfs = o.data.inputText
-        if p == 1 && length( utfs ) == 0
-            beep()
+        utfs = delete_char_at( o.data.inputText, o.data.cursorPos )
+        if utfs != o.data.inputText
+            o.data.inputText = utfs
+            checkcursor()
+            dorefresh = true
         else
-            pp = (p == 1)? 0 : chr2ind( utfs, p-1 )
-            ppn = nextind( utfs, pp )
-            if p <= length(o.data.inputText)
-                ppnn = nextind( utfs, ppn )
-                o.data.inputText = utfs[1:pp] * utfs[ppnn:end]
-                checkcursor()
-                dorefresh = true
-            else
-                beep()
-            end
+            beep()
         end
     elseif token == :backspace
         p = o.data.cursorPos
-        if p > 1
-            utfs = o.data.inputText
-            ppprev = p > 2 ? chr2ind( utfs, p-2) : 0
-            o.data.inputText = utfs[1:ppprev]
-            pp = nextind( utfs, ppprev )
-            ppn = nextind( utfs, pp )
-            if p <= length( utfs )
-                o.data.inputText *= utfs[ppn:end]
-            end
-            o.data.cursorPos = max( 1, p-1 )
+        utfs, newpos = delete_char_before( o.data.inputText, o.data.cursorPos )
+        if utfs != o.data.inputText
+            o.data.inputText = utfs
+            o.data.cursorPos = newpos
             checkcursor()
             dorefresh = true
         else

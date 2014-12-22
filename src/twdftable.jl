@@ -645,17 +645,20 @@ function injectTwDfTable( o::TwObj, token::Any )
     end
 
     checkTop = () -> begin
-        if o.data.currentLine > length( o.data.datalist )
-            o.data.currentLine = length( o.data.datalist )
+        o.data.datalistlen = length( o.data.datalist )
+        if o.data.currentLine > o.data.datalistlen
+            o.data.currentLine = o.data.datalistlen
         end
         if o.data.currentTop < 1
             o.data.currentTop = 1
-        elseif o.data.currentTop > o.data.datalistlen - viewContentHeight + 1
+        end
+        if o.data.currentTop > o.data.datalistlen - viewContentHeight + 1
             o.data.currentTop = max(1,o.data.datalistlen - viewContentHeight + 1)
         end
         if o.data.currentTop > o.data.currentLine
             o.data.currentTop = o.data.currentLine
-        elseif o.data.currentLine - o.data.currentTop > viewContentHeight-1
+        end
+        if o.data.currentLine - o.data.currentTop > viewContentHeight-1
             o.data.currentTop = o.data.currentLine - viewContentHeight+1
         end
     end

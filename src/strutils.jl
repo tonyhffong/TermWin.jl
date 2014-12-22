@@ -44,16 +44,147 @@ function repr_symbol( s::Symbol )
     v
 end
 
+#delete a code_point before the p "width" position
+function delete_char_before( s::String, p::Int )
+    local totalskip::Int = 0
+    local lastj::Int = 0
+    local lastcw::Int = 0
+    if p == 1
+        return (s,p)
+    end
+    for (j,c) in enumerate( s )
+        cw = charwidth( c )
+        if totalskip + cw < p
+            totalskip += cw
+            lastj = j
+            lastcw = cw
+            continue
+        else
+            if lastj <= 1
+                return (s[chr2ind(s,j):end], p-lastcw)
+            else
+                return (s[1:chr2ind(s,lastj-1)] * s[chr2ind(s,j):end], p-lastcw)
+            end
+        end
+    end
+    if lastj == 0
+        return (s,p)
+    end
+    if lastj == 1
+        return ("", p-lastcw)
+    end
+    return (s[1:chr2ind(s,lastj-1)], p-lastcw)
+end
+
+# delete at least 1 code point, could be more if there
+# are trailing zero-width codepoints.
+function delete_char_at( s::String, p::Int )
+    local totalskip::Int = 0
+    local lastj::Int = 0
+    for (j,c) in enumerate( s )
+        cw = charwidth( c )
+        if totalskip + cw < p
+            totalskip += cw
+            lastj = j
+            continue
+        else
+            if lastj == 0
+                return substr_by_width( s, p, -1 )
+            else
+                return s[1:chr2ind(s,lastj)] * substr_by_width( s, p, -1 )
+            end
+        end
+    end
+    s
+end
+
+# TODO: test this thoroughly!!
+# Insert a (short) string at the "p" position
+# p is interpreted as the width position
+function insertstring( s::String, ch::String, p::Int, overwrite::Bool )
+    wskip = p-1
+    local totalskip::Int = 0
+    for (j,c) in enumerate( s )
+        cw = charwidth( c )
+        if totalskip + cw <= wskip
+            totalskip += cw
+            continue
+        else
+            if j == 1
+                out = ch
+            else
+                out = s[1:chr2ind(s,j-1)] * ch
+            end
+            if overwrite
+                cwidth = strwidth( ch )
+                out *= substr_by_width( s, wskip+cwidth, -1 )
+            else
+                out *= substr_by_width( s, wskip, -1 )
+            end
+            return out
+        end
+    end
+    return s * ch
+end
+
+# get w charwidths worth of string, after skipping up to wskip widths
+# greedy-skip: all trailing 0 width chars will be skipped
+# greedy-include: all trailing 0-width chars will be included
+# if w is -1, it would take all the rest of the string
+function substr_by_width( s::String, wskip::Int, w::Int )
+    local totalskip::Int = 0
+    local totalwidth::Int = 0
+    local startidx::Int = -1
+    local endidx::Int = 0
+    for (j,c) in enumerate( s )
+        cw = charwidth( c )
+        if startidx == -1
+            if totalskip + cw <= wskip
+                totalskip += cw
+                continue
+            else
+                if w == -1 # just take until the end
+                    return s[chr2ind(s,j):end]
+                end
+                startidx = j
+                if totalwidth + cw <= w
+                    totalwidth += cw
+                    continue
+                else
+                    return ""
+                end
+            end
+        else
+            if totalwidth + cw <= w
+                totalwidth += cw
+                continue
+            else
+                endidx = j-1
+                break
+            end
+        end
+    end
+    if startidx == -1
+        startidx = 1
+    end
+    if endidx < startidx
+        return ""
+    else
+        return s[chr2ind(s,startidx):chr2ind(s,endidx)]
+    end
+end
+
 function ensure_length( s::String, w::Int, pad::Bool = true )
     t = replace( s, "\n", "\\n" )
     t = replace( t, "\t", " " )
     if w <= 0
         return ""
     end
+    len = strwidth( t )
     if w ==1
-        if length(t) > 1
+        if len > 1
             return string( char( 0x2026 ) )
-        elseif length(t)==1
+        elseif len==1
             return t
         else
             if pad
@@ -64,14 +195,14 @@ function ensure_length( s::String, w::Int, pad::Bool = true )
         end
     end
 
-    if length(t)<= w
+    if len <= w
         if pad
-            return t * repeat( " ", w - length( t ) )
+            return t * repeat( " ", w - len )
         else
             return t
         end
     else # ellipsis
-        return t[ 1:chr2ind( t, w-1) ] * string( char( 0x2026 ) )
+        return substr_by_width( t, 0, w-1 ) * string( char( 0x2026 ) )
     end
 end
 
