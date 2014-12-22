@@ -104,6 +104,10 @@ end
 function insertstring( s::String, ch::String, p::Int, overwrite::Bool )
     wskip = p-1
     local totalskip::Int = 0
+    chwidth = strwidth( ch )
+    if chwidth == 0 && p == 1
+        return s
+    end
     for (j,c) in enumerate( s )
         cw = charwidth( c )
         if totalskip + cw <= wskip
@@ -116,8 +120,7 @@ function insertstring( s::String, ch::String, p::Int, overwrite::Bool )
                 out = s[1:chr2ind(s,j-1)] * ch
             end
             if overwrite
-                cwidth = strwidth( ch )
-                out *= substr_by_width( s, wskip+cwidth, -1 )
+                out *= substr_by_width( s, wskip+chwidth, -1 )
             else
                 out *= substr_by_width( s, wskip, -1 )
             end
