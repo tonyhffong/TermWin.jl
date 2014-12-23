@@ -728,3 +728,10 @@ function topnames{S<:String,T<:Real}( name::AbstractArray{S,1}, measure::Abstrac
     end
     ret
 end
+
+import DataFrames.describe
+export describe
+
+function describe{T}( io, dv::Array{T,1} )
+    describe( io, DataArray( dv ) )
+end
