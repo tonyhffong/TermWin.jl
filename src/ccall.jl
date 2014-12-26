@@ -316,3 +316,18 @@ end
 function set_panel_userptr( p1::Ptr{Void}, p2::Ptr{Void} )
     ccall(dlsym( libpanel, :set_panel_userptr), Void, (Ptr{Void}, Ptr{Void}), p1, p2 )
 end
+
+# ------ pad
+
+function newpad( rows::Int, cols::Int )
+    ccall(dlsym( libncurses, :newpad ), Ptr{Void}, (Int,Int), rows, cols )
+end
+
+function subpad( orig::Ptr{Void}, rows::Int, cols::Int, beg_y::Int, beg_x::Int )
+    ccall(dlsym( libncurses, :subpad ), Ptr{Void}, (Ptr{Void}, Int,Int,Int,Int), rows, cols, beg_y, beg_x )
+end
+
+function pnoutrefresh( pad::Ptr{Void}, pminrow::Int, pmincol::Int, sminrow::Int,smincol::Int,smaxrow::Int,smaxcol::Int )
+    ccall(dlsym( libncurses, :pnoutrefresh), Void, (Ptr{Void}, Int,Int,Int,Int,Int,Int),
+        pminrow,pmincol,sminrow,smincol,smaxrow,smaxcol )
+end
