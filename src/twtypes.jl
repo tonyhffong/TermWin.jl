@@ -18,11 +18,19 @@ type TwFunc
     refresh::Function # default to dummy
 end
 
+type TwWindow
+    parent::WeakRef # to another TwObj, or nothing
+    yloc::Int # 0-based
+    xloc::Int
+    height::Int # this is to help do box/erase
+    width::Int
+end
+
 type TwObj
     screen::WeakRef # the parent screen
     screenIndex::Int
-    window::Union( Nothing, Ptr{Void} )
-    panel::Union( Nothing, Ptr{Void} )
+    window::Union( Nothing, Ptr{Void}, TwWindow )
+    panel::Union( Nothing, Ptr{Void} ) # when window is a TwWindow, this is nothing
     height::Int
     width::Int
     xpos::Int
@@ -52,7 +60,7 @@ type TwObj
                 del_panel( y.panel )
                 y.panel = nothing
             end
-            if y.window != nothing && y.window != rootwin
+            if typeof( y.window ) <: Ptr && y.window != rootwin
                 delwin( y.window )
                 y.window = nothing
             end

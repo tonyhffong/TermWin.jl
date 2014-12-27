@@ -34,9 +34,18 @@ function delwin( win::Ptr{Void} )
     ccall( dlsym( libncurses, :delwin ), Void, ( Ptr{Void}, ), win )
 end
 
-function mvwaddch( win, y::Int, x::Int, c )
+function mvwaddch( win::Ptr{Void}, y::Int, x::Int, c )
     ccall( dlsym( libncurses, :mvwaddch), Void,
         ( Ptr{Void}, Int, Int, Int ), win, y, x, c )
+end
+
+function mvwaddch( w::TwWindow, y::Int, x::Int, c )
+    if objtype( w.parent.value ) == :List && typeof( w.parent.value.window ) != TwWindow
+        # terminal layer. use its pad
+        mvwaddch( w.parent.value.data.pad, y+w.yloc, x+w.xloc, c )
+    else
+        mvwaddch( w.parent.value.window, y+w.yloc, x+w.xloc, c )
+    end
 end
 
 function mvwprintw( win::Ptr{Void}, row::Int, height::Int, fmt::String, str::String )
@@ -45,7 +54,17 @@ function mvwprintw( win::Ptr{Void}, row::Int, height::Int, fmt::String, str::Str
         win, row, height, fmt, str )
 end
 
-function wmove( win, y::Int, x::Int )
+# note that it could in turn call another TwWindow...
+function mvwprintw( w::TwWindow, y::Int, x::Int, fmt::String, s::String )
+    if objtype( w.parent.value ) == :List && typeof( w.parent.value.window ) != TwWindow
+        # terminal layer. use its pad
+        mvwprintw( w.parent.value.data.pad, y+w.yloc, x+w.xloc, fmt, s )
+    else
+        mvwprintw( w.parent.value.window, y+w.yloc, x+w.xloc, fmt, s )
+    end
+end
+
+function wmove( win::Ptr{Void}, y::Int, x::Int )
     ccall( dlsym( libncurses, :wmove), Int, ( Ptr{Void}, Int, Int ), win, y, x )
 end
 
@@ -69,19 +88,63 @@ function werase( win::Ptr{Void} )
     ccall( dlsym( libncurses, :werase ), Void, (Ptr{Void},), win )
 end
 
+function werase( win::TwWindow, y::Int=win.yloc, x::Int=win.xloc, h::Int=win.height, w::Int=win.width )
+    parwin = win.parent.value.window
+    if typeof( parwin ) <: Ptr
+        par = win.parent.value
+        for r = y:y+h-1
+            for c = x:x+w-1
+                mvwaddch( par.data.pad, r, c, ' ' )
+            end
+        end
+    else
+        werase( parwin, parwin.yloc+win.yloc, parwin.xloc+win.xloc, h, w )
+    end
+end
+
 function wclear( win::Ptr{Void} )
     ccall( dlsym( libncurses, :wclear ), Void, (Ptr{Void},), win )
 end
 
-function box( win, vchr, hchr )
+function box( win::Ptr{Void}, vchr, hchr )
     ccall( dlsym( libncurses, :box ), Void, (Ptr{Void}, Char, Char), win, vchr, hchr )
 end
 
-function wgetch( win::Ptr{Void } )
+function box( win::TwWindow, vchr::Integer, hchr::Integer, y::Int=win.yloc, x::Int=win.xloc, h::Int=win.height, w::Int=win.width )
+    parwin = win.parent.value.window
+    if typeof( parwin ) <: Ptr
+        par = win.parent.value
+        #draw the box myself
+        # 4 corners
+        mvwaddch( par.data.pad, y,x, get_acs_val( 'l' ) )
+        mvwaddch( par.data.pad, y+h-1,x, get_acs_val( 'm' ) )
+        mvwaddch( par.data.pad, y,x+w-1, get_acs_val( 'k' ) )
+        mvwaddch( par.data.pad, y+h-1,x+w-1, get_acs_val( 'j' ) )
+
+        if vchr==0
+            vchr=get_acs_val('x')
+        end
+        if hchr==0
+            hchr=get_acs_val('q')
+        end
+        for r = y+1:y+h-2
+            mvwaddch( par.data.pad, r, x, vchr )
+            mvwaddch( par.data.pad, r, x+w-1, vchr )
+        end
+        for c = x+1:x+w-2
+            mvwaddch( par.data.pad, y, c, hchr )
+            mvwaddch( par.data.pad, y+h-1, c, hchr )
+        end
+    else
+        box( parwin, vchr, hchr, parwin.yloc+win.yloc, parwin.xloc+win.xloc, h, w )
+    end
+end
+
+function wgetch( win::Ptr{Void} )
     ccall( dlsym( libncurses, :wgetch ), Uint32, (Ptr{Void},), win )
 end
 
-function keypad( win, bf )
+function keypad( win::Ptr{Void}, bf )
     ccall( dlsym( libncurses, :keypad ), Int, (Ptr{Void}, Bool), win, bf )
 end
 
@@ -113,7 +176,7 @@ function noraw()
     ccall( dlsym( libncurses, :noraw ), Int, () )
 end
 
-function notimeout( win, bf )
+function notimeout( win::Ptr{Void}, bf )
     ccall( dlsym( libncurses, :notimeout ), Int, (Ptr{Void}, Bool), win, bf )
 end
 
@@ -121,25 +184,30 @@ function timeout( delay::Int )
     ccall( dlsym( libncurses, :timeout ), Void, (Int,), delay )
 end
 
-function wtimeout( win, delay::Int )
+function wtimeout( win::Ptr{Void}, delay::Int )
     ccall( dlsym( libncurses, :wtimeout ), Void, (Ptr{Void}, Int), win, delay )
 end
 
 # not standard but convenient
-function getwinmaxyx( win )
+function getwinmaxyx( win::Ptr{Void} )
     maxy = ccall( dlsym(libncurses, :getmaxy), Int, ( Ptr{Void}, ), win )
     maxx = ccall( dlsym(libncurses, :getmaxx), Int, ( Ptr{Void}, ), win )
     ( maxy, maxx )
 end
 
-function getwinbegyx( win )
+function getwinbegyx( win::Ptr{Void} )
     maxy = ccall( dlsym(libncurses, :getbegy), Int, ( Ptr{Void}, ), win )
     maxx = ccall( dlsym(libncurses, :getbegx), Int, ( Ptr{Void}, ), win )
     ( maxy, maxx )
 end
 
-function mvwin( win, y::Int, x::Int )
+function mvwin( win::Ptr{Void}, y::Int, x::Int )
     ccall( dlsym( libncurses, :mvwin), Int, ( Ptr{Void}, Int, Int ), win, y, x )
+end
+
+function copywin( s::Ptr{Void}, d::Ptr{Void}, sminrow::Int, smincol::Int, dminrow::Int, dmincol::Int, dmaxrow::Int, dmaxcol::Int )
+    ccall( dlsym( libncurses, :copywin), Int, ( Ptr{Void}, Ptr{Void}, Int, Int, Int, Int, Int, Int ),
+       s, d, sminrow,smincol,dminrow, dmincol,dmaxrow,dmaxcol )
 end
 
 function beep()
@@ -154,11 +222,11 @@ function is_term_resized( lines::Int, cols::Int )
     ccall( dlsym( libncurses, :is_term_resized ), Bool, (Int, Int), lines, cols )
 end
 
-function wresize( win, lines::Int, cols::Int )
+function wresize( win::Ptr{Void}, lines::Int, cols::Int )
     ccall( dlsym( libncurses, :wresize), Int, (Ptr{Void}, Int, Int), win, lines, cols )
 end
 
-function getcuryx( win )
+function getcuryx( win::Ptr{Void} )
     cury = ccall( dlsym(libncurses, :getcury), Cint, ( Ptr{Void}, ), win )
     curx = ccall( dlsym(libncurses, :getcurx), Cint, ( Ptr{Void}, ), win )
     ( cury, curx )
@@ -181,23 +249,41 @@ function has_colors()
     ccall( dlsym( libncurses, :has_colors), Bool, () )
 end
 
-function wattroff( win, attrs )
+function wattroff( win::Ptr{Void}, attrs )
     ccall( dlsym(libncurses, :wattroff), Int, ( Ptr{Void}, Uint32 ), win, attrs )
 end
 
-function wattron( win, attrs )
+function wattroff( win::TwWindow, attrs )
+    parwin = win.parent.value.window
+    if typeof( parwin ) <: Ptr
+        wattroff( win.parent.value.data.pad, attrs )
+    else
+        wattroff( win.parent.value.window, attrs )
+    end
+end
+
+function wattron( win::Ptr{Void}, attrs )
     ccall( dlsym(libncurses, :wattron), Int, ( Ptr{Void}, Uint32 ), win, attrs )
 end
 
-function wattrset( win, attrs )
+function wattron( win::TwWindow, attrs )
+    parwin = win.parent.value.window
+    if typeof( parwin ) <: Ptr
+        wattron( win.parent.value.data.pad, attrs )
+    else
+        wattron( win.parent.value.window, attrs )
+    end
+end
+
+function wattrset( win::Ptr{Void}, attrs )
     ccall( dlsym(libncurses, :wattrset), Int, ( Ptr{Void}, Uint32 ), win, attrs )
 end
 
-function wbkgdset( win, ch )
+function wbkgdset( win::Ptr{Void}, ch )
     ccall( dlsym(libncurses, :wbkgdset ), Void, ( Ptr{Void}, Uint32 ), win, ch )
 end
 
-function wbkgd( win, ch )
+function wbkgd( win::Ptr{Void}, ch )
     ccall( dlsym(libncurses, :wbkgd ), Void, ( Ptr{Void}, Uint32 ), win, ch )
 end
 
@@ -255,11 +341,11 @@ function baudrate()
     ccall( dlsym( libncurses, :baudrate), Int, () )
 end
 
-function clearok( win, bf )
+function clearok( win::Ptr{Void}, bf )
     ccall( dlsym( libncurses, :clearok), Int, ( Ptr{Void}, Bool ), win, bf )
 end
 
-function immedok( win, bf )
+function immedok( win::Ptr{Void}, bf )
     ccall( dlsym( libncurses, :immedok), Int, ( Ptr{Void}, Bool ), win, bf )
 end
 
@@ -324,10 +410,10 @@ function newpad( rows::Int, cols::Int )
 end
 
 function subpad( orig::Ptr{Void}, rows::Int, cols::Int, beg_y::Int, beg_x::Int )
-    ccall(dlsym( libncurses, :subpad ), Ptr{Void}, (Ptr{Void}, Int,Int,Int,Int), rows, cols, beg_y, beg_x )
+    ccall(dlsym( libncurses, :subpad ), Ptr{Void}, (Ptr{Void}, Int,Int,Int,Int), orig, rows, cols, beg_y, beg_x )
 end
 
 function pnoutrefresh( pad::Ptr{Void}, pminrow::Int, pmincol::Int, sminrow::Int,smincol::Int,smaxrow::Int,smaxcol::Int )
     ccall(dlsym( libncurses, :pnoutrefresh), Void, (Ptr{Void}, Int,Int,Int,Int,Int,Int),
-        pminrow,pmincol,sminrow,smincol,smaxrow,smaxcol )
+        pad, pminrow,pmincol,sminrow,smincol,smaxrow,smaxcol )
 end

@@ -39,11 +39,12 @@ function log( s::String )
 end
 
 # uncomment this to provide logging functionality
+# or just call TermWin.logstart() in user's script
 # logstart()
 
 include( "consts.jl")
-include( "ccall.jl" )
 include( "twtypes.jl")
+include( "ccall.jl" )
 include( "strutils.jl")
 include( "format.jl" )
 include( "dfutils.jl" )
@@ -59,6 +60,7 @@ include( "twpopup.jl" )
 include( "twmultiselect.jl")
 include( "twcalendar.jl")
 include( "twdftable.jl" )
+include( "twlist.jl" )
 
 export tshow, newTwViewer, newTwScreen, activateTwObj, unregisterTwObj
 export trun
@@ -67,6 +69,7 @@ export newTwEntry, newTwTree, rootTwScreen, newTwFunc
 export newTwCalendar
 export newTwPopup, newTwMultiSelect
 export newTwDfTable
+export newTwList, push_widget!
 export uniqvalue, unionall
 export CalcPivot, discretize, topnames
 export twFuncFactory, registerTwObj
