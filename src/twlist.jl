@@ -172,6 +172,7 @@ end
 function injectTwList( o::TwObj, token::Any )
     retcode = :pass
     dorefresh = false
+    isrootlist = typeof( o.window ) <: Ptr
     focus = o.data.focus
     if focus == 0
         return :pass
@@ -187,45 +188,73 @@ function injectTwList( o::TwObj, token::Any )
         return result
     end
 
-    function check_accept_focus(i)
-        w = o.data.widgets[i]
+    function check_accept_focus(w::TwObj,stepsign::Int)
         if w.isVisible && w.acceptsFocus
-            o.data.widgets[focus].hasFocus = false
-            o.data.focus = i
-            o.data.widgets[i].hasFocus = true
-            # make sure canvas is adjusted to show this new widget
-            ensure_visible_on_canvas( o.data.widgets[i] )
-            return true
+            if objtype(w) == :List
+                r = 1:length(w.data.widgets)
+                if stepsign == -1
+                    r = reverse(r)
+                end
+                for i in r
+                    if check_accept_focus(w.data.widgets[i], stepsign )
+                        w.data.focus = i
+                        w.hasFocus = true
+                        return true
+                    end
+                end
+                return false
+            else
+                w.hasFocus = true
+                # make sure canvas is adjusted to show this new widget
+                ensure_visible_on_canvas( w )
+                return true
+            end
         end
         return false
     end
 
     # TODO: what's the behavior of :esc
     # TODO: what's the behavior of :exit_ok
-    # TODO: arrow keys
-    # TODO: mouse
+    # TODO: arrow keys: manhattan distance
+    # TODO: mouse: manhattan distance
     if token in [ :tab, :shift_tab ]
-        if objtype( o.data.widgets[focus] ) == :List
-            result = inject( o.data.widgets[focus], token )
-            if result == :got_it
-                retcode = :got_it
-                dorefresh = true
-            end
-        end
+        o.data.widgets[focus].hasFocus = false
+        o.data.focus = 0
+        # note that if the widget is a list and can take a tab/shift tab as, we
+        # wouldn't be here in the first place
+        dorefresh = true
         if retcode == :pass
             if token == :tab
                 stp = 1
             else
                 stp = -1
             end
-            i = mod1(focus + stp,length(o.data.widgets) )
-            while (i != focus)
-                if check_accept_focus(i)
-                    retcode = :got_it
-                    dorefresh = true
-                    break
+            if isrootlist # wrap around
+                i = mod1(focus + stp,length(o.data.widgets) )
+                while (i != focus)
+                    w = o.data.widgets[i]
+                    if check_accept_focus(w,stp)
+                        o.data.focus = i
+                        retcode = :got_it
+                        break
+                    end
+                    i = mod1(i+ stp,length(o.data.widgets))
                 end
-                i = mod1(i+ stp,length(o.data.widgets))
+            else
+                i = focus + stp
+                if stp == 1
+                    r = (focus+stp):length(o.data.widgets)
+                else
+                    r = (focus+stp):-1:1
+                end
+                for i in r
+                    w = o.data.widgets[i]
+                    if check_accept_focus(w,stp)
+                        o.data.focus = i
+                        retcode = :got_it
+                        break
+                    end
+                end
             end
         end
     end
@@ -233,5 +262,5 @@ function injectTwList( o::TwObj, token::Any )
     if dorefresh
         refresh( o )
     end
-    return :pass
+    return retcode
 end
