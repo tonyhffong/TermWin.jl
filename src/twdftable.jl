@@ -196,14 +196,13 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
         bottomText = defaultTableBottomText,
         views = Dict{Symbol,Any}[],
         calcpivots = Dict{Symbol,CalcPivot}() )
-    obj = TwObj( twFuncFactory( :DfTable ) )
+    obj = TwObj( TwDfTableData(), Val{:DfTable} )
     registerTwObj( scr, obj )
     obj.value = df
     obj.title = title
     obj.box = true
     obj.borderSizeV= 1
     obj.borderSizeH= 2
-    obj.data = TwDfTableData()
     obj.data.rootnode.subdataframe = df
     obj.data.rootnode.context = WeakRef( obj.data )
 
@@ -443,7 +442,7 @@ function updateTableDimensions( o::TwObj )
         o.data.datalist ) )
 end
 
-function drawTwDfTable( o::TwObj )
+function draw( o::TwObj{TwDfTableData} )
     updateTableDimensions( o )
     viewContentHeight = o.height - 2 * o.borderSizeV - o.data.headerlines
     viewContentWidth  = o.width - 2 * o.borderSizeH
@@ -633,7 +632,7 @@ function drawTwDfTable( o::TwObj )
     end
 end
 
-function injectTwDfTable( o::TwObj, token::Any )
+function inject( o::TwObj{TwDfTableData}, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
     viewContentHeight = o.height - 2 * o.borderSizeV - o.data.headerlines

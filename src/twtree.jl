@@ -46,14 +46,13 @@ type TwTreeData
 end
 
 function newTwTree( scr::TwScreen, ex, h::Real,w::Real,y::Any,x::Any; title = string(typeof( ex ) ), box=true, showLineInfo=true, showHelp=true, bottomText = "" )
-    obj = TwObj( twFuncFactory( :Tree ) )
+    obj = TwObj( TwTreeData(), Val{ :Tree } )
     registerTwObj( scr, obj )
     obj.value = ex
     obj.title = title
     obj.box = box
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 2 : 0
-    obj.data = TwTreeData()
     obj.data.openstatemap[ Any[] ] = true
     tree_data( ex, title, obj.data.datalist, obj.data.openstatemap, Any[], Int[], true )
     updateTreeDimensions( obj )
@@ -278,7 +277,7 @@ function updateTreeDimensions( o::TwObj )
     nothing
 end
 
-function drawTwTree( o::TwObj )
+function draw( o::TwObj{TwTreeData} )
     updateTreeDimensions( o )
     viewContentHeight = o.height - 2 * o.borderSizeV
     viewContentWidth = o.width - 2 * o.borderSizeV
@@ -351,7 +350,7 @@ function drawTwTree( o::TwObj )
     end
 end
 
-function injectTwTree( o::TwObj, token::Any )
+function inject( o::TwObj{TwTreeData}, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
     viewContentHeight = o.height - 2 * o.borderSizeV

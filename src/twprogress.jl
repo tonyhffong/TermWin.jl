@@ -72,19 +72,19 @@ end
 # * TermWin.progressUpdate( n::Float64 ) # 0.0 <= n <= 1.0
 function newTwProgress( scr::TwScreen, h::Real, w::Real, y::Any,x::Any; box=true, title = "" )
     global twGlobProgressData
-    obj = TwObj( twFuncFactory( :Progress ) )
+    obj = TwObj( TwProgressData(), Val{ :Progress } )
+    obj.data = twGlobProgressData
     registerTwObj( scr, obj )
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 1 : 0
-    obj.data = twGlobProgressData
     alignxy!( obj, h, w, x, y)
     configure_newwinpanel!( obj )
     obj
 end
 
-function drawTwProgress( o::TwObj )
+function draw( o::TwObj{TwProgressData} )
     werase( o.window )
     if o.box
         box( o.window, 0,0 )
@@ -109,7 +109,7 @@ function drawTwProgress( o::TwObj )
     end
 end
 
-function injectTwProgress( o::TwObj, token::Any )
+function inject( o::TwObj{TwProgressData}, token::Any )
     global twGlobProgressData
     t = time()
     dorefresh = (t - twGlobProgressData.redrawTime) > 1.0

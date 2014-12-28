@@ -58,13 +58,13 @@ function bestfitgeometry( ncalStyle, scr::TwScreen, box::Bool )
 end
 
 function newTwCalendar( scr::TwScreen, dt::Date, y::Any,x::Any; ncalStyle=true, box=true, showHelp=true, title = "" )
-    obj = TwObj( twFuncFactory( :Calendar) )
+    data = TwCalendarData( dt )
+    obj = TwObj( data, Val{:Calendar} )
     registerTwObj( scr, obj )
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 1 : 0
-    obj.data = TwCalendarData( dt )
     obj.data.showHelp = showHelp
     obj.data.date = dt
     h,w,g1,g2 = bestfitgeometry( ncalStyle, scr, box )
@@ -75,7 +75,7 @@ function newTwCalendar( scr::TwScreen, dt::Date, y::Any,x::Any; ncalStyle=true, 
     obj
 end
 
-function drawTwCalendar( o::TwObj )
+function draw( o::TwObj{TwCalendarData} )
     werase( o.window )
     if o.box
         box( o.window, 0,0 )
@@ -194,7 +194,7 @@ function monthNthWeekRange( y::Int, m::Int, n::Int )
     return (Date( y, m, max(ws, 1) ),Date( y, m, min( we, mdays )))
 end
 
-function injectTwCalendar( o::TwObj, token::Any )
+function inject( o::TwObj{TwCalendarData}, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
 

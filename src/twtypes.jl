@@ -7,15 +7,10 @@
 # The functions are automatically discovered as long as they are either defined in
 # TermWin, or exported to Main.
 
-type TwFunc
-    objtype::Symbol
-    draw::Function
-    erase::Function # default to eraseTwObj
-    move::Function # default to moveTwObj
-    inject::Function # send a key to this thing. Tips: make it small to minimize initial jit-delay
-    focus::Function # default to dummy
-    unfocus::Function # default to dummy
-    refresh::Function # default to dummy
+if VERSION < v"0.4.0-dev+2275"
+    immutable Val{T}
+    end
+    export Val
 end
 
 type TwWindow
@@ -26,7 +21,7 @@ type TwWindow
     width::Int
 end
 
-type TwObj
+type TwObj{T,S}
     screen::WeakRef # the parent screen
     screenIndex::Int
     window::Union( Nothing, Ptr{Void}, TwWindow )
@@ -42,18 +37,17 @@ type TwObj
     hasFocus::Bool
     grabUnusedKey::Bool
     isVisible::Bool
-    data::Any
+    data::T
     value::Any # the logical "content" that this object contains (return value if editable)
     title::String
-    fn::TwFunc
     listeners::Dict{ Symbol, Array } # event=>array of registered listeners. each listener is of the type (o, ev)->Nothing
-    function TwObj( f::TwFunc )
+    function TwObj( data::T )
         x = new( WeakRef(), 0,
             nothing,
             nothing,
             0, 0, 0, 0,
             false, 0, 0,
-            true, true, false, true, nothing, nothing, "", f, Dict{Symbol, Array{Function,1} }() )
+            true, true, false, true, data, nothing, "", Dict{Symbol, Array{Function,1} }() )
         finalizer( x, y->begin
             global rootwin
             if y.panel != nothing
@@ -73,20 +67,13 @@ type TwObj
         x
     end
 end
+
+TwObj{T,S}( d::T, ::Type{Val{S}} ) = TwObj{T,S}(d)
 import Base.show
 
 function Base.show( io::IO, o::TwObj )
-    print( io, "TwObj("*string(o.fn.objtype)*")")
-end
-function Base.show( io::IO, f::TwFunc )
-    print( io, "TwFunc("*string(f.objtype)*")")
+    print( io, "TwObj("*string(objtype(o))*")")
 end
 
-draw( p::TwObj ) = p.fn.draw( p )
-erase( p::TwObj ) = p.fn.erase( p )
-move( p::TwObj, y, x, relative, refresh ) = p.fn.move( p, y, x, relative, refresh )
-inject( p::TwObj, k::Any ) = p.fn.inject( p, k )
-focus( p::TwObj ) = p.fn.focus( p )
-unfocus( p::TwObj ) = p.fn.unfocus( p )
-refresh( p::TwObj ) = p.fn.refresh( p )
-objtype( p::TwObj ) = p.fn.objtype
+draw( p::TwObj ) = error( string( p ) * " draw is undefined.")
+objtype{T,S}( _::TwObj{T,S} ) = S

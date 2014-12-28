@@ -83,20 +83,22 @@ end
 function newTwEntry( scr::TwScreen, dt::DataType, w::Real,y::Any,x::Any;
     box=true, showHelp=true, titleLeft = true, title = "",
     precision=-1, stripzeros= (precision == -1), conversion="" )
-    obj = TwObj( twFuncFactory( :Entry ) )
+
+    data = TwEntryData( dt )
+    data.showHelp = showHelp
+    data.titleLeft = titleLeft
+    data.precision = precision
+    data.stripzeros = stripzeros
+    if conversion != ""
+        data.conversion = conversion
+    end
+
+    obj = TwObj( data, Val{:Entry} )
     registerTwObj( scr, obj )
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 1 : 0
-    obj.data = TwEntryData( dt )
-    obj.data.showHelp = showHelp
-    obj.data.titleLeft = titleLeft
-    obj.data.precision = precision
-    obj.data.stripzeros = stripzeros
-    if conversion != ""
-        obj.data.conversion = conversion
-    end
     h = box?3 : 1
     alignxy!( obj, h, w, x, y)
     configure_newwinpanel!( obj )
@@ -110,20 +112,23 @@ end
 function newTwEntry( parentwin::Ptr{Void}, dt::DataType, w::Real, y::Any,x::Any;
     box=true, showHelp=true, titleLeft=true, title = "",
     precision=-1, stripzeros= (precision == -1), conversion="" )
-    obj = TwObj( twFuncFactory( :Entry ) )
+
+    data = TwEntryData( dt )
+    data.showHelp = showHelp
+    data.titleLeft = titleLeft
+    data.precision = precision
+    data.stripzeros = stripzeros
+    if conversion != ""
+        data.conversion = conversion
+    end
+
+    obj = TwObj( data, Val{:Entry} )
+
     parbegy, parbegx = getwinbegyx( parentwin )
-    obj.data = TwEntryData( dt )
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 1 : 0
-    obj.data.showHelp = showHelp
-    obj.data.titleLeft = titleLeft
-    obj.data.precision = precision
-    obj.data.stripzeros = stripzeros
-    if conversion != ""
-        obj.data.conversion = conversion
-    end
 
     h = box ? 3 : 1
     alignxy!( obj, h, w, x, y, parentwin = parentwin, derwin=true )
@@ -142,7 +147,7 @@ function getFieldDimension( o::TwObj )
     (fieldcount, remainspacecount)
 end
 
-function drawTwEntry( o::TwObj )
+function draw( o::TwObj{TwEntryData} )
     werase( o.window )
     if o.box
         box( o.window, 0,0 )
@@ -231,7 +236,7 @@ function drawTwEntry( o::TwObj )
     wattroff( o.window, COLOR_PAIR(15))
 end
 
-function injectTwEntry( o::TwObj, token::Any )
+function inject( o::TwObj{TwEntryData}, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
 

@@ -35,13 +35,12 @@ function newTwList( scr::TwScreen,
         horizontal=false,
         title="",
         showLineInfo=true)
-    obj = TwObj( twFuncFactory( :List ) )
+    obj = TwObj( TwListData(), Val{:List } )
     registerTwObj( scr, obj )
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 2 : 0
-    obj.data = TwListData()
     obj.data.horizontal = horizontal
     obj.data.showLineInfo = showLineInfo
     obj.data.canvasheight = canvasheight
@@ -112,7 +111,7 @@ function update_list_canvas( o::TwObj )
     end
 end
 
-function drawTwList( o::TwObj )
+function draw( o::TwObj{TwListData} )
     for w in o.data.widgets
         # TODO: no need to draw widget outside visible range? or just draw everything?
         if w.isVisible
@@ -169,7 +168,7 @@ function ensure_visible_on_canvas( o::TwObj )
     end
 end
 
-function injectTwList( o::TwObj, token::Any )
+function inject( o::TwObj{TwListData}, token::Any )
     retcode = :pass
     dorefresh = false
     isrootlist = typeof( o.window ) <: Ptr

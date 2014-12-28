@@ -1,5 +1,3 @@
-typealias TwScreen TwObj
-
 # bookkeeping data for a screen
 type TwScreenData
     objects::Array{TwObj, 1 }
@@ -7,10 +5,12 @@ type TwScreenData
     TwScreenData() = new( TwObj[], 0 )
 end
 
+typealias TwScreen TwObj{TwScreenData}
+
 # Screen is unique also in that its instantiation requires a window. It's because often we'd simply
 # supply the rootwin that has already been created.
 function newTwScreen( win::Ptr{Void} )
-    obj = TwObj( twFuncFactory( :Screen ) )
+    obj = TwObj( TwScreenData(), Val{ :Screen } )
     begy, begx = getwinbegyx( win )
     maxy, maxx = getwinmaxyx( win )
 
@@ -20,7 +20,6 @@ function newTwScreen( win::Ptr{Void} )
     obj.xpos = begx
     obj.ypos = begy
 
-    obj.data = TwScreenData()
     obj.hasFocus = true
     obj.acceptsFocus = true
     obj.isVisible = true
@@ -28,7 +27,7 @@ function newTwScreen( win::Ptr{Void} )
     obj
 end
 
-function registerTwObj( scr::TwScreen, o::TwObj )
+function registerTwObj( scr::TwObj{TwScreenData}, o::TwObj )
     if o.screen.value != nothing
         if o.screen.value == scr
             return
@@ -40,7 +39,7 @@ function registerTwObj( scr::TwScreen, o::TwObj )
     o.screen = WeakRef( scr )
 end
 
-function unregisterTwObj( scr::TwScreen, o::TwObj )
+function unregisterTwObj( scr::TwObj{TwScreenData}, o::TwObj )
     if o.screen.value != scr
         throw( "unregister obj that doesn't belong to the screen")
     end
@@ -61,7 +60,7 @@ function unregisterTwObj( scr::TwScreen, o::TwObj )
     o.screen = WeakRef()
 end
 
-function setTwFocusNext( scr::TwScreen )
+function setTwFocusNext( scr::TwObj{TwScreenData})
     n = scr.data.focus
     fst = n
     result = nothing
@@ -87,7 +86,7 @@ function setTwFocusNext( scr::TwScreen )
     return result
 end
 
-function setTwFocusPrevious( scr::TwScreen )
+function setTwFocusPrevious( scr::TwObj{TwScreenData} )
     n = scr.data.focus
     fst = n
     result = nothing
@@ -113,7 +112,7 @@ function setTwFocusPrevious( scr::TwScreen )
     return result
 end
 
-function swapTwObjIndices( scr::TwScreen, n1::Int, n2::Int )
+function swapTwObjIndices( scr::TwObj{TwScreenData}, n1::Int, n2::Int )
     if n1!=n2 && 1 <= n1 <= length(scr.data.objects) && 1 <= n2 <= length( scr.data.objects )
         o1 = scr.data.objects[n1]
         o2 = scr.data.objects[n2]
@@ -159,7 +158,7 @@ Blocking call. it doesn't use inject directly, because
 
 This is some UGLY code. To be streamlined...
 =#
-function activateTwScreen( scr::TwScreen, tokens::Any=nothing )
+function activateTwScreen( scr::TwObj{TwScreenData}, tokens::Any=nothing )
     # consume one token, this also makes sure the readtoken function is jitted
     #=
     if tokens == nothing
@@ -262,7 +261,7 @@ function activateTwScreen( scr::TwScreen, tokens::Any=nothing )
     end
 end
 
-function injectTwScreen( scr::TwScreen, token::Any )
+function inject( scr::TwScreen{TwScreenData}, token::Any )
     result = :pass
     if scr.data.focus != 0
         result = inject( scr.data.objects[ scr.data.focus], token )
@@ -284,7 +283,7 @@ function injectTwScreen( scr::TwScreen, token::Any )
     return result
 end
 
-function drawTwScreen( scr::TwScreen )
+function draw( scr::TwObj{TwScreenData} )
     focused = 0
     i = length( scr.data.objects )
     while i>=1
@@ -313,7 +312,7 @@ function drawTwScreen( scr::TwScreen )
     end
 end
 
-function refreshTwScreen( scr::TwScreen )
+function refresh( scr::TwObj{TwScreenData} )
     focused = 0
     i = length( scr.data.objects )
     while i>=1
@@ -348,7 +347,7 @@ function refreshTwScreen( scr::TwScreen )
     end
 end
 
-function eraseTwScreen( scr::TwScreen )
+function erase( scr::TwObj{TwScreenData} )
     werase( scr.window )
     for o in scr.data.objects
         erase( o )

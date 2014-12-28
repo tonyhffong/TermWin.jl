@@ -1,57 +1,7 @@
 # default behavior, dummy behavior, and convenient functions for all widgets
 
-#Automatic discovery of widget-specific functions
-widgetTwFuncCache = Dict{ Symbol, TwFunc }()
 widgetStaggerPosx = 0
 widgetStaggerPosy = 0
-
-function twFuncFactory( widgetname::Symbol )
-    global widgetTwFuncCache
-    if haskey( widgetTwFuncCache, widgetname )
-        return widgetTwFuncCache[ widgetname ]
-    end
-
-    args = Any[]
-    modulenames = names( TermWin, true )
-    for ( n, t ) in zip( names( TwFunc ), TwFunc.types )
-        if n == :objtype
-            push!( args, widgetname )
-        elseif t == Function
-            sym = symbol( string( n ) * "Tw" * string( widgetname ))
-            found = false
-            if in( sym, modulenames )
-                f = getfield( TermWin, sym )
-                if typeof( f ) == Function
-                    push!( args, f )
-                    log( "found TermWin definition for " * string(sym) )
-                    found = true
-                end
-            end
-            if !found
-                try
-                    f = eval( Main, sym )
-                    if typeof( f ) == Function
-                        log( "found external definition for " * string(sym) )
-                        push!( args, f )
-                        found = true
-                    end
-                end
-            end
-            if !found
-                if n == :draw
-                    throw( string( sym ) * " not found for widget " * string( widgetname ) )
-                else
-                    log( "No function named " * string( sym ) * " is found. Use default." )
-                    defsym = symbol( string( n ) * "TwObj" )
-                    push!( args, getfield( TermWin, defsym ) )
-                end
-            end
-        else
-            throw( "TwFunc has unsupported field type " * string(t) )
-        end
-    end
-    widgetTwFuncCache[ widgetname ] = TwFunc( args... )
-end
 
 function configure_newwinpanel!( obj::TwObj )
     obj.window = newwin( obj.height,obj.width,obj.ypos,obj.xpos )
@@ -216,7 +166,7 @@ function activateTwObj( o::TwObj, tokens::Any=nothing )
     end
 end
 
-function injectTwObj( o::TwObj, k )
+function inject( o::TwObj, k::Any )
     @lintpragma( "Ignore unused o")
     if k== :esc
         return :exit_nothing
@@ -225,9 +175,9 @@ function injectTwObj( o::TwObj, k )
     end
 end
 
-eraseTwObj( o::TwObj ) = werase( o.window )
+erase( o::TwObj ) = werase( o.window )
 
-function moveTwObj( o::TwObj, x, y, relative::Bool, refresh::Bool=false )
+function move( o::TwObj, x, y, relative::Bool, refresh::Bool=false )
     begy, begx = getwinbegyx( o.window )
     alignxy!( o, o.height, o.width, x, y, relative=relative )
 
@@ -244,10 +194,10 @@ function moveTwObj( o::TwObj, x, y, relative::Bool, refresh::Bool=false )
     end
 end
 
-function focusTwObj( o::TwObj )
+function focus( o::TwObj )
     @lintpragma( "Ignore unused o" )
 end
-function unfocusTwObj( o::TwObj )
+function unfocus( o::TwObj )
     @lintpragma( "Ignore unused o" )
 end
-refreshTwObj( o::TwObj ) = (erase(o);draw(o))
+refresh( o::TwObj ) = (erase(o);draw(o))

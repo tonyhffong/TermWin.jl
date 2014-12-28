@@ -72,7 +72,7 @@ export newTwDfTable
 export newTwList, push_widget!
 export uniqvalue, unionall
 export CalcPivot, discretize, topnames
-export twFuncFactory, registerTwObj
+export registerTwObj
 export FormatHints
 export COLOR_PAIR
 
@@ -537,15 +537,6 @@ function testkeydialog()
     delwin( win )
     endsession()
 end
-
-# precompile a bunch of code for better responsiveness
-precompile( initsession, (Ptr{Void}, ) )
-precompile( readtoken, (Ptr{Void}, ) )
-precompile( registerTwObj, (TwObj, TwObj ) )
-precompile( twFuncFactory, (Symbol,) )
-precompile( injectTwTree, (TwObj, Any ) )
-precompile( injectTwEntry, (TwObj, Any ) )
-precompile( injectTwViewer, (TwObj, Any ) )
 
 end
 

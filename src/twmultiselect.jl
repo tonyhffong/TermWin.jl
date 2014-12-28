@@ -46,13 +46,12 @@ function newTwMultiSelect{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::
         selected = UTF8String[],
         title = "", maxwidth = 50, maxheight = 20, minwidth = 25,
         orderable = false, substrsearch=false )
-    obj = TwObj( twFuncFactory( :MultiSelect ) )
+    obj = TwObj( TwMultiSelectData( arr, UTF8String[ utf8(string(_)) for _ in selected ] ), Val{ :MultiSelect } )
     registerTwObj( scr, obj )
     obj.box = true
     obj.title = title
     obj.borderSizeV= 1
     obj.borderSizeH= 1
-    obj.data = TwMultiSelectData( arr, UTF8String[ utf8(string(_)) for _ in selected ] )
     if  orderable
         obj.data.selectmode |= SELECTEDORDERABLE
     end
@@ -94,7 +93,7 @@ function rebuild_select_datalist( o::TwObj )
     end
 end
 
-function drawTwMultiSelect( o::TwObj )
+function draw( o::TwObj{TwMultiSelectData} )
     werase( o.window )
     if o.box
         box( o.window, 0,0 )
@@ -166,7 +165,7 @@ function select_search_next( o::TwObj, step::Int, trivialstop::Bool )
     end
 end
 
-function injectTwMultiSelect( o::TwObj, token::Any )
+function inject( o::TwObj{TwMultiSelectData}, token::Any )
     @lintpragma( "Ignore incompatible type comparison")
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it

@@ -63,13 +63,12 @@ TwPopupData{ T<:String} ( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8( x ), 
 function newTwPopup{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::Any;
         title = "", maxwidth = 50, maxheight = 15, minwidth = 20,
         quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false )
-    obj = TwObj( twFuncFactory( :Popup ) )
+    obj = TwObj( TwPopupData(arr), Val{ :Popup } )
     registerTwObj( scr, obj )
     obj.box = true
     obj.title = title
     obj.borderSizeV= 1
     obj.borderSizeH= 1
-    obj.data = TwPopupData( arr )
     if quickselect
         obj.data.selectmode |= POPUPQUICKSELECT
     end
@@ -143,7 +142,7 @@ function rebuild_popup_datalist( o::TwObj )
     end
 end
 
-function drawTwPopup( o::TwObj )
+function draw( o::TwObj{TwPopupData} )
     werase( o.window )
     if o.box
         box( o.window, 0,0 )
@@ -319,7 +318,7 @@ function update_popup_score( o::TwObj )
     end
 end
 
-function injectTwPopup( o::TwObj, token::Any )
+function inject( o::TwObj{TwPopupData}, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
 

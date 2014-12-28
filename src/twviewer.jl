@@ -28,13 +28,12 @@ end
 # exact dimensions known: h,w,y,x, content to add later
 # exact dimensions unknown, but content known and content drives dimensions
 function newTwViewer( scr::TwScreen, h::Real,w::Real,y::Any,x::Any; box=true, showLineInfo=true, showHelp=true, bottomText = "", tabWidth = 4, trackLine = false, title="" )
-    obj = TwObj( twFuncFactory( :Viewer ) )
+    obj = TwObj( TwViewerData(), Val{ :Viewer } )
     registerTwObj( scr, obj )
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 2 : 0
-    obj.data = TwViewerData()
     obj.data.showLineInfo = showLineInfo
     obj.data.showHelp = showHelp
     obj.data.tabWidth = tabWidth
@@ -48,8 +47,7 @@ end
 
 function newTwViewer( scr::TwScreen, msgs::Array, y::Any,x::Any; box=true, showLineInfo=true, bottomText = "", showHelp=true, tabWidth = 4, trackLine = false, title="" )
     map!( z->replace( z, "\t", repeat( " ", tabWidth ) ), msgs )
-    obj = TwObj( twFuncFactory( :Viewer ) )
-    obj.data = TwViewerData()
+    obj = TwObj( TwViewerData(), Val{ :Viewer } )
     obj.title = title
     registerTwObj( scr, obj )
     setTwViewerMsgs( obj, msgs )
@@ -75,7 +73,7 @@ function newTwViewer( scr::TwScreen, msg::String, y::Any,x::Any ; box=true, show
     newTwViewer( scr, msgs, y, x, box=box,showLineInfo=showLineInfo, bottomText=bottomText, showHelp=showHelp, tabWidth=tabWidth, trackLine=trackLine, title=title )
 end
 
-function viewContentDimensions( o::TwObj )
+function viewContentDimensions( o::TwObj{TwViewerData} )
     vh = o.height
     vstart = 0
     if o.box
@@ -94,7 +92,7 @@ function viewContentDimensions( o::TwObj )
     (vh, vw, vstart)
 end
 
-function drawTwViewer( o::TwObj )
+function draw( o::TwObj{TwViewerData} )
     viewContentHeight, viewContentWidth, viewStartRow = viewContentDimensions( o )
 
     if o.box
@@ -139,7 +137,7 @@ function drawTwViewer( o::TwObj )
     end
 end
 
-function injectTwViewer( o::TwObj, token::Any )
+function inject( o::TwObj{TwViewerData}, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
     viewContentHeight, viewContentWidth, viewStartRow = viewContentDimensions( o )
@@ -278,7 +276,7 @@ function injectTwViewer( o::TwObj, token::Any )
     return retcode
 end
 
-function setTwViewerMsgs( o::TwObj, msgs::Array )
+function setTwViewerMsgs( o::TwObj{TwViewerData}, msgs::Array )
     o.data.messages = msgs
     o.data.msglen = length(msgs)
     o.data.msgwidth = maximum( map( x->length(x), msgs ) )
