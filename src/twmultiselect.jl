@@ -109,7 +109,7 @@ function drawTwMultiSelect( o::TwObj )
     for r in o.data.currentTop:min( o.data.currentTop + viewContentHeight-1, n )
         flag = 0
         if r == o.data.currentLine
-            flag = A_BOLD | COLOR_PAIR(15)
+            flag = A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30 )
         end
         s = o.data.datalist[r][1]
         if o.data.datalist[r][2]

@@ -313,7 +313,7 @@ function drawTwTree( o::TwObj )
         v = ensure_length( o.data.datalist[r][3], viewContentWidth-o.data.datatreewidth- o.data.datatypewidth-3, false )
 
         if r == o.data.currentLine
-            wattron( o.window, A_BOLD | COLOR_PAIR(15) )
+            wattron( o.window, A_BOLD | COLOR_PAIR( o.hasFocus ? 15 : 30 ) )
         end
         mvwprintw( o.window, 1+r-o.data.currentTop, 2, "%s", s )
         mvwaddch( o.window, 1+r-o.data.currentTop, 2+o.data.datatreewidth, get_acs_val( 'x' ) )
@@ -343,7 +343,7 @@ function drawTwTree( o::TwObj )
         end
 
         if r == o.data.currentLine
-            wattroff( o.window, A_BOLD | COLOR_PAIR(15) )
+            wattroff( o.window, A_BOLD | COLOR_PAIR( o.hasFocus ? 15 : 30 ) )
         end
     end
     if length( o.data.bottomText ) != 0 && o.box

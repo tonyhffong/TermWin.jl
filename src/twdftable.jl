@@ -515,7 +515,7 @@ function drawTwDfTable( o::TwObj )
         s = ensure_length( repeat( " ", 2*stacklen + 1) * o.data.datalist[r][1], o.data.datatreewidth-2 )
 
         if r == o.data.currentLine
-            wattron( o.window, A_BOLD | COLOR_PAIR(15) )
+            wattron( o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30 ) )
         end
         mvwprintw( o.window, o.data.headerlines + 1+r-o.data.currentTop, 2, "%s", s )
         for i in 1:stacklen - 1
@@ -540,7 +540,7 @@ function drawTwDfTable( o::TwObj )
         end
 
         if r == o.data.currentLine
-            wattroff( o.window, A_BOLD | COLOR_PAIR(15) )
+            wattroff( o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30 ) )
         end
         mvwaddch( o.window, o.data.headerlines+1+r-o.data.currentTop, o.data.datatreewidth, get_acs_val( 'x' ) )
 
@@ -577,9 +577,9 @@ function drawTwDfTable( o::TwObj )
             if col == o.data.currentCol && r == o.data.currentLine
                 flags |= A_BOLD
                 if isred
-                    flags |= COLOR_PAIR(9)
+                    flags |= COLOR_PAIR(o.hasFocus ? 9 : 31)
                 else
-                    flags |= COLOR_PAIR(15)
+                    flags |= COLOR_PAIR(o.hasFocus ? 15 : 30 )
                 end
             elseif isnode
                 flags |= A_BOLD

@@ -126,12 +126,12 @@ function drawTwViewer( o::TwObj )
             s = s[o.data.currentLeft:end]
         end
         if o.data.trackLine && r == o.data.currentLine
-            wattron( o.window, A_BOLD | COLOR_PAIR(15) )
+            wattron( o.window, A_BOLD | COLOR_PAIR( o.hasFocus? 15 : 30 ) )
             s *= repeat( " ", max(0,viewContentWidth - length(s) ) )
         end
         mvwprintw( o.window, r - o.data.currentTop + viewStartRow, o.borderSizeH, "%s", s )
         if o.data.trackLine && r == o.data.currentLine
-            wattroff( o.window, A_BOLD | COLOR_PAIR(15) )
+            wattroff( o.window, A_BOLD | COLOR_PAIR( o.hasFocus? 15 : 30 ) )
         end
     end
     if length( o.data.bottomText ) != 0
