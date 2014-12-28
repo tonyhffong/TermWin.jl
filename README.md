@@ -120,9 +120,15 @@ TermWin provides a few commonly used aggregation functions for table data presen
 
 On **CalcPivot**, TermWin provides
 * `discretize`. It needs `:measure` column and a break vector. Similar to `cut`, with the following options
-   * leftequal. Default true, meaning the boundary values are interpreted as `t1 <= x < t2`
-   * absolute. Default false. Do we want `t1 <= |x| < t2`
-   * rank. Default true. The bucket strings are prefixed with consecutive numbers to easier sorting.
+   * leftequal. Default true, meaning the boundary values are interpreted as `t1 ≤ x < t2`
+   * boundedness. Symbol. Default `:unbounded`.
+       * `:unbounded`. We group all numbers below the first break and above the last break into their
+         respective categories.
+       * `:bounded`. All numbers less than the first break and more than the last break will become `NA`
+       * `:boundedbelow`. All numbers less than the first break will become `NA`
+       * `:boundedabove`. All numbers more than the last break will become `NA`
+   * absolute. Default false. Do we want `t1 ≤ |x| < t2`
+   * rank. Default true. Output bucket strings are prefixed with consecutive numbers to make them easier to sort.
    * ranksep. Default ". ". The string between the rank number and the range description
    * label. Default is an empty string. If set, it is expected we want to show the long-form range description
    * compact. Default is true. Compact range looks terser, like `[1,5)`. Integers range with interval size 1

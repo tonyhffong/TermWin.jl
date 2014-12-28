@@ -23,6 +23,7 @@ function twFuncFactory( widgetname::Symbol )
                 f = getfield( TermWin, sym )
                 if typeof( f ) == Function
                     push!( args, f )
+                    log( "found TermWin definition for " * string(sym) )
                     found = true
                 end
             end
@@ -30,6 +31,7 @@ function twFuncFactory( widgetname::Symbol )
                 try
                     f = eval( Main, sym )
                     if typeof( f ) == Function
+                        log( "found external definition for " * string(sym) )
                         push!( args, f )
                         found = true
                     end
@@ -39,6 +41,7 @@ function twFuncFactory( widgetname::Symbol )
                 if n == :draw
                     throw( string( sym ) * " not found for widget " * string( widgetname ) )
                 else
+                    log( "No function named " * string( sym ) * " is found. Use default." )
                     defsym = symbol( string( n ) * "TwObj" )
                     push!( args, getfield( TermWin, defsym ) )
                 end

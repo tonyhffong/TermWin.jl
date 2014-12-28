@@ -123,7 +123,7 @@ function drawTwCalendar( o::TwObj )
                 while dt <= men
                     flags = 0
                     if dt == o.data.date
-                        flags = COLOR_PAIR( 15 )
+                        flags = COLOR_PAIR( o.hasFocus ? 15 : 30 )
                         o.data.cursorweekofmonth = wcol + 1
                     end
                     if dt == today()
@@ -152,7 +152,7 @@ function drawTwCalendar( o::TwObj )
                 while dt <= men
                     flags = 0
                     if dt == o.data.date
-                        flags = COLOR_PAIR( 15 )
+                        flags = COLOR_PAIR( o.hasFocus ? 15 :30 )
                         o.data.cursorweekofmonth = wrow + 1
                     end
                     if dt == today()

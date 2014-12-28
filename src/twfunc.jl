@@ -162,11 +162,11 @@ function drawTwFunc( o::TwObj )
         end
 
         if r == o.data.currentLine
-            wattron( o.window, A_BOLD | COLOR_PAIR(15) )
+            wattron( o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30 ) )
         end
         mvwprintw( o.window, r - o.data.currentTop + viewStartRow, o.borderSizeH, "%s", line )
         if r == o.data.currentLine
-            wattroff( o.window, A_BOLD | COLOR_PAIR(15) )
+            wattroff( o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30 ) )
         end
     end
     if length( o.data.bottomText ) != 0

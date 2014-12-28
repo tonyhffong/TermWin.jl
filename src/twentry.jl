@@ -187,7 +187,11 @@ function drawTwEntry( o::TwObj )
             rcursPos = o.data.cursorPos
         end
     end
-    wattron( o.window, COLOR_PAIR(15)) #white on blue for data entry field
+    if o.hasFocus
+        wattron( o.window, COLOR_PAIR(15)) #white on blue for data entry field
+    else
+        wattron( o.window, COLOR_PAIR(30)) #white on dark blue for data entry field
+    end
     mvwprintw( o.window, starty, startx, "%s", outstr )
     # print the cursor
     firstflag = 0
