@@ -5,3 +5,4 @@ Formatting 0.1.2
 DataArrays
 DataFrames
 DataFramesMeta
+Lazy
