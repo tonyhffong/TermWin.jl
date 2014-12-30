@@ -313,6 +313,34 @@ function inject( o::TwObj{TwListData}, token::Any )
             dorefresh = true
             retcode = :got_it
         end
+    elseif token == :KEY_MOUSE && isrootlist
+        (mstate, x, y, bs ) = getmouse()
+        if mstate == :button1_pressed
+            (rely, relx) = screen_to_relative( o.window, y, x )
+            if 0<=relx<o.width && 0<=rely<o.height
+                # find the closest widget
+                distfunc = function( to::(Int,Int,Int,Int) )
+                    point_from_area( rely, relx, to )
+                end
+                wdists = Any[]
+                geometric_filter( o, distfunc, 0, 0, wdists, false, 40 )
+                candidate = nothing
+                mindist = 999999
+                for (cw,dist) in wdists
+                    if dist < mindist
+                        candidate = cw
+                        mindist = dist
+                    end
+                end
+                if candidate != nothing
+                    w = lowest_widget( o )
+                    deep_unfocus( w )
+                    deep_focus( candidate )
+                    dorefresh = true
+                    retcode = :got_it
+                end
+            end
+        end
     end
 
     if dorefresh

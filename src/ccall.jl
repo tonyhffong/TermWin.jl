@@ -337,6 +337,26 @@ function getmouse()
     ( state, x, y, bs )
 end
 
+function screen_to_relative( w::Ptr, y::Integer, x::Integer )
+    begy, begx = getwinbegyx( w )
+    ( y-begy, x-begx )
+end
+
+function screen_to_relative( w::TwWindow, y::Integer, x::Integer )
+    # figure out the canvas coordinate, ultimate parent
+    xloc = w.xloc
+    yloc = w.yloc
+    par = w.parent.value
+    while( !( typeof( par.window ) <: Ptr ) )
+        xloc += par.window.xloc
+        yloc += par.window.yloc
+        par = par.window.parent.value
+    end
+    (view_rel_y, view_rel_x) = screen_to_relative( par.window, y, x )
+
+    ( par.data.canvaslocy + view_rel_y, par.data.canvaslocx + view_rel_x )
+end
+
 function baudrate()
     ccall( dlsym( libncurses, :baudrate), Int, () )
 end
