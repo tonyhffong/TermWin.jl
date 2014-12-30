@@ -327,11 +327,11 @@ function getmouse()
     x = uint8(bs[5])
     y = uint8(bs[9])
     state=:unknown
-    if bs[17] & 0x02 != 0
+    if uint(bs[17]) & 0x02 != 0
         state = :button1_pressed
-    elseif bs[19] & 0x08 != 0
+    elseif uint(bs[19]) & 0x08 != 0
         state = :scroll_up
-    elseif bs[20] & 0x08 != 0
+    elseif uint(bs[20]) & 0x08 != 0
         state = :scroll_down
     end
     ( state, x, y, bs )
