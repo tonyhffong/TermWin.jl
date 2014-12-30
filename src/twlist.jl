@@ -331,7 +331,7 @@ function deep_unfocus( w::TwObj )
         tmpw = tmpw2
     end
 
-    par::TwObj{TwListData}
+    local par::TwObj{TwListData}
     w.hasFocus = false
     tmpw = w
     @oncethen while( !( typeof( tmpw.window ) <: Ptr ) )
@@ -359,7 +359,7 @@ function set_default_focus( w::TwObj{TwListData}, rev=false )
 end
 
 function deep_focus( w::TwObj, rev=false )
-    par::TwObj{TwListData}
+    local par::TwObj{TwListData}
     w.hasFocus = true
     if objtype(w) == :List
         set_default_focus( w, rev )
