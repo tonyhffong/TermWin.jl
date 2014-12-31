@@ -118,16 +118,7 @@ function draw( o::TwObj{TwMultiSelectData} )
         else
             s = string( '\U2610' ) * " " * s
         end
-        # TODO: handle unitcode widths
-        endpos = o.data.currentLeft + o.width - 2 * o.borderSizeH - 1
-        if length(s) > 0
-            s = s[ chr2ind( s, o.data.currentLeft ) : end ]
-            if length( s ) > viewContentWidth
-                s = s[ 1: chr2ind( s, viewContentWidth ) ]
-            end
-        else
-            s = repeat( " ", viewContentWidth )
-        end
+        s = substr_by_width( s, o.data.currentLeft-1, viewContentWidth )
 
         wattron( o.window, flag )
         mvwprintw( o.window, r - o.data.currentTop + starty, o.borderSizeH, "%s", s )
