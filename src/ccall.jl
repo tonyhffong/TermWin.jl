@@ -91,7 +91,7 @@ end
 function werase( win::TwWindow, y::Int=win.yloc, x::Int=win.xloc, h::Int=win.height, w::Int=win.width )
     parwin = win.parent.value.window
     if typeof( parwin ) <: Ptr
-        if typeof( win.parent.value ) <: TwObj{TwListData}
+        if objtype( win.parent.value ) == :List
             tmpw = win.parent.value.data.pad
         else
             tmpw = parwin
@@ -117,7 +117,7 @@ end
 function box( win::TwWindow, vchr::Integer, hchr::Integer, y::Int=win.yloc, x::Int=win.xloc, h::Int=win.height, w::Int=win.width )
     parwin = win.parent.value.window
     if typeof( parwin ) <: Ptr
-        if typeof( win.parent.value ) <: TwObj{TwListData}
+        if objtype( win.parent.value ) == :List
             tmpw = win.parent.value.data.pad
         else
             tmpw = parwin
@@ -263,7 +263,7 @@ end
 
 function wattroff( win::TwWindow, attrs )
     parwin = win.parent.value.window
-    if typeof( win.parent.value ) <: TwObj{TwListData} && typeof( parwin ) <: Ptr
+    if objtype( win.parent.value ) == :List && typeof( parwin ) <: Ptr
         wattroff( win.parent.value.data.pad, attrs )
     else
         wattroff( win.parent.value.window, attrs )
@@ -276,7 +276,7 @@ end
 
 function wattron( win::TwWindow, attrs )
     parwin = win.parent.value.window
-    if typeof( win.parent.value ) <: TwObj{TwListData} && typeof( parwin ) <: Ptr
+    if objtype( win.parent.value ) == :List && typeof( parwin ) <: Ptr
         wattron( win.parent.value.data.pad, attrs )
     else
         wattron( win.parent.value.window, attrs )
