@@ -107,14 +107,7 @@ function newTwEntry( parent::TwObj, dt::DataType;
     obj.borderSizeH= box ? 1 : 0
 
     h = box ? 3 : 1
-    if typeof( parent ) <: TwScreen
-        registerTwObj( parent, obj )
-        alignxy!( obj, h, width, posx, posy)
-        configure_newwinpanel!( obj )
-    else
-        alignxy!( obj, h, width, posx, posy, parent = parent )
-        obj.window = TwWindow( WeakRef( parent ), obj.ypos, obj.xpos, obj.height, obj.width )
-    end
+    link_parent_child( parent, obj, h, width, posy, posx )
     obj
 end
 

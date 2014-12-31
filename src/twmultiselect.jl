@@ -42,13 +42,12 @@ TwMultiSelectData{T<:String,T2<:String}( arr::Array{T,1}, selected::Array{T2,1} 
 # standalone panel
 # as a subwin as part of another widget (see next function)
 # w include title width, if it's shown on the left
-function newTwMultiSelect{T<:String}( scr::TwScreen, arr::Array{T,1};
+function newTwMultiSelect{T<:String}( scr::TwObj, arr::Array{T,1};
         posy::Any = :center,posx::Any = :center,
         selected = UTF8String[],
         title = "", maxwidth = 50, maxheight = 20, minwidth = 25,
         orderable = false, substrsearch=false )
     obj = TwObj( TwMultiSelectData( arr, UTF8String[ utf8(string(_)) for _ in selected ] ), Val{ :MultiSelect } )
-    registerTwObj( scr, obj )
     obj.box = true
     obj.title = title
     obj.borderSizeV= 1
@@ -68,8 +67,8 @@ function newTwMultiSelect{T<:String}( scr::TwScreen, arr::Array{T,1};
 
     h = 2 + min( length( arr ), maxheight )
     w = 4 + max( min( max( length( title ), obj.data.maxchoicelength ), maxwidth ), minwidth )
-    alignxy!( obj, h, w, posx, posy)
-    configure_newwinpanel!( obj )
+
+    link_parent_child( scr, obj, h,w, posy, posx )
 
     obj.data.searchbox = newTwEntry( obj, String, width=minwidth, posy=:bottom, posx=1, box=false )
     obj.data.searchbox.title = "?"

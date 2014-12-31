@@ -30,7 +30,6 @@ end
 function newTwViewer( scr::TwScreen; height::Real=0.5,width::Real=0.8,posy::Any=:staggered,posx::Any=:staggered,
         box=true, showLineInfo=true, showHelp=true, bottomText = "", tabWidth = 4, trackLine = false, title="" )
     obj = TwObj( TwViewerData(), Val{ :Viewer } )
-    registerTwObj( scr, obj )
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
@@ -40,19 +39,17 @@ function newTwViewer( scr::TwScreen; height::Real=0.5,width::Real=0.8,posy::Any=
     obj.data.tabWidth = tabWidth
     obj.data.bottomText = bottomText
     obj.data.trackLine = trackLine
-    alignxy!( obj, height, width, posy, posx )
+    link_parent_child( scr, obj, height,width,posy,posx )
     obj.data.viewContentHeight = obj.height - ( box? obj.borderSizeV *2 : 1 )
-    configure_newwinpanel!( obj )
     obj
 end
 
-function newTwViewer( scr::TwScreen, msgs::Array;
+function newTwViewer( scr::TwObj, msgs::Array;
         posy::Any=:staggered,posx::Any=:staggered,
         box=true, showLineInfo=true, bottomText = "", showHelp=true, tabWidth = 4, trackLine = false, title="" )
     newmsgs = map( z->replace( z, "\t", repeat( " ", tabWidth ) ), msgs )
     obj = TwObj( TwViewerData(), Val{ :Viewer } )
     obj.title = title
-    registerTwObj( scr, obj )
     setTwViewerMsgs( obj, newmsgs )
     obj.box = box
     obj.borderSizeV= box ? 1 : 0
@@ -66,8 +63,7 @@ function newTwViewer( scr::TwScreen, msgs::Array;
     h = obj.data.msglen + obj.borderSizeV * 2 + (!box && !isempty( obj.data.bottomText )? 1 : 0 )
     w = max( 25, obj.data.msgwidth + obj.borderSizeH * 2, length(title)+6 )
 
-    alignxy!( obj, h, w, posx, posy )
-    configure_newwinpanel!( obj )
+    link_parent_child( scr, obj, h,w,posy,posx )
     obj
 end
 

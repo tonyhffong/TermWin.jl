@@ -154,13 +154,13 @@ On **CalcPivot**, TermWin provides
 * title
 * height. When floating point, it must be within [0.0, 1.0] i.e. relative screen size. When integer, they mean character height.
 * width. ditto
-* x. When integer, it is the x (horizontal) location. 0 is the left edge. It also supports symbols such as
+* posx. When integer, it is the x (horizontal) location. 0 is the left edge. It also supports symbols such as
     * `:staggered`
     * `:center`
     * `:left`
     * `:right`
     * `:random`
-* y. When integer, it is the y (vertical) location. 0 is the top edge.
+* posy. When integer, it is the y (vertical) location. 0 is the top edge.
     * `:staggered`
     * `:center`
     * `:top`
@@ -186,12 +186,12 @@ compatible to this package. You should disable it.
 
 ### Input Widgets
 
-Numeric and text input field (See `test/twentry.jl`). Designed to maximize
+Numeric, text, date input field (See `test/twentry.jl`). Designed to maximize
 entry efficiency and accuracy (See F1 help screen).
-UTF-8 input and output are supported. That said, in an entry field,
-cursor movements may produce dodgy behavior if typing order and visual order
-can be different e.g. Thai's prefix-vowels. Most European typesets,
-Han characters, currency symbols, e.g. €, £, are fine.
+UTF-8 input and output are supported with correct cursor movement.
+Most European typesets,
+Han characters, Thai (with compound vowel issues),
+currency symbols, e.g. €, £, are fine..
 
 It supports date type
 

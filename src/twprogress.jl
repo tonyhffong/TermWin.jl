@@ -70,17 +70,15 @@ end
 # the function can call
 # * TermWin.progressMessage( s::String ) # make sure height can accommodate the content
 # * TermWin.progressUpdate( n::Float64 ) # 0.0 <= n <= 1.0
-function newTwProgress( scr::TwScreen; height::Real=5, width::Real=40, posy::Any=:center,posx::Any=:center, box=true, title = "" )
+function newTwProgress( scr::TwObj; height::Real=5, width::Real=40, posy::Any=:center,posx::Any=:center, box=true, title = "" )
     global twGlobProgressData
     obj = TwObj( TwProgressData(), Val{ :Progress } )
     obj.data = twGlobProgressData
-    registerTwObj( scr, obj )
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 1 : 0
-    alignxy!( obj, height, width, posx, posy)
-    configure_newwinpanel!( obj )
+    link_parent_child( scr, obj, height,width,posy,posx )
     obj
 end
 

@@ -7,28 +7,7 @@
 
 using Lazy
 
-type TwListData
-    horizontal::Bool
-    widgets::Array{TwObj,1} # this is static.
-    focus::Int # which of the widgets has the focus
-    canvasheight::Int
-    canvaswidth::Int
-    pad::Union( Nothing, Ptr{Void} ) # nothing, or Ptr{Void} to the WINDOW from calling newpad()
-    canvaslocx::Int # 0-based, view's location on canvas
-    canvaslocy::Int # 0-based
-    showLineInfo::Bool
-    function TwListData()
-        ret = new( false, TwObj[], 0, 0, 0, nothing, 0, 0, false )
-        finalizer( ret, y->begin
-            if y.pad != nothing
-                delwin( y.pad )
-            end
-        end)
-        ret
-    end
-end
-
-function newTwList( scr::TwScreen;
+function newTwList( scr::TwObj;
         height::Real = 25, width::Real = 80,
         posy::Any = :center, posx::Any = :center,
         canvasheight = 80,
@@ -38,7 +17,6 @@ function newTwList( scr::TwScreen;
         title="",
         showLineInfo=true)
     obj = TwObj( TwListData(), Val{:List } )
-    registerTwObj( scr, obj )
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
@@ -48,12 +26,14 @@ function newTwList( scr::TwScreen;
     obj.data.canvasheight = canvasheight
     obj.data.canvaswidth = canvaswidth
 
-    alignxy!( obj, height, width, posx, posy )
-    configure_newwinpanel!( obj )
-    obj.data.pad = newpad( obj.data.canvasheight, obj.data.canvaswidth )
+    link_parent_child( scr, obj, height,width,posy,posx )
+    if objtype( scr ) == :Screen
+        obj.data.pad = newpad( obj.data.canvasheight, obj.data.canvaswidth )
+    end
     obj
 end
 
+# move a fully formed widget into this list. need more bookkeeping
 function push_widget!( o::TwObj{TwListData}, w::TwObj )
     global rootwin
     # change the widget's window to reflect its location on the canvas
@@ -98,12 +78,22 @@ function update_list_canvas( o::TwObj{TwListData} )
         o.data.canvasheight = 80
         o.data.canvaswidth = 128
     else
+        # TODO: is this necessary?
+        for w in o.data.widgets
+            if objtype( w ) == :List
+                update_list_canvas(w)
+            end
+        end
         if o.data.horizontal
             o.data.canvasheight = maximum( map( _->objtype(_)==:List? _.data.canvasheight : _.height, ws ) )
             o.data.canvaswidth = sum( map( _->objtype(_)==:List? _.data.canvaswidth : _.width, ws ) )
         else
             o.data.canvasheight = sum( map( _->objtype(_)==:List? _.data.canvasheight: _.height, ws ) )
             o.data.canvaswidth = maximum( map( _->objtype(_)==:List? _.data.canvaswidth : _.width, ws ) )
+        end
+        if !(typeof( o.window ) <: Ptr)
+            o.height = o.data.canvasheight + (o.box?2:0)
+            o.width = o.data.canvaswidth + (o.box?2:0)
         end
     end
 end
@@ -317,6 +307,10 @@ function inject( o::TwObj{TwListData}, token::Any )
         (mstate, x, y, bs ) = getmouse()
         if mstate == :button1_pressed
             (rely, relx) = screen_to_relative( o.window, y, x )
+            if o.box
+                rely -= 1
+                relx -= 1
+            end
             if 0<=relx<o.width && 0<=rely<o.height
                 # find the closest widget
                 distfunc = function( to::(Int,Int,Int,Int) )

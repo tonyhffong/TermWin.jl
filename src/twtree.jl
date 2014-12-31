@@ -45,11 +45,10 @@ type TwTreeData
     TwTreeData() = new( Dict{ Any, Bool }(), Any[], 0, 0, 0, 0, 1, 1, 1, true, "", true, defaultTreeHelpText, "", true )
 end
 
-function newTwTree( scr::TwScreen, ex; height::Real=0.8,width::Real=0.8,posy::Any=:staggered, posx::Any=:staggered,
+function newTwTree( scr::TwObj, ex; height::Real=0.8,width::Real=0.8,posy::Any=:staggered, posx::Any=:staggered,
         title::String = string(typeof( ex ) ), box::Bool=true, showLineInfo::Bool=true, showHelp::Bool=true,
         bottomText::String = "" )
     obj = TwObj( TwTreeData(), Val{ :Tree } )
-    registerTwObj( scr, obj )
     obj.value = ex
     obj.title = title
     obj.box = box
@@ -61,8 +60,8 @@ function newTwTree( scr::TwScreen, ex; height::Real=0.8,width::Real=0.8,posy::An
     obj.data.showLineInfo = showLineInfo
     obj.data.showHelp = showHelp
     obj.data.bottomText = bottomText
-    alignxy!( obj, height, width, posx, posy )
-    configure_newwinpanel!( obj )
+
+    link_parent_child( scr, obj, height,width,posy,posx )
     obj
 end
 

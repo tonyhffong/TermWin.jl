@@ -3,6 +3,59 @@
 widgetStaggerPosx = 0
 widgetStaggerPosy = 0
 
+# only use these inside widget constructor, when their states are
+# not yet fully formed.
+function link_parent_child( p::TwObj{TwScreenData}, c::TwObj, height::Real, width::Real, posy::Any, posx::Any )
+    registerTwObj( p, c )
+    alignxy!( c, height,width,posx,posy, parent= p )
+    configure_newwinpanel!( c )
+    log( "Screen-"*string(objtype(c))*": x=" * string(c.xpos) * " y=" * string(c.ypos) )
+end
+
+function link_parent_child( p::TwObj{TwListData}, c::TwObj, height::Real, width::Real, posy::Any, posx::Any )
+    @lintpragma( "Ignore unused height")
+    @lintpragma( "Ignore unused width")
+    @lintpragma( "Ignore unused posy")
+    @lintpragma( "Ignore unused posx")
+    update_list_canvas( p )
+    begx = 0
+    begy = 0
+    if p.data.horizontal
+        for sw in p.data.widgets
+            begx += sw.width
+        end
+    else
+        for sw in p.data.widgets
+            begy += sw.height
+        end
+    end
+
+    @assert c.screen.value == nothing
+    @assert c.window == nothing
+
+    # by the time a list is being added, its contents must be fully populated
+    if objtype( c ) == :List
+        @assert c.data.pad == nothing
+        update_list_canvas( c )
+        height = c.data.canvasheight
+        width = c.data.canvaswidth
+    end
+    push!( p.data.widgets, c )
+    update_list_canvas(p)
+    alignxy!( c, height,width,begx,begy, parent= p )
+    c.hasFocus = false
+    c.window = TwWindow( WeakRef( p ), c.ypos, c.xpos, c.height, c.width )
+    log( "List-"*string(objtype(c))*": x=" * string(c.xpos) * " y=" * string(c.ypos) )
+    log( " orig begxy: x="*string(begx) * " y=" * string(begy) )
+    log( " new geom: h=" *string(p.height)*" w=" * string(p.width) )
+end
+
+function link_parent_child( p::Any, c::TwObj, height::Real, width::Real, posy::Any, posx::Any )
+    alignxy!( c, height,width,posx,posy, parent= p )
+    c.window = TwWindow( WeakRef( p ), c.ypos, c.xpos, c.height, c.width )
+    log( string(objtype(p))*"-"*string(objtype(c))*": x=" * string(c.xpos) * " y=" * string(c.ypos) )
+end
+
 function configure_newwinpanel!( obj::TwObj )
     obj.window = newwin( obj.height,obj.width,obj.ypos,obj.xpos )
     obj.panel = new_panel( obj.window )
@@ -25,10 +78,15 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
     else
         tmppar = parent
         while( typeof( tmppar.window) <: TwWindow )
-            tmppar = tmppar.window.parent.value.window
+            tmppar = tmppar.window.parent.value
         end
-        parmaxy = tmppar.height
-        parmaxx = tmppar.width
+        if objtype( tmppar ) == :List
+            parmaxy = tmppar.data.canvasheight
+            parmaxx = tmppar.data.canvaswidth
+        else
+            parmaxy = tmppar.height
+            parmaxx = tmppar.width
+        end
         log( "parmaxy=" * string(parmaxy) * "parmaxx=" * string( parmaxx ) )
         parbegx = parbegy = 0
     end

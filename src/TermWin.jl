@@ -32,6 +32,7 @@ end
 function log( s::String )
     global debugloghandle
     if debugloghandle != nothing
+        write( debugloghandle, string(now()) * " " )
         write( debugloghandle, s )
         write( debugloghandle, "\n" )
         flush( debugloghandle )

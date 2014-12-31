@@ -182,7 +182,7 @@ type TwDfTableData
 end
 
 #TODO: allow Regex in formatHints and aggrHints
-function newTwDfTable( scr::TwScreen, df::DataFrame;
+function newTwDfTable( scr::TwObj, df::DataFrame;
         height::Real=1.0, width::Real=1.0, posy::Any=:center, posx::Any=:center,
         pivots = Symbol[],
         initdepth = 1,
@@ -198,7 +198,6 @@ function newTwDfTable( scr::TwScreen, df::DataFrame;
         views = Dict{Symbol,Any}[],
         calcpivots = Dict{Symbol,CalcPivot}() )
     obj = TwObj( TwDfTableData(), Val{:DfTable} )
-    registerTwObj( scr, obj )
     obj.value = df
     obj.title = title
     obj.box = true
@@ -265,8 +264,7 @@ function newTwDfTable( scr::TwScreen, df::DataFrame;
 
     updateTableDimensions( obj )
     obj.data.bottomText = bottomText
-    alignxy!( obj, height, width, posx, posy )
-    configure_newwinpanel!( obj )
+    link_parent_child( scr, obj, height, width, posy, posx )
     obj
 end
 

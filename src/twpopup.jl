@@ -60,12 +60,11 @@ TwPopupData{ T<:String} ( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8( x ), 
 # standalone panel
 # as a subwin as part of another widget (see next function)
 # w include title width, if it's shown on the left
-function newTwPopup{T<:String}( scr::TwScreen, arr::Array{T,1};
+function newTwPopup{T<:String}( scr::TwObj, arr::Array{T,1};
         posy::Any=:center,posx::Any=:center,
         title = "", maxwidth = 50, maxheight = 15, minwidth = 20,
         quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false )
     obj = TwObj( TwPopupData(arr), Val{ :Popup } )
-    registerTwObj( scr, obj )
     obj.box = true
     obj.title = title
     obj.borderSizeV= 1
@@ -97,8 +96,8 @@ function newTwPopup{T<:String}( scr::TwScreen, arr::Array{T,1};
 
     h = 2 + min( length( arr ), maxheight )
     w = 2 + max( min( max( length( title ), obj.data.maxchoicelength ), maxwidth ), minwidth )
-    alignxy!( obj, h, w, posx, posy)
-    configure_newwinpanel!( obj )
+
+    link_parent_child( scr, obj, h, w, posy, posx )
 
     obj.data.searchbox = newTwEntry( obj, String; width=minwidth, posy=:bottom, posx = 1, box=false )
     obj.data.searchbox.title = "?"

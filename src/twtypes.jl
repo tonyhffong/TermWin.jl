@@ -75,6 +75,27 @@ type TwScreenData
     TwScreenData() = new( TwObj[], 0 )
 end
 
+type TwListData
+    horizontal::Bool
+    widgets::Array{TwObj,1} # this is static.
+    focus::Int # which of the widgets has the focus
+    canvasheight::Int
+    canvaswidth::Int
+    pad::Union( Nothing, Ptr{Void} ) # nothing, or Ptr{Void} to the WINDOW from calling newpad()
+    canvaslocx::Int # 0-based, view's location on canvas
+    canvaslocy::Int # 0-based
+    showLineInfo::Bool
+    function TwListData()
+        ret = new( false, TwObj[], 0, 0, 0, nothing, 0, 0, false )
+        finalizer( ret, y->begin
+            if y.pad != nothing
+                delwin( y.pad )
+            end
+        end)
+        ret
+    end
+end
+
 typealias TwScreen TwObj{TwScreenData}
 
 TwObj{T,S}( d::T, ::Type{Val{S}} ) = TwObj{T,S}(d)

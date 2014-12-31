@@ -34,7 +34,7 @@ end
 # the ways to use it:
 # exact dimensions known: h,w,y,x, content to add later
 # exact dimensions unknown, but content known and content drives dimensions
-function newTwFunc( scr::TwScreen, ms::Array{Method,1};
+function newTwFunc( scr::TwObj, ms::Array{Method,1};
         height::Real=0.8,width::Real=0.8, posy::Any = :staggered, posx::Any = :staggered,
         box=true,
         title="",
@@ -42,7 +42,6 @@ function newTwFunc( scr::TwScreen, ms::Array{Method,1};
         showHelp=true,
         bottomText = "" )
     obj = TwObj( TwFuncData(), Val{ :Func } )
-    registerTwObj( scr, obj )
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
@@ -56,8 +55,7 @@ function newTwFunc( scr::TwScreen, ms::Array{Method,1};
     obj.data.showLineInfo = showLineInfo
     obj.data.showHelp = showHelp
     obj.data.bottomText = bottomText
-    alignxy!( obj, height, width, posx, posy )
-    configure_newwinpanel!( obj )
+    link_parent_child( scr, obj, height, width, posy, posx )
     obj.data.searchbox = newTwEntry( obj, String; width=30, posy = 0, posx = 5, box=false, showHelp=true )
     obj.data.searchbox.title = "Search: "
     obj.data.searchbox.hasFocus = false
@@ -65,7 +63,7 @@ function newTwFunc( scr::TwScreen, ms::Array{Method,1};
     obj
 end
 
-function newTwFunc( scr::TwScreen, mt::MethodTable; kwargs... )
+function newTwFunc( scr::TwObj, mt::MethodTable; kwargs... )
     ms = Method[]
     d = start(mt)
     while !is(d,())
@@ -75,7 +73,7 @@ function newTwFunc( scr::TwScreen, mt::MethodTable; kwargs... )
     newTwFunc( scr, ms; kwargs... )
 end
 
-function newTwFunc( scr::TwScreen, f::Function; kwargs... )
+function newTwFunc( scr::TwObj, f::Function; kwargs... )
     newTwFunc( scr, methods(f); kwargs... )
 end
 
