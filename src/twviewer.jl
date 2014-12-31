@@ -27,7 +27,8 @@ end
 # the ways to use it:
 # exact dimensions known: h,w,y,x, content to add later
 # exact dimensions unknown, but content known and content drives dimensions
-function newTwViewer( scr::TwScreen, h::Real,w::Real,y::Any,x::Any; box=true, showLineInfo=true, showHelp=true, bottomText = "", tabWidth = 4, trackLine = false, title="" )
+function newTwViewer( scr::TwScreen; height::Real=0.5,width::Real=0.8,posy::Any=:staggered,posx::Any=:staggered,
+        box=true, showLineInfo=true, showHelp=true, bottomText = "", tabWidth = 4, trackLine = false, title="" )
     obj = TwObj( TwViewerData(), Val{ :Viewer } )
     registerTwObj( scr, obj )
     obj.box = box
@@ -37,20 +38,22 @@ function newTwViewer( scr::TwScreen, h::Real,w::Real,y::Any,x::Any; box=true, sh
     obj.data.showLineInfo = showLineInfo
     obj.data.showHelp = showHelp
     obj.data.tabWidth = tabWidth
-    obj.data.viewContentHeight = h - ( box? obj.borderSizeV *2 : 1 )
     obj.data.bottomText = bottomText
     obj.data.trackLine = trackLine
-    alignxy!( obj, h, w, y, x )
+    alignxy!( obj, height, width, posy, posx )
+    obj.data.viewContentHeight = obj.height - ( box? obj.borderSizeV *2 : 1 )
     configure_newwinpanel!( obj )
     obj
 end
 
-function newTwViewer( scr::TwScreen, msgs::Array, y::Any,x::Any; box=true, showLineInfo=true, bottomText = "", showHelp=true, tabWidth = 4, trackLine = false, title="" )
-    map!( z->replace( z, "\t", repeat( " ", tabWidth ) ), msgs )
+function newTwViewer( scr::TwScreen, msgs::Array;
+        posy::Any=:staggered,posx::Any=:staggered,
+        box=true, showLineInfo=true, bottomText = "", showHelp=true, tabWidth = 4, trackLine = false, title="" )
+    newmsgs = map( z->replace( z, "\t", repeat( " ", tabWidth ) ), msgs )
     obj = TwObj( TwViewerData(), Val{ :Viewer } )
     obj.title = title
     registerTwObj( scr, obj )
-    setTwViewerMsgs( obj, msgs )
+    setTwViewerMsgs( obj, newmsgs )
     obj.box = box
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 2 : 0
@@ -63,14 +66,13 @@ function newTwViewer( scr::TwScreen, msgs::Array, y::Any,x::Any; box=true, showL
     h = obj.data.msglen + obj.borderSizeV * 2 + (!box && !isempty( obj.data.bottomText )? 1 : 0 )
     w = max( 25, obj.data.msgwidth + obj.borderSizeH * 2, length(title)+6 )
 
-    alignxy!( obj, h, w, x, y )
+    alignxy!( obj, h, w, posx, posy )
     configure_newwinpanel!( obj )
     obj
 end
 
-function newTwViewer( scr::TwScreen, msg::String, y::Any,x::Any ; box=true, showLineInfo=true, bottomText="", showHelp=true, tabWidth = 4, trackLine = false, title="" )
-    msgs = map( z->replace( z, "\t", repeat( " ", tabWidth ) ), split( msg, "\n" ) )
-    newTwViewer( scr, msgs, y, x, box=box,showLineInfo=showLineInfo, bottomText=bottomText, showHelp=showHelp, tabWidth=tabWidth, trackLine=trackLine, title=title )
+function newTwViewer( scr::TwScreen, msg::String; kwargs... )
+    newTwViewer( scr, split(msg,"\n"); kwargs... )
 end
 
 function viewContentDimensions( o::TwObj{TwViewerData} )
@@ -260,7 +262,7 @@ function inject( o::TwObj{TwViewerData}, token::Any )
             end
         end
     elseif token == :F1 && o.data.showHelp
-        helper = newTwViewer( o.screen.value, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+        helper = newTwViewer( o.screen.value, o.data.helpText, posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
         dorefresh = true

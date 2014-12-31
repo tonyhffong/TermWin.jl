@@ -57,7 +57,9 @@ function bestfitgeometry( ncalStyle, scr::TwScreen, box::Bool )
     return finalg
 end
 
-function newTwCalendar( scr::TwScreen, dt::Date, y::Any,x::Any; ncalStyle=true, box=true, showHelp=true, title = "" )
+function newTwCalendar( scr::TwScreen, dt::Date;
+    posy::Any = :center,posx::Any = :center,
+    ncalStyle=true, box=true, showHelp=true, title = "" )
     data = TwCalendarData( dt )
     obj = TwObj( data, Val{:Calendar} )
     registerTwObj( scr, obj )
@@ -70,7 +72,7 @@ function newTwCalendar( scr::TwScreen, dt::Date, y::Any,x::Any; ncalStyle=true, 
     h,w,g1,g2 = bestfitgeometry( ncalStyle, scr, box )
     obj.data.geometry = (g1, g2)
     obj.data.ncalStyle = ncalStyle
-    alignxy!( obj, h, w, x, y)
+    alignxy!( obj, h, w, posx, posy)
     configure_newwinpanel!( obj )
     obj
 end
@@ -326,7 +328,7 @@ function inject( o::TwObj{TwCalendarData}, token::Any )
         retcode = :exit_ok
     elseif token == :F1 && o.data.showHelp
         global rootTwScreen
-        helper = newTwViewer( rootTwScreen, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+        helper = newTwViewer( rootTwScreen, o.data.helpText, posy= :center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
         unregisterTwObj( rootTwScreen, helper )
         dorefresh = true

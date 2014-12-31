@@ -34,21 +34,19 @@ end
 # the ways to use it:
 # exact dimensions known: h,w,y,x, content to add later
 # exact dimensions unknown, but content known and content drives dimensions
-function newTwFunc( scr::TwScreen, ms::Array{Method,1},
-        h::Real,w::Real,
-        y::Any,x::Any ;
+function newTwFunc( scr::TwScreen, ms::Array{Method,1};
+        height::Real=0.8,width::Real=0.8, posy::Any = :staggered, posx::Any = :staggered,
         box=true,
         title="",
         showLineInfo=true,
         showHelp=true,
         bottomText = "" )
-    obj = TwObj( twFuncFactory( :Func ) )
+    obj = TwObj( TwFuncData(), Val{ :Func } )
     registerTwObj( scr, obj )
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 2 : 0
-    obj.data = TwFuncData()
     for d in ms
         s = string(d.sig)*" : " * string(d)
         push!( obj.data.datalist, Any[ lowercase(s), s, d, 0.0 ] )
@@ -58,53 +56,30 @@ function newTwFunc( scr::TwScreen, ms::Array{Method,1},
     obj.data.showLineInfo = showLineInfo
     obj.data.showHelp = showHelp
     obj.data.bottomText = bottomText
-    alignxy!( obj, h, w, x, y )
+    alignxy!( obj, height, width, posx, posy )
     configure_newwinpanel!( obj )
-    obj.data.searchbox = newTwEntry( obj.window, String, 30, 0, 5, box=false, showHelp=true )
+    obj.data.searchbox = newTwEntry( obj, String; width=30, posy = 0, posx = 5, box=false, showHelp=true )
     obj.data.searchbox.title = "Search: "
+    obj.data.searchbox.hasFocus = false
     obj.data.searchbox.data.helpText = defaultFuncHelpText
     obj
 end
 
-function newTwFunc( scr::TwScreen, mt::MethodTable,
-        h::Real, w::Real,
-        y::Any,x::Any ;
-        box=true,
-        title="",
-        showLineInfo=true,
-        bottomText = "",
-        showHelp=true )
+function newTwFunc( scr::TwScreen, mt::MethodTable; kwargs... )
     ms = Method[]
     d = start(mt)
     while !is(d,())
         push!( ms, d )
         d = d.next
     end
-    newTwFunc( scr, ms, h, w, y, x,
-        box=box,
-        title=title,
-        showLineInfo=showLineInfo,
-        bottomText=bottomText,
-        showHelp=showHelp )
+    newTwFunc( scr, ms; kwargs... )
 end
 
-function newTwFunc( scr::TwScreen, f::Function,
-        h::Real, w::Real,
-        y::Any,x::Any ;
-        box=true,
-        title="",
-        showLineInfo=true,
-        bottomText = "",
-        showHelp=true )
-    newTwFunc( scr, methods(f), h, w, y, x,
-        box=box,
-        title=title,
-        showLineInfo=showLineInfo,
-        bottomText=bottomText,
-        showHelp=showHelp )
+function newTwFunc( scr::TwScreen, f::Function; kwargs... )
+    newTwFunc( scr, methods(f); kwargs... )
 end
 
-function update_score_sort( o::TwObj )
+function update_score_sort( o::TwObj{TwFuncData} )
     searchterm = o.data.searchbox.data.inputText
     needx = o.data.datawidth
 
@@ -133,7 +108,7 @@ function update_score_sort( o::TwObj )
     sort!( o.data.datalist, lt=(x,y)-> x[4] < y[4] )
 end
 
-function drawTwFunc( o::TwObj )
+function draw( o::TwObj{TwFuncData} )
     viewContentHeight = o.height - o.borderSizeV * 2
     viewContentWidth = o.width - o.borderSizeH * 2
     viewStartRow = o.borderSizeV
@@ -175,7 +150,7 @@ function drawTwFunc( o::TwObj )
     draw( o.data.searchbox )
 end
 
-function injectTwFunc( o::TwObj, token::Any )
+function inject( o::TwObj{TwFuncData}, token::Any )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
     viewContentHeight = o.height - o.borderSizeV * 2
@@ -290,7 +265,7 @@ function injectTwFunc( o::TwObj, token::Any )
             f = eval( m.func.code.name )
             edit( f, m.sig )
         catch err
-            helper = newTwViewer( o.screen.value, string(err), :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+            helper = newTwViewer( o.screen.value, string(err), posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
             activateTwObj( helper )
             unregisterTwObj( o.screen.value, helper )
         end

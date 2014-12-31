@@ -1,11 +1,4 @@
 # bookkeeping data for a screen
-type TwScreenData
-    objects::Array{TwObj, 1 }
-    focus::Int
-    TwScreenData() = new( TwObj[], 0 )
-end
-
-typealias TwScreen TwObj{TwScreenData}
 
 # Screen is unique also in that its instantiation requires a window. It's because often we'd simply
 # supply the rootwin that has already been created.

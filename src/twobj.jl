@@ -16,15 +16,22 @@ end
 
 function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
         relative::Bool=false, # if true, o.xpos = parent.x + x
-        derwin::Bool=false, # if true, o.xpos will be set relative to parentwin
-        parentwin = o.screen.value.window )
+        parent = o.screen.value )
     global widgetStaggerPosx, widgetStaggerPosy
-    if derwin
-        parbegx = parbegy = 0
-    else
+    if typeof( parent ) <: TwScreen
+        parentwin = parent.window
         ( parbegy, parbegx ) = getwinbegyx( parentwin )
+        ( parmaxy, parmaxx ) = getwinmaxyx( parentwin )
+    else
+        tmppar = parent
+        while( typeof( tmppar.window) <: TwWindow )
+            tmppar = tmppar.window.parent.value.window
+        end
+        parmaxy = tmppar.height
+        parmaxx = tmppar.width
+        log( "parmaxy=" * string(parmaxy) * "parmaxx=" * string( parmaxx ) )
+        parbegx = parbegy = 0
     end
-    ( parmaxy, parmaxx ) = getwinmaxyx( parentwin )
     if typeof( h ) <: Integer
         o.height = min( h, parmaxy )
     elseif typeof( h ) <: FloatingPoint && 0.0 < h <= 1.0

@@ -3,7 +3,7 @@ using Dates
 
 TermWin.initsession()
 #s = "a test"
-v = newTwEntry( rootTwScreen, Date, 25, :center, :center, showHelp=true, box=true )
+v = newTwEntry( rootTwScreen, Date; width=25, posy=:center, posx=:center, showHelp=true, box=true )
 v.title = "Date: "
 v.data.tickSize = 1
 activateTwObj( rootTwScreen )

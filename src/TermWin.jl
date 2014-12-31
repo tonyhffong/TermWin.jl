@@ -44,12 +44,12 @@ end
 
 include( "consts.jl")
 include( "twtypes.jl")
+include( "twobj.jl")
+include( "twscreen.jl")
 include( "ccall.jl" )
 include( "strutils.jl")
 include( "format.jl" )
 include( "dfutils.jl" )
-include( "twobj.jl")
-include( "twscreen.jl")
 include( "twprogress.jl")
 include( "twviewer.jl")
 include( "twentry.jl")
@@ -230,8 +230,8 @@ function tshow_( x::Number; kwargs... )
     tshow_( s; kwargs... )
 end
 
-tshow_( x::Symbol; title="Symbol" ) = tshow_( ":"*string(x), title=title )
-tshow_( x::Ptr; title="Ptr" ) = tshow_( string(x), title=title )
+tshow_( x::Symbol; kwargs... ) = tshow_( ":"*string(x); kwargs... )
+tshow_( x::Ptr; kwargs... ) = tshow_( string(x); kwargs... )
 function tshow_( x::WeakRef; kwargs... )
     if x.value == nothing
         tshow_( "WeakRef: nothing"; kwargs... )
@@ -240,11 +240,7 @@ function tshow_( x::WeakRef; kwargs... )
     end
 end
 function tshow_( x; kwargs... )
-    height = extractkwarg!( kwargs, :height, 0.8 )
-    width = extractkwarg!( kwargs, :width, 0.8 )
-    posx  = extractkwarg!( kwargs, :x, :staggered )
-    posy  = extractkwarg!( kwargs, :y, :staggered )
-    newTwTree( rootTwScreen, x, height, width, posy, posx; kwargs... )
+    newTwTree( rootTwScreen, x; kwargs... )
 end
 
 function tshow_( x::String; kwargs... )
@@ -252,9 +248,9 @@ function tshow_( x::String; kwargs... )
     if length(x) > 100
         pos = :staggered
     end
-    posx  = extractkwarg!( kwargs, :x, pos )
-    posy  = extractkwarg!( kwargs, :y, pos )
-    newTwViewer( rootTwScreen, x, posy, posx; kwargs... )
+    posx  = extractkwarg!( kwargs, :posx, pos )
+    posy  = extractkwarg!( kwargs, :posy, pos )
+    newTwViewer( rootTwScreen, x; posy = posy, posx = posx, kwargs... )
 end
 
 function tshow_( f::Function; kwargs... )
@@ -265,37 +261,20 @@ function tshow_( f::Function; kwargs... )
     if funloc == "(anonymous)"
         return tshow_( string(f) * ":" * funloc; kwargs... )
     else
-        height = extractkwarg!( kwargs, :height, 0.8 )
-        width = extractkwarg!( kwargs, :width, 0.8 )
-        posx  = extractkwarg!( kwargs, :x, :staggered )
-        posy  = extractkwarg!( kwargs, :y, :staggered )
-        return newTwFunc( rootTwScreen, f, height,width,posy,posx; kwargs... )
+        return newTwFunc( rootTwScreen, f; kwargs... )
     end
 end
 
 function tshow_( mt::MethodTable; kwargs... )
-    height = extractkwarg!( kwargs, :height, 0.8 )
-    width = extractkwarg!( kwargs, :width, 0.8 )
-    posx  = extractkwarg!( kwargs, :x, :staggered )
-    posy  = extractkwarg!( kwargs, :y, :staggered )
-    newTwFunc( rootTwScreen, mt, height,width,posy,posx; kwargs... )
+    newTwFunc( rootTwScreen, mt; kwargs... )
 end
 
 function tshow_( ms::Array{Method,1}; kwargs... )
-    height = extractkwarg!( kwargs, :height, 0.8 )
-    width = extractkwarg!( kwargs, :width, 0.8 )
-    posx  = extractkwarg!( kwargs, :x, :staggered )
-    posy  = extractkwarg!( kwargs, :y, :staggered )
-    title = extractkwarg!( kwargs, :title, "Methods" )
-    newTwFunc( rootTwScreen, ms, height,width,posy,posx; kwargs... )
+    newTwFunc( rootTwScreen, ms; kwargs... )
 end
 
 function tshow_( df::DataFrame; kwargs... )
-    height = extractkwarg!( kwargs, :height, 1.0 )
-    width = extractkwarg!( kwargs, :width, 1.0 )
-    posx  = extractkwarg!( kwargs, :x, :center)
-    posy  = extractkwarg!( kwargs, :y, :center)
-    newTwDfTable( rootTwScreen, df, height,width,posy,posx; kwargs... )
+    newTwDfTable( rootTwScreen, df; kwargs... )
 end
 
 function tshow_( o::TwObj; kwargs... )
@@ -365,8 +344,9 @@ function titleof( x::Any )
 end
 
 # it'd return the widget, which can be displayed again.
-function tshow( x::Any; title=titleof( x ), kwargs... )
+function tshow( x::Any; kwargs... )
     global callcount, rootwin, rootTwScreen
+    title = extractkwarg!( kwargs, :title, titleof(x) )
     widget = nothing
     if callcount == 0
         initsession()
@@ -420,7 +400,7 @@ function tshow( x::Any; title=titleof( x ), kwargs... )
 end
 
 # f is a no-arg function
-function trun( f::Function; title="" )
+function trun( f::Function; kwargs... )
     # async start the function
     # start the progress bar window and listen to it
     global callcount, rootwin, rootTwScreen
@@ -442,7 +422,7 @@ function trun( f::Function; title="" )
         callcount += 1
         werase( rootwin )
         try
-            o = newTwProgress( rootTwScreen, 5, 50, :center, :center, title=title )
+            o = newTwProgress( rootTwScreen; kwargs... )
             if o != nothing
                 activateTwObj( rootTwScreen )
                 ret = o.value
@@ -460,14 +440,13 @@ function trun( f::Function; title="" )
         for o in rootTwScreen.data.objects
             if objtype( o ) == :Progress
                 raiseTwObject( o )
-                o.title = title
                 o.isvisible = true
                 found = true
                 break
             end
         end
         if !found
-            o = newTwProgress( rootTwScreen, 5, 50, :center, :center, title=title )
+            o = newTwProgress( rootTwScreen; kwargs... )
             o.hasFocus = true
             rootTwScreen.data.focus = length( rootTwScreen.data.objects )
             refresh( rootTwScreen )

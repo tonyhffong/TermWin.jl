@@ -60,7 +60,8 @@ TwPopupData{ T<:String} ( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8( x ), 
 # standalone panel
 # as a subwin as part of another widget (see next function)
 # w include title width, if it's shown on the left
-function newTwPopup{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::Any;
+function newTwPopup{T<:String}( scr::TwScreen, arr::Array{T,1};
+        posy::Any=:center,posx::Any=:center,
         title = "", maxwidth = 50, maxheight = 15, minwidth = 20,
         quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false )
     obj = TwObj( TwPopupData(arr), Val{ :Popup } )
@@ -96,11 +97,12 @@ function newTwPopup{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::Any;
 
     h = 2 + min( length( arr ), maxheight )
     w = 2 + max( min( max( length( title ), obj.data.maxchoicelength ), maxwidth ), minwidth )
-    alignxy!( obj, h, w, x, y)
+    alignxy!( obj, h, w, posx, posy)
     configure_newwinpanel!( obj )
 
-    obj.data.searchbox = newTwEntry( obj.window, String, minwidth, :bottom, 1, box=false )
+    obj.data.searchbox = newTwEntry( obj, String; width=minwidth, posy=:bottom, posx = 1, box=false )
     obj.data.searchbox.title = "?"
+    obj.data.searchbox.hasFocus = false # so it looks dimmer than main cursor
     obj
 end
 
@@ -108,33 +110,7 @@ function popup_use_datalist( o::TwObj )
     o.data.selectmode & POPUPHIDEUNMATCHED != 0 || o.data.selectmode & POPUPSORTMATCHED != 0
 end
 
-function longest_common_prefix( s1::String, s2::String )
-    m = min( length( s1 ), length( s2 ) )
-    lcpidx = 0
-    for i in 1:m
-        if s1[i] != s2[i]
-            break
-        end
-        lcpidx = i
-    end
-    return s1[ 1:lcpidx ]
-    #= Julia's utf8 substring seems tolerant enough for now, otherwise we have to do something like this
-    while lcpidx > 0
-        chr = 0
-        try
-            chr = ind2chr( s1, lcpidx )
-        catch
-            lcpidx -= 1
-        end
-        if chr != 0
-            return s1[ 1:lcpidx ]
-        end
-    end
-    return ""
-    =#
-end
-
-function rebuild_popup_datalist( o::TwObj )
+function rebuild_popup_datalist( o::TwObj{TwPopupData} )
     o.data.datalist = Any[]
     for (i, c) in enumerate( o.data.choices )
         searchstring = c
@@ -188,7 +164,7 @@ function draw( o::TwObj{TwPopupData} )
     end
 end
 
-function popup_search_next( o::TwObj, step::Int, trivialstop::Bool )
+function popup_search_next( o::TwObj{TwPopupData}, step::Int, trivialstop::Bool )
     st = o.data.currentLine
     tmpstr = lowercase(o.data.searchbox.data.inputText)
     if length(tmpstr) == 0
@@ -231,7 +207,7 @@ function popup_search_next( o::TwObj, step::Int, trivialstop::Bool )
     end
 end
 
-function update_popup_score( o::TwObj )
+function update_popup_score( o::TwObj{TwPopupData} )
     searchterm = o.data.searchbox.data.inputText
     needx = o.data.maxchoicelength
 
@@ -503,7 +479,7 @@ function inject( o::TwObj{TwPopupData}, token::Any )
         if tabcomplete
             s *= "tab    : tab-completion"
         end
-        helper = newTwViewer( rootTwScreen, s, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+        helper = newTwViewer( rootTwScreen, s, posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
         unregisterTwObj( rootTwScreen, helper )
         dorefresh = true

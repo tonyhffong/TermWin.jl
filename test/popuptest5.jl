@@ -1,9 +1,10 @@
 using TermWin
 
 TermWin.initsession()
+TermWin.logstart()
 arr = readdir()
 #s = "a test"
-v = newTwPopup( rootTwScreen, arr, :center, :center, sortmatched =true )
+v = newTwPopup( rootTwScreen, arr; sortmatched =true )
 v.title = "Input: "
 activateTwObj( rootTwScreen )
 ret = v.value

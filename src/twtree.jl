@@ -45,7 +45,9 @@ type TwTreeData
     TwTreeData() = new( Dict{ Any, Bool }(), Any[], 0, 0, 0, 0, 1, 1, 1, true, "", true, defaultTreeHelpText, "", true )
 end
 
-function newTwTree( scr::TwScreen, ex, h::Real,w::Real,y::Any,x::Any; title = string(typeof( ex ) ), box=true, showLineInfo=true, showHelp=true, bottomText = "" )
+function newTwTree( scr::TwScreen, ex; height::Real=0.8,width::Real=0.8,posy::Any=:staggered, posx::Any=:staggered,
+        title::String = string(typeof( ex ) ), box::Bool=true, showLineInfo::Bool=true, showHelp::Bool=true,
+        bottomText::String = "" )
     obj = TwObj( TwTreeData(), Val{ :Tree } )
     registerTwObj( scr, obj )
     obj.value = ex
@@ -59,7 +61,7 @@ function newTwTree( scr::TwScreen, ex, h::Real,w::Real,y::Any,x::Any; title = st
     obj.data.showLineInfo = showLineInfo
     obj.data.showHelp = showHelp
     obj.data.bottomText = bottomText
-    alignxy!( obj, h, w, x, y )
+    alignxy!( obj, height, width, posx, posy )
     configure_newwinpanel!( obj )
     obj
 end
@@ -629,7 +631,7 @@ function inject( o::TwObj{TwTreeData}, token::Any )
             beep()
         end
     elseif token == "/"
-        helper = newTwEntry( o.screen.value, String, 30, :center, :center, title = "Search: " )
+        helper = newTwEntry( o.screen.value, String; width=30, posy=:center, posx=:center, title = "Search: " )
         helper.data.inputText = o.data.searchText
         s = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
@@ -672,7 +674,7 @@ function inject( o::TwObj{TwTreeData}, token::Any )
             beep()
         end
     elseif token == :F1 && o.data.showHelp
-        helper = newTwViewer( o.screen.value, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+        helper = newTwViewer( o.screen.value, o.data.helpText, posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
         dorefresh = true

@@ -42,7 +42,8 @@ TwMultiSelectData{T<:String,T2<:String}( arr::Array{T,1}, selected::Array{T2,1} 
 # standalone panel
 # as a subwin as part of another widget (see next function)
 # w include title width, if it's shown on the left
-function newTwMultiSelect{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::Any;
+function newTwMultiSelect{T<:String}( scr::TwScreen, arr::Array{T,1};
+        posy::Any = :center,posx::Any = :center,
         selected = UTF8String[],
         title = "", maxwidth = 50, maxheight = 20, minwidth = 25,
         orderable = false, substrsearch=false )
@@ -67,15 +68,16 @@ function newTwMultiSelect{T<:String}( scr::TwScreen, arr::Array{T,1}, y::Any,x::
 
     h = 2 + min( length( arr ), maxheight )
     w = 4 + max( min( max( length( title ), obj.data.maxchoicelength ), maxwidth ), minwidth )
-    alignxy!( obj, h, w, x, y)
+    alignxy!( obj, h, w, posx, posy)
     configure_newwinpanel!( obj )
 
-    obj.data.searchbox = newTwEntry( obj.window, String, minwidth, :bottom, 1, box=false )
+    obj.data.searchbox = newTwEntry( obj, String, width=minwidth, posy=:bottom, posx=1, box=false )
     obj.data.searchbox.title = "?"
+    obj.data.searchbox.hasFocus = false
     obj
 end
 
-function rebuild_select_datalist( o::TwObj )
+function rebuild_select_datalist( o::TwObj{TwMultiSelectData} )
     o.data.datalist = Any[]
     if o.data.selectmode & SELECTEDORDERABLE != 0
         for s in o.data.selected
@@ -116,7 +118,7 @@ function draw( o::TwObj{TwMultiSelectData} )
         else
             s = string( '\U2610' ) * " " * s
         end
-
+        # TODO: handle unitcode widths
         endpos = o.data.currentLeft + o.width - 2 * o.borderSizeH - 1
         if length(s) > 0
             s = s[ chr2ind( s, o.data.currentLeft ) : end ]
@@ -134,7 +136,7 @@ function draw( o::TwObj{TwMultiSelectData} )
     draw( o.data.searchbox )
 end
 
-function select_search_next( o::TwObj, step::Int, trivialstop::Bool )
+function select_search_next( o::TwObj{TwMultiSelectData}, step::Int, trivialstop::Bool )
     st = o.data.currentLine
     tmpstr = lowercase(o.data.searchbox.data.inputText)
     if length(tmpstr) == 0
@@ -144,20 +146,21 @@ function select_search_next( o::TwObj, step::Int, trivialstop::Bool )
 
     n = length( o.data.datalist )
 
-    i = trivialstop ? st : ( mod( st-1+step, n ) + 1 )
+    local i::Int = trivialstop ? st : mod1( st+step,n )
+    local usesubstr::Bool = o.data.selectmode * SELECTSUBSTR != 0
     while true
-        if o.data.selectmode & SELECTSUBSTR != 0
-            if contains( o.data.datalist[i][1], tmpstr )
+        if usesubstr
+            if contains( lowercase( o.data.datalist[i][1] ), tmpstr )
                 o.data.currentLine = i
                 return i
             end
         else
-            if beginswith( lowercase( o.data.choices[i] ), tmpstr )
+            if beginswith( lowercase( o.data.datalist[i][1] ), tmpstr )
                 o.data.currentLine = i
                 return i
             end
         end
-        i = mod( i-1+step, n ) + 1
+        i = mod1(i+step,n )
         if i == st
             TermWin.beep()
             return 0
@@ -258,11 +261,11 @@ function inject( o::TwObj{TwMultiSelectData}, token::Any )
     elseif token == :pagedown
         dorefresh = moveby( viewContentHeight )
     elseif token == :ctrl_n
-        popup_search_next( o, 1, false )
+        select_search_next( o, 1, false )
         checkTop()
         dorefresh = true
     elseif token == :ctrl_p
-        popup_search_next( o, -1, false )
+        select_search_next( o, -1, false )
         checkTop()
         dorefresh = true
     elseif token == :KEY_MOUSE
@@ -350,7 +353,7 @@ function inject( o::TwObj{TwMultiSelectData}, token::Any )
     elseif token == :F1
         global rootTwScreen
         s = o.data.helpText
-        helper = newTwViewer( rootTwScreen, s, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+        helper = newTwViewer( rootTwScreen, s, posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
         unregisterTwObj( rootTwScreen, helper )
         dorefresh = true

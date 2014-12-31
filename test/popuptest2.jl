@@ -3,7 +3,7 @@ using TermWin
 TermWin.initsession()
 arr = readdir()
 #s = "a test"
-v = newTwPopup( rootTwScreen, arr, :center, :center, quickselect=true )
+v = newTwPopup( rootTwScreen, arr, quickselect=true )
 v.title = "Input: "
 activateTwObj( rootTwScreen )
 ret = v.value

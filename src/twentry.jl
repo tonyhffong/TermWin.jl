@@ -80,36 +80,13 @@ end
 # standalone panel
 # as a subwin as part of another widget (see next function)
 # w include title width, if it's shown on the left
-function newTwEntry( scr::TwScreen, dt::DataType, w::Real,y::Any,x::Any;
-    box=true, showHelp=true, titleLeft = true, title = "",
-    precision=-1, stripzeros= (precision == -1), conversion="" )
-
-    data = TwEntryData( dt )
-    data.showHelp = showHelp
-    data.titleLeft = titleLeft
-    data.precision = precision
-    data.stripzeros = stripzeros
-    if conversion != ""
-        data.conversion = conversion
-    end
-
-    obj = TwObj( data, Val{:Entry} )
-    registerTwObj( scr, obj )
-    obj.box = box
-    obj.title = title
-    obj.borderSizeV= box ? 1 : 0
-    obj.borderSizeH= box ? 1 : 0
-    h = box?3 : 1
-    alignxy!( obj, h, w, x, y)
-    configure_newwinpanel!( obj )
-    obj
-end
 
 # this one only creates a subwin, do not make a panel out of it, and don't
 # register it to a screen
 # so to use it, the container widget must keep track of its update and input
 # y and x is relative to parentwin
-function newTwEntry( parentwin::Ptr{Void}, dt::DataType, w::Real, y::Any,x::Any;
+function newTwEntry( parent::TwObj, dt::DataType;
+    width::Real=30,posy::Any=:staggered,posx::Any=:staggered,
     box=true, showHelp=true, titleLeft=true, title = "",
     precision=-1, stripzeros= (precision == -1), conversion="" )
 
@@ -124,15 +101,20 @@ function newTwEntry( parentwin::Ptr{Void}, dt::DataType, w::Real, y::Any,x::Any;
 
     obj = TwObj( data, Val{:Entry} )
 
-    parbegy, parbegx = getwinbegyx( parentwin )
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 1 : 0
 
     h = box ? 3 : 1
-    alignxy!( obj, h, w, x, y, parentwin = parentwin, derwin=true )
-    obj.window = derwin( parentwin, obj.height, obj.width, obj.ypos, obj.xpos )
+    if typeof( parent ) <: TwScreen
+        registerTwObj( parent, obj )
+        alignxy!( obj, h, width, posx, posy)
+        configure_newwinpanel!( obj )
+    else
+        alignxy!( obj, h, width, posx, posy, parent = parent )
+        obj.window = TwWindow( WeakRef( parent ), obj.ypos, obj.xpos, obj.height, obj.width )
+    end
     obj
 end
 
@@ -377,17 +359,6 @@ function inject( o::TwObj{TwEntryData}, token::Any )
     elseif typeof( token ) <: String && o.data.valueType <: Date && !in( token, [ "?", "," ] )
         insertchar( token )
         dorefresh = true
-    #=
-    elseif o.data.valueType <: Date && in( token, [ "j", "f", "m", "a", "s", "o", "n", "d" ] )
-        global rootTwScreen
-        mnames = map( x->monthabbr(x), 1:12 )
-        w = newTwPopup( rootTwScreen, mnames, :center, :center, hideunmatch=true )
-        w.data.searchbox.data.inputText = token
-        activateTwObj( w )
-        if w.value != nothing
-            i = findfirst( mnames, w.value )
-        end
-    =#
     elseif token == "?" && o.data.valueType <: Date
         global rootTwScreen
         (fieldcount, remainspacecount ) = getFieldDimension( o )
@@ -395,7 +366,7 @@ function inject( o::TwObj{TwEntryData}, token::Any )
         if v == nothing
             v = today()
         end
-        w = newTwCalendar( rootTwScreen, v, :center, :center )
+        w = newTwCalendar( rootTwScreen, v; posy=:center, posx=:center )
         activateTwObj( w )
         if typeof( w.value ) <: Date
             o.data.inputText = string( w.value )
@@ -477,7 +448,7 @@ function inject( o::TwObj{TwEntryData}, token::Any )
         end
     elseif token == :F1 && o.data.showHelp
         global rootTwScreen
-        helper = newTwViewer( rootTwScreen, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+        helper = newTwViewer( rootTwScreen, o.data.helpText, posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
         unregisterTwObj( rootTwScreen, helper )
         dorefresh = true

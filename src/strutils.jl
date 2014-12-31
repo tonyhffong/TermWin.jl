@@ -267,3 +267,14 @@ function levenstein_distance( s1, s2 )
     return v1[end]
 end
 
+function longest_common_prefix( s1::String, s2::String )
+    m = min( length( s1 ), length( s2 ) )
+    lcpidx = 0
+    for i in 1:m
+        if s1[i] != s2[i]
+            break
+        end
+        lcpidx = i
+    end
+    return s1[ 1:lcpidx ]
+end

@@ -68,6 +68,15 @@ type TwObj{T,S}
     end
 end
 
+# bookkeeping data for a screen
+type TwScreenData
+    objects::Array{TwObj, 1 }
+    focus::Int
+    TwScreenData() = new( TwObj[], 0 )
+end
+
+typealias TwScreen TwObj{TwScreenData}
+
 TwObj{T,S}( d::T, ::Type{Val{S}} ) = TwObj{T,S}(d)
 import Base.show
 

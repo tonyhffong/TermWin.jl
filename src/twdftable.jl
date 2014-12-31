@@ -182,7 +182,8 @@ type TwDfTableData
 end
 
 #TODO: allow Regex in formatHints and aggrHints
-function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::Any;
+function newTwDfTable( scr::TwScreen, df::DataFrame;
+        height::Real=1.0, width::Real=1.0, posy::Any=:center, posx::Any=:center,
         pivots = Symbol[],
         initdepth = 1,
         colorder = Any[ "*" ], # mix of symbol, regex, and "*" (the rest), "*" can be in the middle
@@ -264,7 +265,7 @@ function newTwDfTable( scr::TwScreen, df::DataFrame, h::Real,w::Real,y::Any,x::A
 
     updateTableDimensions( obj )
     obj.data.bottomText = bottomText
-    alignxy!( obj, h, w, x, y )
+    alignxy!( obj, height, width, posx, posy )
     configure_newwinpanel!( obj )
     obj
 end
@@ -1039,7 +1040,7 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
         allcols = map(_->utf8(string(_)), names( o.value ) )
         append!( allcols, map( _->utf8(string(_)), collect( keys( o.data.calcpivots ) ) ) )
         pvts = map( _->utf8(string(_)), o.data.pivots )
-        helper = newTwMultiSelect( o.screen.value, allcols, :center, :center, selected = pvts, title="Pivot order", orderable=true, substrsearch=true )
+        helper = newTwMultiSelect( o.screen.value, allcols, selected = pvts, title="Pivot order", orderable=true, substrsearch=true )
         newpivots = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
         if newpivots != nothing && newpivots != pvts
@@ -1056,7 +1057,7 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
     elseif token == "c"
         allcols = map(_->utf8(string(_)), names( o.value ) )
         visiblecols = map( _->utf8(string(_.name)), o.data.colInfo )
-        helper = newTwMultiSelect( o.screen.value, allcols, :center, :center, selected = visiblecols, title="Visible columns & their order", orderable=true, substrsearch=true )
+        helper = newTwMultiSelect( o.screen.value, allcols, selected = visiblecols, title="Visible columns & their order", orderable=true, substrsearch=true )
         newcols = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
         if newcols != nothing && newcols != visiblecols
@@ -1068,7 +1069,7 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
         dorefresh = true
     elseif token == "v"
         allviews = map( _->_.name, o.data.views )
-        helper = newTwPopup( o.screen.value, allviews, :center, :center, substrsearch=true, title = "Views" )
+        helper = newTwPopup( o.screen.value, allviews, substrsearch=true, title = "Views" )
         vname = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
         if vname != nothing
@@ -1091,7 +1092,7 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
             dorefresh=true
         end
     elseif token == "/"
-        helper = newTwEntry( o.screen.value, String, 30, :center, :center, title = "Search: " )
+        helper = newTwEntry( o.screen.value, String; width=30, posy=:center, posx=:center, title = "Search: " )
         helper.data.inputText = o.data.searchText
         s = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
@@ -1103,7 +1104,7 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
         end
         dorefresh = true
     elseif token == "?"
-        helper = newTwEntry( o.screen.value, String, 30, :center, :center, title = "Search: " )
+        helper = newTwEntry( o.screen.value, String; width=30, posy=:center, posx=:center, title = "Search: " )
         helper.data.inputText = o.data.searchText
         s = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
@@ -1147,7 +1148,7 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
         tshow( takebuf_string( out ), title = string( colsym )  * " stats"; x=:center,y=:center)
         dorefresh = true
     elseif token == :F1
-        helper = newTwViewer( o.screen.value, o.data.helpText, :center, :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+        helper = newTwViewer( o.screen.value, o.data.helpText, posy=:center, posx= :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
         dorefresh = true

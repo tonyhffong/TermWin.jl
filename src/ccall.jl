@@ -91,14 +91,18 @@ end
 function werase( win::TwWindow, y::Int=win.yloc, x::Int=win.xloc, h::Int=win.height, w::Int=win.width )
     parwin = win.parent.value.window
     if typeof( parwin ) <: Ptr
-        par = win.parent.value
+        if typeof( win.parent.value ) <: TwObj{TwListData}
+            tmpw = win.parent.value.data.pad
+        else
+            tmpw = parwin
+        end
         for r = y:y+h-1
             for c = x:x+w-1
-                mvwaddch( par.data.pad, r, c, ' ' )
+                mvwaddch( tmpw, r, c, ' ' )
             end
         end
     else
-        werase( parwin, parwin.yloc+win.yloc, parwin.xloc+win.xloc, h, w )
+        werase( parwin, parwin.yloc+y, parwin.xloc+x, h, w )
     end
 end
 
@@ -113,13 +117,17 @@ end
 function box( win::TwWindow, vchr::Integer, hchr::Integer, y::Int=win.yloc, x::Int=win.xloc, h::Int=win.height, w::Int=win.width )
     parwin = win.parent.value.window
     if typeof( parwin ) <: Ptr
-        par = win.parent.value
+        if typeof( win.parent.value ) <: TwObj{TwListData}
+            tmpw = win.parent.value.data.pad
+        else
+            tmpw = parwin
+        end
         #draw the box myself
         # 4 corners
-        mvwaddch( par.data.pad, y,x, get_acs_val( 'l' ) )
-        mvwaddch( par.data.pad, y+h-1,x, get_acs_val( 'm' ) )
-        mvwaddch( par.data.pad, y,x+w-1, get_acs_val( 'k' ) )
-        mvwaddch( par.data.pad, y+h-1,x+w-1, get_acs_val( 'j' ) )
+        mvwaddch( tmpw, y,x, get_acs_val( 'l' ) )
+        mvwaddch( tmpw, y+h-1,x, get_acs_val( 'm' ) )
+        mvwaddch( tmpw, y,x+w-1, get_acs_val( 'k' ) )
+        mvwaddch( tmpw, y+h-1,x+w-1, get_acs_val( 'j' ) )
 
         if vchr==0
             vchr=get_acs_val('x')
@@ -128,12 +136,12 @@ function box( win::TwWindow, vchr::Integer, hchr::Integer, y::Int=win.yloc, x::I
             hchr=get_acs_val('q')
         end
         for r = y+1:y+h-2
-            mvwaddch( par.data.pad, r, x, vchr )
-            mvwaddch( par.data.pad, r, x+w-1, vchr )
+            mvwaddch( tmpw, r, x, vchr )
+            mvwaddch( tmpw, r, x+w-1, vchr )
         end
         for c = x+1:x+w-2
-            mvwaddch( par.data.pad, y, c, hchr )
-            mvwaddch( par.data.pad, y+h-1, c, hchr )
+            mvwaddch( tmpw, y, c, hchr )
+            mvwaddch( tmpw, y+h-1, c, hchr )
         end
     else
         box( parwin, vchr, hchr, parwin.yloc+win.yloc, parwin.xloc+win.xloc, h, w )
@@ -255,7 +263,7 @@ end
 
 function wattroff( win::TwWindow, attrs )
     parwin = win.parent.value.window
-    if typeof( parwin ) <: Ptr
+    if typeof( win.parent.value ) <: TwObj{TwListData} && typeof( parwin ) <: Ptr
         wattroff( win.parent.value.data.pad, attrs )
     else
         wattroff( win.parent.value.window, attrs )
@@ -268,7 +276,7 @@ end
 
 function wattron( win::TwWindow, attrs )
     parwin = win.parent.value.window
-    if typeof( parwin ) <: Ptr
+    if typeof( win.parent.value ) <: TwObj{TwListData} && typeof( parwin ) <: Ptr
         wattron( win.parent.value.data.pad, attrs )
     else
         wattron( win.parent.value.window, attrs )

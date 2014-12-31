@@ -28,9 +28,9 @@ type TwListData
     end
 end
 
-function newTwList( scr::TwScreen,
-        h::Real, w::Real,
-        y::Any, x::Any;
+function newTwList( scr::TwScreen;
+        height::Real = 25, width::Real = 80,
+        posy::Any = :center, posx::Any = :center,
         canvasheight = 80,
         canvaswidth = 128,
         box=true,
@@ -48,7 +48,7 @@ function newTwList( scr::TwScreen,
     obj.data.canvasheight = canvasheight
     obj.data.canvaswidth = canvaswidth
 
-    alignxy!( obj, h, w, x, y )
+    alignxy!( obj, height, width, posx, posy )
     configure_newwinpanel!( obj )
     obj.data.pad = newpad( obj.data.canvasheight, obj.data.canvaswidth )
     obj
