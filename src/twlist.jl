@@ -355,6 +355,7 @@ function deep_unfocus( w::TwObj )
 
     local par::TwObj{TwListData}
     w.hasFocus = false
+    inject(w, :focus_off)
     tmpw = w
     @oncethen while( !( typeof( tmpw.window ) <: Ptr ) )
         par = tmpw.window.parent.value

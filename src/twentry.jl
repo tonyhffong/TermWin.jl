@@ -48,13 +48,14 @@ type TwEntryData
     tickSize::Any
     titleLeft::Bool
     overwriteMode::Bool
+    incomplete::Bool # is the input not yet done?
     limitToWidth::Bool # TODO: not implemented yet
     precision::Int
     commas::Bool
     stripzeros::Bool
     conversion::ASCIIString
     function TwEntryData( dt::DataType )
-        o = new( dt, false, "", "", 1, 1, 0, true, false, false,
+        o = new( dt, false, "", "", 1, 1, 0, true, false, false, false,
            -1, true, true, "" )
         if dt <: String
             o.helpText = defaultEntryStringHelpText
@@ -169,6 +170,8 @@ function draw( o::TwObj{TwEntryData} )
     end
     if o.hasFocus
         wattron( o.window, COLOR_PAIR(15)) #white on blue for data entry field
+    elseif o.data.incomplete
+        wattron( o.window, COLOR_PAIR(12)) #white on dark red for data entry field
     else
         wattron( o.window, COLOR_PAIR(30)) #white on dark blue for data entry field
     end
@@ -250,6 +253,7 @@ function inject( o::TwObj{TwEntryData}, token::Any )
             o.value = v
             o.data.inputText = myNumFormat( o.value, o.data, fieldcount )
             checkcursor()
+            o.data.incomplete = false
             dorefresh = true
         end
     elseif token == :shift_down && o.data.valueType <: Real && o.data.tickSize != 0
@@ -263,6 +267,7 @@ function inject( o::TwObj{TwEntryData}, token::Any )
             end
             o.data.inputText = myNumFormat( o.value, o.data, fieldcount )
             checkcursor()
+            o.data.incomplete = false
             dorefresh = true
         end
     elseif token == :left
@@ -373,8 +378,10 @@ function inject( o::TwObj{TwEntryData}, token::Any )
         if v != nothing
             o.data.inputText = s
             checkcursor()
+            o.data.incomplete = false
             dorefresh = true
         else
+            o.data.incomplete = true
             beep()
         end
     elseif typeof( token ) <: String && o.data.valueType <: Number && o.data.valueType != Bool &&
@@ -416,8 +423,10 @@ function inject( o::TwObj{TwEntryData}, token::Any )
             if v != nothing
                 o.data.inputText = s
                 checkcursor()
+                o.data.incomplete = false
                 dorefresh = true
             else
+                o.data.incomplete = true
                 beep()
             end
         else
@@ -435,9 +444,23 @@ function inject( o::TwObj{TwEntryData}, token::Any )
             o.value = v
             o.data.inputText = s
             checkcursor()
+            o.data.incomplete = false
             retcode = :exit_ok
         else
+            o.data.incomplete = true
             beep()
+        end
+    elseif token == :focus_off
+        (fieldcount, remainspacecount ) = getFieldDimension( o )
+        (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
+        if v != nothing
+            o.value = v
+            o.data.inputText = s
+            o.data.incomplete = false
+            checkcursor()
+            retcode = :exit_ok
+        else
+            o.data.incomplete = true
         end
     elseif token == :F1 && o.data.showHelp
         global rootTwScreen
