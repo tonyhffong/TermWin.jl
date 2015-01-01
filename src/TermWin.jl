@@ -63,17 +63,16 @@ include( "twcalendar.jl")
 include( "twdftable.jl" )
 include( "twlist.jl" )
 
-export tshow, newTwViewer, newTwScreen, activateTwObj, unregisterTwObj
-export trun
-export TwObj, TwScreen
-export newTwEntry, newTwTree, rootTwScreen, newTwFunc
-export newTwCalendar
-export newTwPopup, newTwMultiSelect
-export newTwDfTable
-export newTwList, push_widget!
+export tshow, activateTwObj, registerTwObj, unregisterTwObj
+export trun # experimental
+export TwObj, TwScreen, rootTwScreen
+export newTwScreen
+export newTwEntry, newTwTree, newTwFunc, newTwViewer
+export newTwCalendar, newTwPopup, newTwMultiSelect
+export newTwDfTable, newTwList
+
 export uniqvalue, unionall
 export CalcPivot, discretize, topnames
-export registerTwObj
 export FormatHints
 export COLOR_PAIR
 
