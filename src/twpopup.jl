@@ -395,12 +395,12 @@ function inject( o::TwObj{TwPopupData}, token::Any )
         elseif mstate == :scroll_down
             dorefresh = moveby( int( viewContentHeight/10 ) )
         elseif mstate == :button1_pressed && o.data.trackLine
-            begy,begx = getwinbegyx( o.window )
-            relx = x - begx
-            rely = y - begy
+            (rely, relx) = screen_to_relative( o.window, y, x )
             if 0<=relx<o.width && 0<=rely<o.height
                 o.data.currentLine = o.data.currentTop + rely - o.borderSizeH + 1
                 dorefresh = true
+            else
+                retcode = :pass
             end
         end
     elseif token == :tab && tabcomplete

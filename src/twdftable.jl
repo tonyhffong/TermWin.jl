@@ -948,9 +948,7 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
         elseif mstate == :scroll_down
             dorefresh = movevertical( int( viewContentHeight/10 ) )
         elseif mstate == :button1_pressed
-            begy,begx = getwinbegyx( o.window )
-            relx = x - begx
-            rely = y - begy
+            rely, relx = screen_to_relative( o.window, y, x )
             if 1<=relx<o.width-1 && o.data.headerlines<rely<o.height-1
                 o.data.currentLine = min( o.data.datalistlen, o.data.currentTop + rely - o.borderSizeH + 1 - o.data.headerlines )
                 checkTop()
@@ -962,6 +960,9 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
                 o.data.currentCol = min( length( o.data.colInfo ), o.data.currentLeft + widthrng.start - 1 )
                 checkLeft()
                 dorefresh = true
+            end
+            if !dorefresh
+                retcode = :pass
             end
         end
     elseif in( token, Any[ symbol("end") ] )

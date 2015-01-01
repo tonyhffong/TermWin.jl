@@ -20,7 +20,7 @@ function newTwList( scr::TwObj;
     obj.box = box
     obj.title = title
     obj.borderSizeV= box ? 1 : 0
-    obj.borderSizeH= box ? 2 : 0
+    obj.borderSizeH= box ? 1 : 0
     obj.data.horizontal = horizontal
     obj.data.showLineInfo = showLineInfo
     obj.data.canvasheight = canvasheight
@@ -225,8 +225,6 @@ function inject( o::TwObj{TwListData}, token::Any )
 
     # TODO: what's the behavior of :esc
     # TODO: what's the behavior of :exit_ok
-    # TODO: arrow keys: manhattan distance
-    # TODO: mouse: manhattan distance
     if token in [ :tab, :shift_tab ]
         prevw = o.data.widgets[focus]
         # note that if the widget is a list and can take a tab/shift tab as, we
@@ -307,11 +305,9 @@ function inject( o::TwObj{TwListData}, token::Any )
         (mstate, x, y, bs ) = getmouse()
         if mstate == :button1_pressed
             (rely, relx) = screen_to_relative( o.window, y, x )
-            if o.box
-                rely -= 1
-                relx -= 1
-            end
             if 0<=relx<o.width && 0<=rely<o.height
+                rely -= o.borderSizeV
+                relx -= o.borderSizeH
                 # find the closest widget
                 distfunc = function( to::(Int,Int,Int,Int) )
                     point_from_area( rely, relx, to )
@@ -333,6 +329,8 @@ function inject( o::TwObj{TwListData}, token::Any )
                     dorefresh = true
                     retcode = :got_it
                 end
+            else
+                retcode = :pass
             end
         end
     end
