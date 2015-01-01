@@ -101,8 +101,24 @@ typealias TwScreen TwObj{TwScreenData}
 TwObj{T,S}( d::T, ::Type{Val{S}} ) = TwObj{T,S}(d)
 import Base.show
 
+function Base.show( io::IO, o::TwObj{TwListData} )
+    if o.data.horizontal
+        print( io, "HList(")
+    else
+        print( io, "VList(")
+    end
+    for w in o.data.widgets
+        strs = split( string(w), "\n" )
+        for s in strs
+            print( io, "\n  ")
+            print( io, s )
+        end
+    end
+    print( io, ")")
+end
+
 function Base.show( io::IO, o::TwObj )
-    print( io, "TwObj("*string(objtype(o))*")")
+    print( io, "TwObj("*string(objtype(o))*"="*string(o.value)*")")
 end
 
 draw( p::TwObj ) = error( string( p ) * " draw is undefined.")
