@@ -10,9 +10,22 @@ TermWin.jl is a tool to help navigate tree-like data structure such as `Expr`, `
 It uses a ncurses-based user interface.
 It also contains a backend framework for composing ncurses user interfaces.
 
-It requires color support, preferably `xterm-256color`.
+It requires color support, `xterm-256color` strongly encouraged.
 
 Most viewers have help text via the `F1` key.
+
+The advantages of using TermWin compared to other established GUI framework are that
+* Minimal binary dependency. It just depends on ncurses binary, which is widely available.
+* light-weight. We leave more resources for other intensive tasks. Useful if we need to examine large data.
+* efficiency. We try to emphasize keyboard shortcuts so users can be highly productive after
+  investing a bit of time.
+* Aesthetically flexible. Everything on screen is a utf8 code point, so it is easy to get something
+  working, and then improve by using fancier code points. With
+  unicode-capable & color terminals being quite common these days, the visual can be excellent.
+* old-school-cool
+
+For most users, the main function is `tshow`, which accepts almost anything, and should give you
+a fairly usable interactive representation.
 
 ### Expr
 ```julia
@@ -21,6 +34,14 @@ ex = :( f(x) = x*x + 2x + 1 )
 tshow(ex)
 ```
 ![expression](https://cloud.githubusercontent.com/assets/7191122/5458271/62ae80c0-8583-11e4-8ebb-a996d0d63f5e.png)
+
+### Module
+
+An excellent example of looking at modules is to see the `TermWin` module itself:
+```julia
+using TermWin
+tshow( TermWin ) # to see what functionalities it implements
+```
 
 ### Functions and Methods
 For `Function` and `MethodTable`, this would show a searchable (fuzzy) window, based on
@@ -32,9 +53,16 @@ tshow( methods( deleteat! ) ) # ditto
 tshow( methodswith( Set ) ) # searchable, too!
 ```
 
-### DataFrame
+### DataFrames
 
-TermWin supports a wide range of configurations in showing dataframes, for example:
+To show a dataframe, this is the minimum:
+```julia
+using TermWin
+df = DataFrame( a = [1,2], b = ["c", "d"] )
+tshow( df )
+```
+
+TermWin supports a wide range of configurations in showing dataframes. Here is a rather elaborate example:
 ```julia
 using TermWin
 using RDatasets
@@ -127,10 +155,11 @@ On **CalcPivot**, TermWin provides
        * `:bounded`. All numbers less than the first break and more than the last break will become `NA`
        * `:boundedbelow`. All numbers less than the first break will become `NA`
        * `:boundedabove`. All numbers more than the last break will become `NA`
-   * absolute. Default false. Do we want `t1 ≤ |x| < t2`
+   * absolute. Default false. If true, bucketing test would becomes `t1 ≤ |x| < t2`
    * rank. Default true. Output bucket strings are prefixed with consecutive numbers to make them easier to sort.
    * ranksep. Default ". ". The string between the rank number and the range description
    * label. Default is an empty string. If set, it is expected we want to show the long-form range description
+e.g. `t1 ≤ x < t2`
    * compact. Default is true. Compact range looks terser, like `[1,5)`. Integers range with interval size 1
      is further compacted to just that number.
    * reverse. Default is false. If set to true, the higher ranges come first.
@@ -150,7 +179,7 @@ On **CalcPivot**, TermWin provides
 
 ## Other usage tips
 
-`tshow` accepts at the minimum the following keyword arguments:
+`tshow` for most types accepts at a minimum the following keyword arguments:
 * title
 * height. When floating point, it must be within [0.0, 1.0] i.e. relative screen size. When integer, they mean character height.
 * width. ditto
@@ -167,8 +196,8 @@ On **CalcPivot**, TermWin provides
     * `:bottom`
     * `:random`
 
-`tshow` returns the widget which can be re-shown. This is especially useful with the dataframe viewer,
-which remembers the pivot states, the column order, etc.
+`tshow` returns the widget which can be re-shown. This is especially useful with the dataframe and other
+container viewers, which remember the pivot states, the column order, etc.
 
 ## Installation
 
