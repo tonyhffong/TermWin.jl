@@ -151,7 +151,7 @@ Blocking call. it doesn't use inject directly, because
 
 This is some UGLY code. To be streamlined...
 =#
-function activateTwScreen( scr::TwObj{TwScreenData}, tokens::Any=nothing )
+function activateTwObj( scr::TwObj{TwScreenData}, tokens::Any=nothing )
     # consume one token, this also makes sure the readtoken function is jitted
     #=
     if tokens == nothing
@@ -254,7 +254,7 @@ function activateTwScreen( scr::TwObj{TwScreenData}, tokens::Any=nothing )
     end
 end
 
-function inject( scr::TwScreen{TwScreenData}, token::Any )
+function inject( scr::TwObj{TwScreenData}, token::Any )
     result = :pass
     if scr.data.focus != 0
         result = inject( scr.data.objects[ scr.data.focus], token )

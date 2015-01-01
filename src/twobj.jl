@@ -193,9 +193,6 @@ end
 
 # a general blocking API to make a widget a dialogue
 function activateTwObj( o::TwObj, tokens::Any=nothing )
-    if objtype(o) == :Screen
-        return activateTwScreen( o, tokens )
-    end
     maxy, maxx = getwinmaxyx( o.window )
     werase( o.window )
     mvwprintw( o.window, maxy>>1, maxx>>1, "%s", "..." )
