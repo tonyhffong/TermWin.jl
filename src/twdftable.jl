@@ -1131,7 +1131,7 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
             v = node.subdataframesorted[ colsym ][ o.data.datalist[o.data.currentLine][2][end] ]
         end
         if typeof( v ) != NAtype && !in( v, [ nothing, None, Any ] )
-            tshow( v, title = string( colsym ); x=:center, y=:center )
+            tshow( v; title = string( colsym ), posx=:center, posy=:center )
             dorefresh = true
         end
     elseif token == :F7
@@ -1144,7 +1144,7 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
             println( out, "\nRoot table stats" )
             describe( out, o.data.rootnode.subdataframe[ colsym ] )
         end
-        tshow( takebuf_string( out ), title = string( colsym )  * " stats"; x=:center,y=:center)
+        tshow( takebuf_string( out ); title = string( colsym )  * " stats", posx=:center,posy=:center)
         dorefresh = true
     elseif token == :F1
         helper = newTwViewer( o.screen.value, o.data.helpText, posy=:center, posx= :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
