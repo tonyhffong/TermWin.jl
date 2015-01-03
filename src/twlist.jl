@@ -99,8 +99,45 @@ function update_list_canvas( o::TwObj{TwListData} )
 end
 
 function draw( o::TwObj{TwListData} )
+    werase( o.window ) # this is important, or attributes on the pad may be lost
+
     if typeof( o.window ) <: Ptr
         set_default_focus( o )
+        viewContentHeight = o.height - 2*o.borderSizeV
+        viewContentWidth  = o.width - 2*o.borderSizeH
+        if o.box
+            if o.data.navigationmode
+                wattron( o.window, COLOR_PAIR( 12 ) )
+            end
+
+            box( o.window, 0, 0 )
+
+            if o.data.showLineInfo
+                if o.data.canvasheight <= viewContentHeight
+                    vscale = "v:all"
+                else
+                    vscale = @sprintf( "v:%d/%d", o.data.canvaslocy, o.data.canvasheight )
+                end
+
+                if o.data.canvaswidth <= viewContentWidth
+                    hscale = "h:all"
+                else
+                    hscale = @sprintf( "h:%d/%d", o.data.canvaslocx, o.data.canvaswidth )
+                end
+
+                msg = vscale * " " * hscale
+                mvwprintw( o.window, 0, o.width - length( msg ) - 3, "%s", msg )
+            end
+
+            if o.data.bottomText != ""
+                mvwprintw( o.window, o.height-1, 2, "%s", o.data.bottomText )
+            end
+
+            if o.data.navigationmode
+                mvwprintw( o.window, 0, 2, "%s", "Navigation mode" )
+                wattroff( o.window, COLOR_PAIR( 12 ) )
+            end
+        end
     end
 
     for w in o.data.widgets
@@ -111,9 +148,6 @@ function draw( o::TwObj{TwListData} )
     end
     # handle pushing the canvas to the screen if it is the root list
     if typeof( o.window ) <: Ptr
-        if o.box
-            box( o.window, 0, 0 )
-        end
         #TODO: how much of the canvas are we showing?
         borderSizeH = o.box ? 1 : 0
         borderSizeV = o.box ? 1 : 0
@@ -333,6 +367,20 @@ function inject( o::TwObj{TwListData}, token::Any )
                 retcode = :pass
             end
         end
+    elseif token == :ctrl_F4 && isrootlist
+        o.data.navigationmode = !o.data.navigationmode
+        dorefresh = true
+        retcode = :got_it
+    elseif token in [ :pageup, :pagedown, :alt_pageup, :alt_pagedown ] && o.data.navigationmode
+        # the canvas location can move by one screen-size in either direction
+        # but it's kept in by the maximum canvas sizes
+        # also, focus would change to the new one closest to the current focused widget
+    elseif token == :F1 && isrootlist
+        helper = newTwViewer( o.screen.value, helptext( o ), posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+        activateTwObj( helper )
+        unregisterTwObj( o.screen.value, helper )
+        dorefresh = true
+        retcode = :got_it
     end
 
     if dorefresh
@@ -354,6 +402,9 @@ function deep_unfocus( w::TwObj )
     local par::TwObj{TwListData}
     w.hasFocus = false
     inject(w, :focus_off)
+    if tmpw != w
+        inject( tmpw, :focus_off )
+    end
     tmpw = w
     @oncethen while( !( typeof( tmpw.window ) <: Ptr ) )
         par = tmpw.window.parent.value
@@ -478,4 +529,28 @@ function point_from_area( y::Int, x::Int, from::(Int,Int,Int,Int) )
     end
 
     return xdist + ydist
+end
+
+function helptext( o::TwObj{TwListData} )
+    focus = o.data.focus
+    isrootlist = typeof( o.window ) <: Ptr
+    if focus == 0
+        return ""
+    end
+    s = helptext( o.data.widgets[ focus ] )
+    if isrootlist
+h = """
+ctrl-F4 : toggle navigation mode
+mouse-click: activate nearest widget
+ctrl-arrows: directional focus movements
+  (normal arrows work too if not consumed by the current widget)
+tab/shift-tab: cycle through all widgets
+"""
+        if s == "" # just the navigation text
+            s = h
+        else # merge the help text into a single window
+            s *= "\n"* ("—"^7) * " canvas navigation " * ("—"^7) * "\n"* h
+        end
+    end
+    s
 end

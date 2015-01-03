@@ -1146,12 +1146,6 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
         end
         tshow( takebuf_string( out ); title = string( colsym )  * " stats", posx=:center,posy=:center)
         dorefresh = true
-    elseif token == :F1
-        helper = newTwViewer( o.screen.value, o.data.helpText, posy=:center, posx= :center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
-        activateTwObj( helper )
-        unregisterTwObj( o.screen.value, helper )
-        dorefresh = true
-        #TODO jump to line, etc.
     else
         retcode = :pass # I don't know what to do with it
     end
@@ -1162,3 +1156,5 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
 
     return retcode
 end
+
+helptext( o::TwObj{TwDfTableData} ) = o.data.helpText

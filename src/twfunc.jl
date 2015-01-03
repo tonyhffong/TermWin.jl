@@ -55,11 +55,11 @@ function newTwFunc( scr::TwObj, ms::Array{Method,1};
     obj.data.showLineInfo = showLineInfo
     obj.data.showHelp = showHelp
     obj.data.bottomText = bottomText
+    obj.data.helpText = defaultFuncHelpText
     link_parent_child( scr, obj, height, width, posy, posx )
     obj.data.searchbox = newTwEntry( obj, String; width=30, posy = 0, posx = 5, box=false, showHelp=true )
     obj.data.searchbox.title = "Search: "
     obj.data.searchbox.hasFocus = false
-    obj.data.searchbox.data.helpText = defaultFuncHelpText
     obj
 end
 
@@ -269,3 +269,5 @@ function inject( o::TwObj{TwFuncData}, token::Any )
 
     return retcode
 end
+
+helptext( o::TwObj{TwFuncData} ) = o.data.helpText

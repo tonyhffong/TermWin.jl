@@ -257,12 +257,6 @@ function inject( o::TwObj{TwViewerData}, token::Any )
                 beep()
             end
         end
-    elseif token == :F1 && o.data.showHelp
-        helper = newTwViewer( o.screen.value, o.data.helpText, posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
-        activateTwObj( helper )
-        unregisterTwObj( o.screen.value, helper )
-        dorefresh = true
-        #TODO search, jump to line, etc.
     else
         retcode = :pass # I don't know what to do with it
     end
@@ -272,6 +266,14 @@ function inject( o::TwObj{TwViewerData}, token::Any )
     end
 
     return retcode
+end
+
+function helptext( o::TwObj{TwViewerData} )
+    if o.data.showHelp
+        o.data.helpText
+    else
+        ""
+    end
 end
 
 function setTwViewerMsgs( o::TwObj{TwViewerData}, msgs::Array )

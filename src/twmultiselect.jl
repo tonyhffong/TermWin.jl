@@ -340,13 +340,6 @@ function inject( o::TwObj{TwMultiSelectData}, token::Any )
     elseif token == :enter || token == symbol( "return" )
         o.value = o.data.selected
         retcode = :exit_ok
-    elseif token == :F1
-        global rootTwScreen
-        s = o.data.helpText
-        helper = newTwViewer( rootTwScreen, s, posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
-        activateTwObj( helper )
-        unregisterTwObj( rootTwScreen, helper )
-        dorefresh = true
     else
         retcode = :pass # I don't know what to do with it
     end
@@ -356,4 +349,8 @@ function inject( o::TwObj{TwMultiSelectData}, token::Any )
     end
 
     return retcode
+end
+
+function helptext( o::TwObj{TwMultiSelectData} )
+    o.data.helpText
 end

@@ -85,8 +85,10 @@ type TwListData
     canvaslocx::Int # 0-based, view's location on canvas
     canvaslocy::Int # 0-based
     showLineInfo::Bool
+    navigationmode::Bool
+    bottomText::UTF8String
     function TwListData()
-        ret = new( false, TwObj[], 0, 0, 0, nothing, 0, 0, false )
+        ret = new( false, TwObj[], 0, 0, 0, nothing, 0, 0, false, false, utf8("") )
         finalizer( ret, y->begin
             if y.pad != nothing
                 delwin( y.pad )

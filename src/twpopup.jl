@@ -464,16 +464,6 @@ function inject( o::TwObj{TwPopupData}, token::Any )
                 retcode = :exit_ok
             end
         end
-    elseif token == :F1
-        global rootTwScreen
-        s = o.data.helpText
-        if tabcomplete
-            s *= "tab    : tab-completion"
-        end
-        helper = newTwViewer( rootTwScreen, s, posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
-        activateTwObj( helper )
-        unregisterTwObj( rootTwScreen, helper )
-        dorefresh = true
     else
         retcode = :pass # I don't know what to do with it
     end
@@ -483,4 +473,13 @@ function inject( o::TwObj{TwPopupData}, token::Any )
     end
 
     return retcode
+end
+
+function helptext( o::TwObj{TwPopupData} )
+    s = o.data.helpText
+    tabcomplete = ( o.data.selectmode & POPUPQUICKSELECT != 0 ) && (o.data.selectmode & POPUPSUBSTR == 0 )
+    if tabcomplete
+        s *= "tab    : tab-completion"
+    end
+    s
 end

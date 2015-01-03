@@ -618,6 +618,8 @@ function inject( o::TwObj{TwTreeData}, token::Any )
             if 0<=relx<o.width && 0<=rely<o.height
                 o.data.currentLine = o.data.currentTop + rely - o.borderSizeH + 1
                 dorefresh = true
+            else
+                retcode = :pass
             end
         end
     elseif  token == :home
@@ -672,12 +674,6 @@ function inject( o::TwObj{TwTreeData}, token::Any )
         else
             beep()
         end
-    elseif token == :F1 && o.data.showHelp
-        helper = newTwViewer( o.screen.value, o.data.helpText, posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
-        activateTwObj( helper )
-        unregisterTwObj( o.screen.value, helper )
-        dorefresh = true
-        #TODO search, jump to line, etc.
     else
         retcode = :pass # I don't know what to do with it
     end
@@ -687,4 +683,12 @@ function inject( o::TwObj{TwTreeData}, token::Any )
     end
 
     return retcode
+end
+
+function helptext( o::TwObj{TwTreeData} )
+    if o.data.showHelp
+        o.data.helpText
+    else
+        ""
+    end
 end

@@ -122,6 +122,7 @@ function swapTwObjIndices( scr::TwObj{TwScreenData}, n1::Int, n2::Int )
 end
 
 function raiseTwObject( o::TwObj )
+    log( "Raise: " * string( o ) )
     scr = o.screen.value
     if scr != nothing
         swapTwObjIndices( scr, o.screenIndex, length(scr.data.objects) )
@@ -134,6 +135,7 @@ function raiseTwObject( o::TwObj )
 end
 
 function lowerTwObject( o::TwObj )
+    log( "Lower: " * string( o ) )
     scr = o.screen.value
     if scr != nothing
         swapTwObjIndices( scr, o.screenIndex, 1 )
@@ -217,18 +219,16 @@ function activateTwObj( scr::TwObj{TwScreenData}, tokens::Any=nothing )
         while true
             update_panels()
             doupdate()
-            if focusObj == nothing
-                token = readtoken( scr.window )
-                status = inject( scr, token )
-            else
+            token = readtoken( scr.window )
+            status = inject( scr, token )
+
+            for o in scr.data.objects
                 global twGlobProgressData
-                if objtype(focusObj) == :Progress && isready( twGlobProgressData.statusChannel )
-                    status = inject( focusObj, :progressupdate )
-                else
-                    token = readtoken( focusObj.window )
-                    status = inject( focusObj, token )
+                if objtype(o) == :Progress && isready( twGlobProgressData.statusChannel )
+                    inject( o, :progressupdate )
                 end
             end
+
             if handleStatus( status, token ) == :really_exit
                 return retvalue
             end
@@ -238,13 +238,8 @@ function activateTwObj( scr::TwObj{TwScreenData}, tokens::Any=nothing )
         for token in tokens
             update_panels()
             doupdate()
-            if focusObj == nothing
-                token = readtoken( scr.window )
-                status = inject( scr, token )
-            else
-                token = readtoken( focusObj.window )
-                status = inject( focusObj, token )
-            end
+            token = readtoken( scr.window )
+            status = inject( scr, token )
             if handleStatus( status, token ) == :really_exit
                 return retvalue
             end
@@ -255,18 +250,40 @@ function activateTwObj( scr::TwObj{TwScreenData}, tokens::Any=nothing )
 end
 
 function inject( scr::TwObj{TwScreenData}, token::Any )
+    global rootTwScreen
     result = :pass
+    if token == :KEY_MOUSE
+        (mstate, x,y,bs ) = getmouse()
+    end
     if scr.data.focus != 0
         result = inject( scr.data.objects[ scr.data.focus], token )
         if result != :pass
             return result
+        end
+        if token == :F1
+            h = helptext( scr.data.objects[ scr.data.focus ] )
+            if h != ""
+                helper = newTwViewer( rootTwScreen, h, posy= :center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
+                activateTwObj( helper )
+                unregisterTwObj( rootTwScreen, helper )
+                return :got_it
+            end
         end
     end
 
     for i in length( scr.data.objects ) : -1 : 1
         o = scr.data.objects[i]
         o.hasFocus = (i==scr.data.focus)
-        if o.isVisible && !o.hasFocus && o.grabUnusedKey
+        if token == :KEY_MOUSE && o.isVisible
+            rely,relx = screen_to_relative( o.window, y, x )
+            log( @sprintf( "Screen: Test mouse click on %s (r%d,c%d)", string( o ), y, x ) )
+            if 0<=relx<o.width && 0<=rely<o.height
+                log( "  raising it" )
+                raiseTwObject( o )
+                result = :got_it
+                break
+            end
+        elseif o.isVisible && !o.hasFocus && o.grabUnusedKey
             result = inject( scr.data.objects[i], token )
             if result != :pass
                 break

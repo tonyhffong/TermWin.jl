@@ -326,12 +326,6 @@ function inject( o::TwObj{TwCalendarData}, token::Any )
     elseif token == :enter || token == symbol( "return" )
         o.value = o.data.date
         retcode = :exit_ok
-    elseif token == :F1 && o.data.showHelp
-        global rootTwScreen
-        helper = newTwViewer( rootTwScreen, o.data.helpText, posy= :center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
-        activateTwObj( helper )
-        unregisterTwObj( rootTwScreen, helper )
-        dorefresh = true
     else
         retcode = :pass # I don't know what to do with it
     end
@@ -341,4 +335,12 @@ function inject( o::TwObj{TwCalendarData}, token::Any )
     end
 
     return retcode
+end
+
+function helptext( o::TwObj{TwCalendarData} )
+    if o.data.showHelp
+        o.data.helpText
+    else
+        ""
+    end
 end

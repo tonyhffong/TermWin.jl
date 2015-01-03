@@ -50,7 +50,7 @@ function link_parent_child( p::TwObj{TwListData}, c::TwObj, height::Real, width:
     log( " new geom: h=" *string(p.height)*" w=" * string(p.width) )
 end
 
-function link_parent_child( p::Any, c::TwObj, height::Real, width::Real, posy::Any, posx::Any )
+function link_parent_child( p::TwObj, c::TwObj, height::Real, width::Real, posy::Any, posx::Any )
     alignxy!( c, height,width,posx,posy, parent= p )
     c.window = TwWindow( WeakRef( p ), c.ypos, c.xpos, c.height, c.width )
     log( string(objtype(p))*"-"*string(objtype(c))*": x=" * string(c.xpos) * " y=" * string(c.ypos) )
@@ -228,9 +228,8 @@ function activateTwObj( o::TwObj, tokens::Any=nothing )
     end
 end
 
-function inject( o::TwObj, k::Any )
-    @lintpragma( "Ignore unused o")
-    if k== :esc
+function inject( _::TwObj, k::Any )
+    if k == :esc
         return :exit_nothing
     else
         return :pass
@@ -256,10 +255,12 @@ function move( o::TwObj, x, y, relative::Bool, refresh::Bool=false )
     end
 end
 
-function focus( o::TwObj )
-    @lintpragma( "Ignore unused o" )
+function focus( _::TwObj )
 end
-function unfocus( o::TwObj )
-    @lintpragma( "Ignore unused o" )
+
+function unfocus( _::TwObj )
 end
+
 refresh( o::TwObj ) = (erase(o);draw(o))
+
+helptext( _::TwObj ) = ""

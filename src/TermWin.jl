@@ -385,14 +385,7 @@ function tshow( x::Any; kwargs... )
                 widget = tshow_( msg; title="Error" )
             end
             if widget != nothing
-                if widget.acceptsFocus
-                    widget.hasFocus = true
-                    rootTwScreen.data.focus = length( rootTwScreen.data.objects )
-                    refresh( rootTwScreen )
-                else
-                    widget.hasFocus = false
-                    lowerTwObject( widget )
-                end
+                refresh( rootTwScreen )
             end
         end
         return widget

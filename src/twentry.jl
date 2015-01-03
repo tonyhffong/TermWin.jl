@@ -169,22 +169,23 @@ function draw( o::TwObj{TwEntryData} )
         end
     end
     if o.hasFocus
-        wattron( o.window, COLOR_PAIR(15)) #white on blue for data entry field
+        inputflag = COLOR_PAIR(15)
     elseif o.data.incomplete
-        wattron( o.window, COLOR_PAIR(12)) #white on dark red for data entry field
+        inputflag = COLOR_PAIR(12)
     else
-        wattron( o.window, COLOR_PAIR(30)) #white on dark blue for data entry field
+        inputflag = COLOR_PAIR(30)
     end
+    wattron( o.window, inputflag )
     mvwprintw( o.window, starty, startx, "%s", outstr )
     # print the cursor
-    firstflag = 0
-    lastflag = 0
+    firstflag = inputflag
+    lastflag = inputflag
     if o.hasFocus
         c = substr_by_width( outstr, rcursPos-1, 1 )
         if o.data.overwriteMode
-            flag = A_REVERSE
+            flag = inputflag | A_REVERSE
         else
-            flag = A_UNDERLINE
+            flag = inputflag | A_UNDERLINE
         end
         wattron( o.window, flag )
         mvwprintw( o.window, starty, startx + rcursPos-1, "%s", string(c) )
@@ -211,7 +212,7 @@ function draw( o::TwObj{TwEntryData} )
             wattroff( o.window, lastflag | A_BOLD )
         end
     end
-    wattroff( o.window, COLOR_PAIR(15))
+    wattroff( o.window, inputflag )
 end
 
 function inject( o::TwObj{TwEntryData}, token::Any )
@@ -462,12 +463,6 @@ function inject( o::TwObj{TwEntryData}, token::Any )
         else
             o.data.incomplete = true
         end
-    elseif token == :F1 && o.data.showHelp
-        global rootTwScreen
-        helper = newTwViewer( rootTwScreen, o.data.helpText, posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
-        activateTwObj( helper )
-        unregisterTwObj( rootTwScreen, helper )
-        dorefresh = true
     else
         retcode = :pass # I don't know what to do with it
     end
@@ -631,4 +626,11 @@ function evalNFormat( data::TwEntryData, s::String, fieldcount::Int )
         end
     end
     return (nothing, s)
+end
+
+function helptext( o::TwObj{TwEntryData} )
+    if !o.data.showHelp
+        return ""
+    end
+    o.data.helpText
 end
