@@ -1036,7 +1036,7 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
             end
         end
     elseif token == "p"
-        allcols = map(_->utf8(string(_)), names( o.value ) )
+        allcols = map(_->utf8(string(_)), names( o.data.rootnode.subdataframe ) )
         append!( allcols, map( _->utf8(string(_)), collect( keys( o.data.calcpivots ) ) ) )
         pvts = map( _->utf8(string(_)), o.data.pivots )
         helper = newTwMultiSelect( o.screen.value, allcols, selected = pvts, title="Pivot order", orderable=true, substrsearch=true )
@@ -1054,7 +1054,7 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
         end
         dorefresh = true
     elseif token == "c"
-        allcols = map(_->utf8(string(_)), names( o.value ) )
+        allcols = map(_->utf8(string(_)), names( o.data.rootnode.subdataframe ) )
         visiblecols = map( _->utf8(string(_.name)), o.data.colInfo )
         helper = newTwMultiSelect( o.screen.value, allcols, selected = visiblecols, title="Visible columns & their order", orderable=true, substrsearch=true )
         newcols = activateTwObj( helper )

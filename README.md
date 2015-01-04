@@ -15,10 +15,12 @@ It requires color support, `xterm-256color` strongly encouraged.
 Most viewers have help text via the `F1` key.
 
 The advantages of using TermWin compared to other established GUI framework are that
-* Minimal binary dependency. It just depends on ncurses binary, which is widely available.
+* Minimal binary dependency. It just depends on ncurses binary, which is widely available. You may be
+connecting to a machine via ssh and you can still gain productivity using TermWin.
 * light-weight. We leave more resources for other intensive tasks. Useful if we need to examine large data.
 * efficiency. We try to emphasize keyboard shortcuts so users can be highly productive after
-  investing a bit of time.
+  investing a bit of time. Also, as an open source julia module, it is quite easy to get close to
+  the data and to be cleverer about using the information only when we need them (such as dataframe aggregations).
 * Aesthetically flexible. Everything on screen is a utf8 code point, so it is easy to get something
   working, and then improve by using fancier code points. With
   unicode-capable & color terminals being quite common these days, the visual can be excellent.
@@ -44,13 +46,12 @@ tshow( TermWin ) # to see what functionalities it implements
 ```
 
 ### Functions and Methods
-For `Function` and `MethodTable`, this would show a searchable (fuzzy) window, based on
-a mixture of substring search and Levenstein edit distance:
+To show `Function` and `MethodTable`,
 ```julia
 using TermWin
-tshow( deleteat! ) # searchable methods table
+tshow( deleteat! ) # searchable, pivotable methods table
 tshow( methods( deleteat! ) ) # ditto
-tshow( methodswith( Set ) ) # searchable, too!
+tshow( methodswith( Set ) )
 ```
 
 ### DataFrames

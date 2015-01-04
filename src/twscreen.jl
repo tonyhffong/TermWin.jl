@@ -115,8 +115,12 @@ function swapTwObjIndices( scr::TwObj{TwScreenData}, n1::Int, n2::Int )
         o2.screenIndex = n1
         if scr.data.focus == n1
             scr.data.focus = n2
+            o1.hasFocus = false
+            o2.hasFocus = true
         elseif scr.data.focus == n2
             scr.data.focus = n1
+            o2.hasFocus = false
+            o1.hasFocus = true
         end
     end
 end
@@ -125,11 +129,16 @@ function raiseTwObject( o::TwObj )
     log( "Raise: " * string( o ) )
     scr = o.screen.value
     if scr != nothing
-        swapTwObjIndices( scr, o.screenIndex, length(scr.data.objects) )
-        if o.acceptsFocus
-            o.hasFocus = true
-            scr.data.focus = length( scr.data.objects )
+        si = o.screenIndex
+        deleteat!( scr.data.objects, si )
+        push!( scr.data.objects, o )
+        for i in si:length( scr.data.objects )
+            scr.data.objects[i].screenIndex = i
+            scr.data.objects[i].hasFocus = false
         end
+        o.hasFocus = true
+        scr.data.focus = length( scr.data.objects )
+        refresh( o )
         top_panel( o.panel )
     end
 end
@@ -138,7 +147,16 @@ function lowerTwObject( o::TwObj )
     log( "Lower: " * string( o ) )
     scr = o.screen.value
     if scr != nothing
-        swapTwObjIndices( scr, o.screenIndex, 1 )
+        si = o.screenIndex
+        deleteat!( scr.data.objects, si )
+        unshift!( scr.data.objects, o )
+        for i in 1:length( scr.data.objects )
+            scr.data.objects[i].screenIndex = i
+            scr.data.objects[i].hasFocus = false
+        end
+        scr.data.objects[end].hasFocus = true
+        scr.data.focus = length( scr.data.objects )
+        refresh( o )
         bottom_panel( o.panel )
     end
 end
@@ -191,6 +209,7 @@ function activateTwObj( scr::TwObj{TwScreenData}, tokens::Any=nothing )
                         focusObj = o
                         o.hasFocus = true
                         scr.data.focus = i
+                        refresh( o )
                         break
                     end
                 end
@@ -268,6 +287,10 @@ function inject( scr::TwObj{TwScreenData}, token::Any )
                 unregisterTwObj( rootTwScreen, helper )
                 return :got_it
             end
+        elseif token == :tab
+            lowerTwObject(scr.data.objects[ scr.data.focus ])
+        elseif token == :shift_tab
+            raiseTwObject(scr.data.objects[1])
         end
     end
 
@@ -341,7 +364,7 @@ function refresh( scr::TwObj{TwScreenData} )
     for (i,o) in enumerate( scr.data.objects )
         o.hasFocus = (i == focused)
         if o.panel == nothing
-            throw( string( o.fn.objtype ) * " has unset panel. Check its constructor." )
+            throw( string( o ) * " has unset panel. Check its constructor." )
         end
         if o.isVisible
             if panel_hidden( o.panel )
