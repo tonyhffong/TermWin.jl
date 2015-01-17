@@ -96,6 +96,10 @@ function update_list_canvas( o::TwObj{TwListData} )
             o.width = o.data.canvaswidth + (o.box?2:0)
         end
     end
+    if o.data.pad != nothing
+        delwin( o.data.pad )
+        o.data.pad = newpad( o.data.canvasheight, o.data.canvaswidth )
+    end
 end
 
 function draw( o::TwObj{TwListData} )
@@ -157,8 +161,8 @@ function draw( o::TwObj{TwListData} )
         canvaswidth  = o.data.canvaswidth
         copywin( o.data.pad, o.window, o.data.canvaslocy, o.data.canvaslocx,
             borderSizeV, borderSizeH,
-            min( contentheight-1, canvasheight - o.data.canvaslocy - 1),
-            min( contentwidth -1, canvaswidth  - o.data.canvaslocx - 1) )
+            min( contentheight, canvasheight - o.data.canvaslocy),
+            min( contentwidth , canvaswidth  - o.data.canvaslocx) )
     end
 end
 
@@ -191,6 +195,8 @@ function ensure_visible_on_canvas( o::TwObj )
     w = o.width
     y = o.window.yloc
     x = o.window.xloc
+    log( @sprintf( "ensure %s is visible", string( o ) ) )
+    log( @sprintf( "  init local y,x: %d %d", y, x ) )
     win = o.window
     par = win.parent.value
     while( !(typeof( win.parent.value.window) <: Ptr) )
@@ -199,22 +205,34 @@ function ensure_visible_on_canvas( o::TwObj )
         par = win.parent.value
         win = win.parent.value.window
     end
+    par = win.parent.value
+    log( @sprintf( "  actual coord y,x: %d %d", y, x ) )
     @assert objtype( par ) == :List
     contentwidth = par.width - (par.box?2:0)
     contentheight = par.height - (par.box?2:0)
+    log( @sprintf( "  canvas size     : %d %d", par.data.canvasheight, par.data.canvaswidth ) )
+    log( @sprintf( "  window geom     : %d %d", contentheight, contentwidth ) )
+    log( @sprintf( "  canvas wind.orig: %d %d", par.data.canvaslocy, par.data.canvaslocx) )
 
-    if par.data.canvaslocx < x
+    if par.data.canvaslocx > x
         par.data.canvaslocx = x
     end
-    if par.data.canvaslocx + contentwidth > x + w
-        par.data.canvaslocx = max(0,x + w - contentwidth)
-    end
-    if par.data.canvaslocy < y
+    if par.data.canvaslocy > y
         par.data.canvaslocy = y
     end
-    if par.data.canvaslocy + contentheight > y + h
-        par.data.canvaslocy = max(0,y + h - contentheight)
+    if x + w - par.data.canvaslocx > contentwidth
+        par.data.canvaslocx = max( 0, x + w - contentwidth )
     end
+    if y + h - par.data.canvaslocy > contentheight
+        par.data.canvaslocy = max( 0, y + h - contentheight )
+    end
+    if par.data.canvaslocx > par.data.canvaswidth - contentwidth
+        par.data.canvaslocx = max(0,par.data.canvaswidth - contentwidth)
+    end
+    if par.data.canvaslocy > par.data.canvasheight - contentheight
+        par.data.canvaslocy = max(0,par.data.canvasheight- contentheight)
+    end
+    log( @sprintf( "  canvas  new orig: %d %d", par.data.canvaslocy, par.data.canvaslocx) )
 end
 
 function inject( o::TwObj{TwListData}, token::Any )
@@ -230,10 +248,12 @@ function inject( o::TwObj{TwListData}, token::Any )
         return :exit_nothing
     end
 
-    result = inject( o.data.widgets[ focus], token )
-    if result != :pass
-        refresh(o)
-        return result
+    if !o.data.navigationmode
+        result = inject( o.data.widgets[ focus], token )
+        if result != :pass
+            refresh(o)
+            return result
+        end
     end
 
     function check_accept_focus(w::TwObj,stepsign::Int)
@@ -250,7 +270,6 @@ function inject( o::TwObj{TwListData}, token::Any )
                 end
                 return false
             else
-                ensure_visible_on_canvas( w )
                 return true
             end
         end
@@ -259,7 +278,7 @@ function inject( o::TwObj{TwListData}, token::Any )
 
     # TODO: what's the behavior of :esc
     # TODO: what's the behavior of :exit_ok
-    if token in [ :tab, :shift_tab ]
+    if !o.data.navigationmode && token in [ :tab, :shift_tab ]
         prevw = o.data.widgets[focus]
         # note that if the widget is a list and can take a tab/shift tab as, we
         # wouldn't be here in the first place
@@ -298,7 +317,7 @@ function inject( o::TwObj{TwListData}, token::Any )
                 end
             end
         end
-    elseif token in [ :left, :right, :up, :down,
+    elseif !o.data.navigationmode && token in [ :left, :right, :up, :down,
         :ctrl_left, :ctrl_right, :ctrl_up, :ctrl_down ] && isrootlist
         # find the location of the current focus
         (w, yloc,xloc, height, width) = lowest_widget_location_area( o )
@@ -335,6 +354,43 @@ function inject( o::TwObj{TwListData}, token::Any )
             dorefresh = true
             retcode = :got_it
         end
+    elseif o.data.navigationmode && token in [ :left, :right]
+        if token == :left
+            xstep = -1
+        elseif token == :right
+            xstep = 1
+        end
+        newlocx = o.data.canvaslocx + xstep
+        if newlocx < 0
+            o.data.canvaslocx = 0
+        elseif newlocx + o.width - o.borderSizeH*2 >= o.data.canvaswidth
+            o.data.canvaslocx = max(0, o.data.canvaswidth - o.width + o.borderSizeH*2 )
+        else
+            o.data.canvaslocx = newlocx
+        end
+        dorefresh = true
+    elseif o.data.navigationmode && token in [ :up, :down, :pageup, :pagedown ]
+        # the canvas location can move by one screen-size in either direction
+        # but it's kept in by the maximum canvas sizes
+        # also, focus would change to the new one closest to the current focused widget
+        if token == :up
+            ystep = -1
+        elseif token == :down
+            ystep = 1
+        elseif token == :pageup
+            ystep = -( o.height - o.borderSizeV*2 )
+        elseif token == :pagedown
+            ystep = ( o.height - o.borderSizeV*2 )
+        end
+        newlocy = o.data.canvaslocy + ystep
+        if newlocy < 0
+            o.data.canvaslocy = 0
+        elseif newlocy + o.height - o.borderSizeV*2 >= o.data.canvasheight
+            o.data.canvaslocy = max(0, o.data.canvasheight - o.height+ o.borderSizeV*2 )
+        else
+            o.data.canvaslocy = newlocy
+        end
+        dorefresh = true
     elseif token == :KEY_MOUSE && isrootlist
         (mstate, x, y, bs ) = getmouse()
         if mstate == :button1_pressed
@@ -362,6 +418,7 @@ function inject( o::TwObj{TwListData}, token::Any )
                     deep_focus( candidate )
                     dorefresh = true
                     retcode = :got_it
+                    o.data.navigationmode = false
                 end
             else
                 retcode = :pass
@@ -369,12 +426,48 @@ function inject( o::TwObj{TwListData}, token::Any )
         end
     elseif token == :ctrl_F4 && isrootlist
         o.data.navigationmode = !o.data.navigationmode
+        # if no longer in navigationmode
+        # switch focus to the closest visible widget (% overlap with visible window makes a big difference)
+        # partially visible widgets suffer a substantial penalty
+        if !o.data.navigationmode
+            (w, yloc,xloc, height, width) = lowest_widget_location_area( o )
+            canvaslocx = o.data.canvaslocx
+            canvaslocy = o.data.canvaslocy
+            canvaslocx2 = o.data.canvaslocx + o.width - o.borderSizeH*2
+            canvaslocy2 = o.data.canvaslocy + o.height - o.borderSizeV*2
+            distfunc = function( to::(Int,Int,Int,Int) )
+                # a = area of the candidate box
+                # aOverlap = area overlap between candidate box and the canvas window
+                # d = distance between the candidate box and the current box's center
+                # final distance = D * A / (AOverlap + epsilon)
+                a = to[3]*to[4]
+                aOverlap = max( 0, min( to[2] + to[4], canvaslocx2 )-max( to[2], canvaslocx ) ) *
+                    max( 0, min( to[1] + to[3], canvaslocy2 )-max( to[1], canvaslocy ) )
+                d = point_from_area( yloc + height >> 1, xloc + width >> 1, to )
+                if aOverlap == 0 # this this the best way to do effective distance?
+                    return d + 1000
+                else
+                    return d + a / aOverlap
+                end
+            end
+            wdists = Any[]
+            geometric_filter( o, distfunc, 0, 0, wdists, false, 2000 )
+            candidate = nothing
+            mindist = 999999
+            for (cw,dist) in wdists
+                if dist < mindist
+                    candidate = cw
+                    mindist = dist
+                end
+            end
+            if candidate != nothing
+                w = lowest_widget( o )
+                deep_unfocus( w )
+                deep_focus( candidate )
+            end
+        end
         dorefresh = true
         retcode = :got_it
-    elseif token in [ :pageup, :pagedown, :alt_pageup, :alt_pagedown ] && o.data.navigationmode
-        # the canvas location can move by one screen-size in either direction
-        # but it's kept in by the maximum canvas sizes
-        # also, focus would change to the new one closest to the current focused widget
     elseif token == :F1 && isrootlist
         helper = newTwViewer( o.screen.value, helptext( o ), posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         activateTwObj( helper )
@@ -426,6 +519,8 @@ function set_default_focus( w::TwObj{TwListData}, rev=false )
         subw.hasFocus = true
         if typeof( subw ) <: TwObj{TwListData}
             set_default_focus( subw, rev )
+        else
+            ensure_visible_on_canvas( subw )
         end
     end
 end
@@ -435,6 +530,8 @@ function deep_focus( w::TwObj, rev=false )
     w.hasFocus = true
     if objtype(w) == :List
         set_default_focus( w, rev )
+    else
+        ensure_visible_on_canvas( w )
     end
     tmpw = w
     @oncethen while( !( typeof( tmpw.window ) <: Ptr ) )
