@@ -188,7 +188,7 @@ function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict
                 if haskey( moduleallnames, x )
                     ns = moduleallnames[ x ]
                 else
-                    ns = filter( y->!beginswith( string(y), "@" ), names( x, true ) )
+                    ns = filter( y->!startswith( string(y), "@" ), names( x, true ) )
                     sort!( ns )
                     moduleallnames[ x ] = ns
                 end
@@ -196,7 +196,7 @@ function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict
                 if haskey( modulenames, x )
                     ns = modulenames[ x ]
                 else
-                    ns = filter( y->!beginswith( string(y), "@" ), names( x ) )
+                    ns = filter( y->!startswith( string(y), "@" ), names( x ) )
                     sort!( ns )
                     modulenames[ x ] = ns
                 end

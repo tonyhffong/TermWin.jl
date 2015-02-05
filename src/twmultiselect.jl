@@ -145,7 +145,7 @@ function select_search_next( o::TwObj{TwMultiSelectData}, step::Int, trivialstop
                 return i
             end
         else
-            if beginswith( lowercase( o.data.datalist[i][1] ), tmpstr )
+            if startswith( lowercase( o.data.datalist[i][1] ), tmpstr )
                 o.data.currentLine = i
                 return i
             end

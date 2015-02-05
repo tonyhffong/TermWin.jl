@@ -4,7 +4,7 @@
 # that as a prefix
 
 # Additional modification of the behavior:
-# if substr is enabled, it'd search for any substr instead of a faster beginswith
+# if substr is enabled, it'd search for any substr instead of a faster startswith
 # if hideunmatched is enabled, any choice that doesn't match will be hidden. deleting the search string will revert
 # if sortmatched is enabled (usually in conjunction with substr and but not hideunmatched), a levenstein distance
 #  score will be generated and the result sorted according to the match score
@@ -185,7 +185,7 @@ function popup_search_next( o::TwObj{TwPopupData}, step::Int, trivialstop::Bool 
                 end
             end
         else
-            if beginswith( lowercase( o.data.choices[i] ), tmpstr )
+            if startswith( lowercase( o.data.choices[i] ), tmpstr )
                 o.data.currentLine = i
                 return i
             end
@@ -230,7 +230,7 @@ function update_popup_score( o::TwObj{TwPopupData} )
                     end
                 else
                     for (i,c) in enumerate( o.data.choices )
-                        if beginswith( lowercase( c ), lowercase( searchterm ) )
+                        if startswith( lowercase( c ), lowercase( searchterm ) )
                             push!( o.data.datalist, Any[ lowercase( c ), c, i, length(c) ] )
                         end
                     end
@@ -265,7 +265,7 @@ function update_popup_score( o::TwObj{TwPopupData} )
                     # prefix-based
                     else
                         for row in o.data.datalist
-                            if beginswith( row[1], lowercase( searchterm ) )
+                            if startswith( row[1], lowercase( searchterm ) )
                                 row[4] = length( row[1] )
                             else
                                 row[4] = length( row[1] ) + needx
@@ -420,7 +420,7 @@ function inject( o::TwObj{TwPopupData}, token::Any )
             end
         end
         lcp = longest_common_prefix( currstr, nextstr )
-        if beginswith( lcp, o.data.searchbox.data.inputText )
+        if startswith( lcp, o.data.searchbox.data.inputText )
             o.data.searchbox.data.inputText = lcp
             inject( o.data.searchbox, :ctrl_e ) # move the cursor to the end
             dorefresh = true
