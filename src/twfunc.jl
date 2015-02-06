@@ -35,19 +35,19 @@ end
 # exact dimensions known: h,w,y,x, content to add later
 # exact dimensions unknown, but content known and content drives dimensions
 function newTwFunc( scr::TwObj, ms::Array{Method,1}; kwargs... )
-    names = UTF8String[]
+    ns = UTF8String[] # names
     sig  = UTF8String[]
     files = UTF8String[]
     lines = Int[]
     for m in ms
-        push!( names, utf8( string( m.func.code.name ) ) )
+        push!( ns, utf8( string( m.func.code.name ) ) )
         push!( sig, utf8( string( m.sig ) ) )
         tv, decls, file, line = Base.arg_decl_parts(m)
         push!( files, string( file ) )
         push!( lines, line )
     end
     df = DataFrame(
-          name = names,
+          name = ns,
           sig = sig,
           file = files,
           line = lines,
