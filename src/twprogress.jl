@@ -88,7 +88,7 @@ function draw( o::TwObj{TwProgressData} )
         box( o.window, 0,0 )
     end
     if !isempty( o.title ) && o.box
-        mvwprintw( o.window, 0, int( ( o.width - length(o.title) )/2 ), "%s", o.title )
+        mvwprintw( o.window, 0, (@compat round(Int, ( o.width - length(o.title) )/2 )), "%s", o.title )
     end
     starty = o.borderSizeV
     startx = o.borderSizeH
@@ -98,7 +98,7 @@ function draw( o::TwObj{TwProgressData} )
     wattron( o.window, COLOR_PAIR(15)) #white on blue for progress bar
 
     p = max( 0.0, min( 1.0, twGlobProgressData.progress ) )
-    left = max( 0, int( viewContentWidth * p ) - 1 )
+    left = max( 0, (@compat round(Int, viewContentWidth * p )) - 1 )
     bar = repeat( string( '\U2592' ), left+1 ) * repeat( " ", viewContentWidth - left - 1 )
     mvwprintw( o.window, starty, startx, "%s", bar )
     wattroff( o.window, COLOR_PAIR(15))

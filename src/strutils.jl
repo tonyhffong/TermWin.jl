@@ -158,7 +158,7 @@ function ensure_length( s::String, w::Int, pad::Bool = true )
     len = strwidth( t )
     if w ==1
         if len > 1
-            return string( char( 0x2026 ) )
+            return string( @compat Char( 0x2026 ) )
         elseif len==1
             return t
         else
@@ -177,7 +177,7 @@ function ensure_length( s::String, w::Int, pad::Bool = true )
             return t
         end
     else # ellipsis
-        return substr_by_width( t, 0, w-1 ) * string( char( 0x2026 ) )
+        return substr_by_width( t, 0, w-1 ) * string( @compat Char( 0x2026 ) )
     end
 end
 
@@ -189,7 +189,7 @@ function wordwrap( x::String, width::Int )
     for w in words
         wlen = strwidth(w)
         if wlen>width && spaceleft == width
-            push!( lines, substr_by_width( w, 0, width-1 ) * string( char( 0x2026 ) ) )
+            push!( lines, substr_by_width( w, 0, width-1 ) * string( @compat Char( 0x2026 ) ) )
         elseif wlen+1 > spaceleft
             push!( lines, currline )
             currline = w * " "

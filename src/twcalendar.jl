@@ -83,11 +83,11 @@ function draw( o::TwObj{TwCalendarData} )
         box( o.window, 0,0 )
     end
     if !isempty( o.title ) && o.box
-        mvwprintw( o.window, 0, int( ( o.width - length(o.title) )/2 ), "%s", o.title )
+        mvwprintw( o.window, 0, (@compat round( Int, ( o.width - length(o.title) )/2 )), "%s", o.title )
     end
     starty = o.borderSizeV
     startx = o.borderSizeH
-    mvwprintw( o.window, starty, int( ( o.width - 4 )/2 ), "%s", string(year(o.data.date)))
+    mvwprintw( o.window, starty, (@compat round( Int, ( o.width - 4 )/2 )), "%s", string(year(o.data.date)))
     starty += 1
     # figure out the start month
     nummonths = o.data.geometry[1] * o.data.geometry[2]

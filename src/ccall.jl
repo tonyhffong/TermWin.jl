@@ -332,14 +332,14 @@ function getmouse()
     # 17-18th is 0xfffd if mousewheel is pressed down
     ccall( dlsym( libncurses, :getmouse), Int, (Ptr{Uint8}, ), mouseByteString )
     bs = mouseByteString
-    x = uint8(bs[5])
-    y = uint8(bs[9])
+    x = @compat UInt8(bs[5])
+    y = @compat UInt8(bs[9])
     state=:unknown
-    if uint(bs[17]) & 0x02 != 0
+    if (@compat UInt(bs[17])) & 0x02 != 0
         state = :button1_pressed
-    elseif uint(bs[19]) & 0x08 != 0
+    elseif (@compat UInt(bs[19])) & 0x08 != 0
         state = :scroll_up
-    elseif uint(bs[20]) & 0x08 != 0
+    elseif (@compat UInt(bs[20])) & 0x08 != 0
         state = :scroll_down
     end
     ( state, x, y, bs )

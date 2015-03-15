@@ -129,7 +129,7 @@ function draw( o::TwObj{TwEntryData} )
         box( o.window, 0,0 )
     end
     if !isempty( o.title ) && !o.data.titleLeft && o.box
-        mvwprintw( o.window, 0, int( ( o.width - length(o.title) )/2 ), "%s", o.title )
+        mvwprintw( o.window, 0, (@compat round(Int, ( o.width - length(o.title) )/2 )), "%s", o.title )
     end
     starty = o.borderSizeV
     startx = o.borderSizeH
@@ -596,7 +596,7 @@ function evalNFormat( data::TwEntryData, s::String, fieldcount::Int )
                     if !contains( fmt, "yyyy" ) && contains( fmt, "yy" ) && year(v) < 100
                         smally = year(v)
                         thisy = year(today())
-                        cent = int( floor( thisy, -2 ) )
+                        cent = @compat trunc( Int, floor( thisy, -2 ) )
                         if abs(cent+smally - thisy)<=50
                             v = v + Year( cent )
                         else
@@ -607,7 +607,7 @@ function evalNFormat( data::TwEntryData, s::String, fieldcount::Int )
                     if !contains( fmt, "y" ) && year(v) < 100 # get to the nearest half year
                         smally = year(v)
                         thisy = year(today())
-                        if int( v + Year( thisy - smally + 1) - today() ) < 182
+                        if (@compat Int( v + Year( thisy - smally + 1) - today() )) < 182
                             v = v + Year( thisy - smally + 1)
                         else
                             v = v + Year( thisy - smally )

@@ -449,7 +449,7 @@ function draw( o::TwObj{TwDfTableData} )
     box( o.window, 0,0 )
     if !isempty( o.title )
         titlestr = o.title
-        mvwprintw( o.window, 0, int( ( o.width - length(titlestr) )/2 ), "%s", titlestr )
+        mvwprintw( o.window, 0, (@compat round(Int, ( o.width - length(titlestr) )/2 )), "%s", titlestr )
     end
     if o.data.datalistlen <= viewContentHeight
         msg = "ALL"
@@ -532,9 +532,9 @@ function draw( o::TwObj{TwDfTableData} )
             mvwaddch( o.window, o.data.headerlines + 1+r-o.data.currentTop, 2*stacklen+1, get_acs_val('q') ) # horizontal line
         end
         if o.data.datalist[r][3] == :close
-            mvwprintw( o.window, o.data.headerlines + 1+r-o.data.currentTop, 2*stacklen+2, "%s", string( char( 0x25b8 ) ) ) # right-pointing small triangle
+            mvwprintw( o.window, o.data.headerlines + 1+r-o.data.currentTop, 2*stacklen+2, "%s", string( @compat Char( 0x25b8 ) ) ) # right-pointing small triangle
         elseif o.data.datalist[r][3] == :open
-            mvwprintw( o.window, o.data.headerlines + 1+r-o.data.currentTop, 2*stacklen+2, "%s", string( char( 0x25be ) ) ) # down-pointing small triangle
+            mvwprintw( o.window, o.data.headerlines + 1+r-o.data.currentTop, 2*stacklen+2, "%s", string( @compat Char( 0x25be ) ) ) # down-pointing small triangle
         end
 
         if r == o.data.currentLine
@@ -944,9 +944,9 @@ function inject( o::TwObj{TwDfTableData}, token::Any )
     elseif token == :KEY_MOUSE
         (mstate,x,y, bs ) = getmouse()
         if mstate == :scroll_up
-            dorefresh = movevertical( -int( viewContentHeight/10 ) )
+            dorefresh = movevertical( -(@compat round(Int, viewContentHeight/10 )) )
         elseif mstate == :scroll_down
-            dorefresh = movevertical( int( viewContentHeight/10 ) )
+            dorefresh = movevertical( (@compat round(Int, viewContentHeight/10 )) )
         elseif mstate == :button1_pressed
             rely, relx = screen_to_relative( o.window, y, x )
             if 1<=relx<o.width-1 && o.data.headerlines<rely<o.height-1

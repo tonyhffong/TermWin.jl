@@ -93,7 +93,7 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
     if typeof( h ) <: Integer
         o.height = min( h, parmaxy )
     elseif typeof( h ) <: FloatingPoint && 0.0 < h <= 1.0
-        o.height = int( parmaxy * h )
+        o.height = (@compat round(Int, parmaxy * h ))
         if o.height == 0
             throw( "height is too small")
         end
@@ -104,7 +104,7 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
     if typeof( w ) <: Integer
         o.width = min( w, parmaxx )
     elseif typeof( w ) <: FloatingPoint && 0.0 < w <= 1.0
-        o.width = int( parmaxx * w )
+        o.width = (@compat round(Int, parmaxx * w ))
         if o.width == 0
             throw( "width is too small")
         end
@@ -134,9 +134,9 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
     elseif x == :right
         xpos = parbegx + gapx
     elseif x == :center
-        xpos = int( parbegx + gapx / 2 )
+        xpos = @compat round(Int, parbegx + gapx / 2 )
     elseif x == :random
-        xpos = int( parbegx + gapx * rand() )
+        xpos = @compat round(Int, parbegx + gapx * rand() )
     elseif x == :staggered
         if widgetStaggerPosx > gapx
             widgetStaggerPosx = 0
@@ -144,7 +144,7 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
         xpos = parbegx + widgetStaggerPosx
         widgetStaggerPosx += 4
     elseif typeof( x ) <: FloatingPoint && 0.0 <= x <= 1.0
-        xpos = int( parbegx + gapx * x )
+        xpos = @compat round(Int, parbegx + gapx * x )
     end
     xpos = max( min( xpos, lastx ), parbegx )
 
@@ -153,9 +153,9 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
     elseif y == :bottom
         ypos = parbegy + gapy
     elseif y == :center
-        ypos = int( parbegy + gapy / 2 )
+        ypos = @compat round(Int, parbegy + gapy / 2 )
     elseif y == :random
-        ypos = int( parbegy + gapy * rand() )
+        ypos = @compat round(Int, parbegy + gapy * rand() )
     elseif y == :staggered
         if widgetStaggerPosy > gapy
             widgetStaggerPosy = 0
@@ -163,7 +163,7 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
         ypos = parbegy + widgetStaggerPosy
         widgetStaggerPosy += 2
     elseif typeof( y ) <: FloatingPoint  && 0.0 <= y <= 1.0
-        ypos = int( parbegy + gapy * y )
+        ypos = @compat round(Int, parbegy + gapy * y )
     end
     ypos = max( min( ypos, lasty ), parbegy )
     o.xpos = xpos

@@ -16,7 +16,7 @@ function newTwScreen( win::Ptr{Void} )
     obj.hasFocus = true
     obj.acceptsFocus = true
     obj.isVisible = true
-    #wbkgdset( win, COLOR_PAIR( 15 ) | uint( '.'))
+    #wbkgdset( win, COLOR_PAIR( 15 ) | @compat UInt( '.'))
     obj
 end
 
