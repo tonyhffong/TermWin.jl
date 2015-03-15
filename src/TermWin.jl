@@ -11,10 +11,10 @@ using Formatting
 
 if VERSION < v"0.4-"
     using Dates
-    const filednames = Base.names
+    const fieldnames = Base.names
 else
     using Base.Dates
-    const filednames = Base.fieldnames
+    const fieldnames = Base.fieldnames
 end
 
 using DataArrays
