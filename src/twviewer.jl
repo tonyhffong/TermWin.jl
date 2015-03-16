@@ -97,7 +97,7 @@ function draw( o::TwObj{TwViewerData} )
         box( o.window, 0,0 )
     end
     if !isempty( o.title )
-        mvwprintw( o.window, 0, int( ( o.width - length(o.title) )/2 ), "%s", o.title )
+        mvwprintw( o.window, 0, (@compat round(Int, ( o.width - length(o.title) )/2 )), "%s", o.title )
     end
     if o.data.showLineInfo
         if o.data.msglen <= o.height - 2 * o.borderSizeV
@@ -131,7 +131,7 @@ function draw( o::TwObj{TwViewerData} )
         end
     end
     if length( o.data.bottomText ) != 0
-        mvwprintw( o.window, o.height-1, int( (o.width - length(o.data.bottomText))/2 ), "%s", o.data.bottomText )
+        mvwprintw( o.window, o.height-1, (@compat round(Int, (o.width - length(o.data.bottomText))/2 )), "%s", o.data.bottomText )
     end
 end
 
@@ -184,9 +184,9 @@ function inject( o::TwObj{TwViewerData}, token::Any )
     elseif token == :KEY_MOUSE
         (mstate,x,y, bs ) = getmouse()
         if mstate == :scroll_up
-            dorefresh = moveby( -int( viewContentHeight/10 ) )
+            dorefresh = moveby( -(@compat round(Int, viewContentHeight/10 )) )
         elseif mstate == :scroll_down
-            dorefresh = moveby( int( viewContentHeight/10 ) )
+            dorefresh = moveby( @compat round(Int, viewContentHeight/10 ) )
         elseif mstate == :button1_pressed && o.data.trackLine
             (rely,relx) = screen_to_relative( o.window, y, x )
             if 0<=relx<o.width && 0<=rely<o.height
@@ -221,7 +221,7 @@ function inject( o::TwObj{TwViewerData}, token::Any )
         dorefresh = true
     elseif token == "L" # move half-way toward the end
         if o.data.trackLine
-            target = min( int(ceil((o.data.currentLine + o.data.msglen)/2)), o.data.msglen )
+            target = min( (@compat round(Int, ceil((o.data.currentLine + o.data.msglen)/2))), o.data.msglen )
             if target != o.data.currentLine
                 o.data.currentLine = target
                 checkTop()
@@ -230,7 +230,7 @@ function inject( o::TwObj{TwViewerData}, token::Any )
                 beep()
             end
         else
-            target = min( int(ceil((o.data.currentTop + o.data.msglen - o.height+2)/2)), o.data.msglen - o.height + 2 )
+            target = min( (@compat round(Int,ceil((o.data.currentTop + o.data.msglen - o.height+2)/2))), o.data.msglen - o.height + 2 )
             if target != o.data.currentTop
                 o.data.currentTop = target
                 dorefresh = true
@@ -240,7 +240,7 @@ function inject( o::TwObj{TwViewerData}, token::Any )
         end
     elseif token == "l" # move half-way toward the beginning
         if o.data.trackLine
-            target = max( int(floor( o.data.currentLine /2)), 1)
+            target = max( (@compat round(Int,floor( o.data.currentLine /2))), 1)
             if target != o.data.currentLine
                 o.data.currentLine = target
                 checkTop()
@@ -249,7 +249,7 @@ function inject( o::TwObj{TwViewerData}, token::Any )
                 beep()
             end
         else
-            target = max( int(floor( o.data.currentTop /2)), 1)
+            target = max( (@compat round(Int, floor( o.data.currentTop /2))), 1)
             if target != o.data.currentTop
                 o.data.currentTop = target
                 dorefresh = true

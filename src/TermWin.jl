@@ -11,8 +11,10 @@ using Formatting
 
 if VERSION < v"0.4-"
     using Dates
+    const fieldnames = Base.names
 else
     using Base.Dates
+    const fieldnames = Base.fieldnames
 end
 
 using DataArrays
@@ -170,9 +172,9 @@ function initsession()
         wtimeout( rootwin, 100 )
         curs_set( 0 )
         rootTwScreen = newTwScreen( rootwin )
-        msg = string( char( 0xb83) ) * " TermWin: Please wait ..."
-        mvwprintw( rootwin, int( rootTwScreen.height / 2),
-            int( ( rootTwScreen.width - length(msg))/2), "%s", msg)
+        msg = string( @compat Char( 0xb83) ) * " TermWin: Please wait ..."
+        mvwprintw( rootwin, (@compat trunc(Int, rootTwScreen.height / 2)),
+            (@compat trunc(Int, ( rootTwScreen.width - length(msg))/2)), "%s", msg)
         wrefresh( rootwin )
     else
         # in case the terminal has been resized
@@ -213,7 +215,7 @@ function get_acs_val( c::Char )
         ACS_LANTERN = get_acs_val('i') /* lantern symbol */
         ACS_BLOCK = get_acs_val('0') /* solid square block */
     =#
-    acs_map_arr[ int( uint8( c ) ) + 1 ]
+    acs_map_arr[ (@compat Int( @compat UInt8( c ) )) + 1 ]
 end
 
 function endsession()
@@ -290,7 +292,7 @@ function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
     if isa( ysize, Int )
         lines = ysize
     elseif isa( ysize, Float64 ) && 0.0 < ysize <= 1.0
-        lines = int( maxy * ysize )
+        lines = @compat Int( maxy * ysize )
         if lines == 0
             throw( "lines are too small")
         end
@@ -301,7 +303,7 @@ function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
     if isa( xsize, Int )
         cols = xsize
     elseif isa( xsize, Float64 ) && 0.0 < xsize <= 1.0
-        cols = int( maxx * xsize )
+        cols = @compat Int( maxx * xsize )
         if cols == 0
             throw( "cols are too small")
         end
@@ -312,7 +314,7 @@ function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
     if isa( locy, Int )
         origy = max( 0, min( locy, maxy-lines-1 ) )
     elseif isa( locy, Float64 ) && 0.0 <= locy <= 1.0
-        origy = int( floor( locy * ( maxy - lines ) ) )
+        origy = @compat Int( floor( locy * ( maxy - lines ) ) )
     else
         throw( "illegal locy " * string( locy) )
     end
@@ -320,7 +322,7 @@ function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
     if isa( locx, Int )
         origx = max( 0, min( locx, maxx-cols-1 ) )
     elseif isa( locx, Float64 ) && 0.0 <= locx <= 1.0
-        origx = int( floor( locx * ( maxx - cols ) ) )
+        origx = @compat Int( floor( locx * ( maxx - cols ) ) )
     else
         throw( "illegal locx " * string( locx) )
     end
@@ -457,8 +459,8 @@ function testkeydialog()
     title = "Test Key/Mouse/Unicode"
     keyhint = "[Esc to continue]"
 
-    mvwprintw( win, 0, int( (width-length(title))/2), "%s", title )
-    mvwprintw( win, 3, int( (width-length(keyhint))/2), "%s", keyhint )
+    mvwprintw( win, 0, (@compat Int( (width-length(title))/2)), "%s", title )
+    mvwprintw( win, 3, (@compat Int( (width-length(keyhint))/2)), "%s", keyhint )
     update_panels()
     doupdate()
     local token
@@ -472,12 +474,12 @@ function testkeydialog()
                 if isprint( c ) && isascii( c )
                     k *= string(c)
                 else
-                    k *= @sprintf( "{%x}", uint(c))
+                    k *= @sprintf( "{%x}", @compat UInt(c))
                 end
             end
             k = k * repeat( " ", 21-length(k) )
             mvwprintw( win, 1, 2, "%s", k)
-            if 1 <= uint64(token[1]) <= 127
+            if 1 <= (@compat UInt64(token[1])) <= 127
                 mvwprintw( win, 2, 2, "%s", "acs_val:        " )
                 mvwaddch( win, 2,11, get_acs_val( token[1] ) )
             else

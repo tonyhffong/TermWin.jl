@@ -100,7 +100,7 @@ function draw( o::TwObj{TwMultiSelectData} )
         box( o.window, 0,0 )
     end
     if !isempty( o.title ) && o.box
-        mvwprintw( o.window, 0, int( ( o.width - length(o.title) )/2 ), "%s", o.title )
+        mvwprintw( o.window, 0, (@compat round(Int, ( o.width - length(o.title) )/2 )), "%s", o.title )
     end
     starty = o.borderSizeV
     viewContentHeight = o.height - o.borderSizeV * 2
@@ -261,9 +261,9 @@ function inject( o::TwObj{TwMultiSelectData}, token::Any )
     elseif token == :KEY_MOUSE
         (mstate,x,y, bs ) = getmouse()
         if mstate == :scroll_up
-            dorefresh = moveby( -int( viewContentHeight/10 ) )
+            dorefresh = moveby( -(@compat round(Int, viewContentHeight/10 )) )
         elseif mstate == :scroll_down
-            dorefresh = moveby( int( viewContentHeight/10 ) )
+            dorefresh = moveby( (@compat round(Int, viewContentHeight/10 )) )
         elseif mstate == :button1_pressed && o.data.trackLine
             (rely,relx) = screen_to_relative( o.window, y, x )
             if 0<=relx<o.width && 0<=rely<o.height
