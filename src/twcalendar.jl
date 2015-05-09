@@ -19,7 +19,7 @@ type TwCalendarData
     helpText::String
     date::Date
     cursorweekofmonth::Int # cached "nth week" in the current month containing date, 1-based
-    geometry::Tuple{Int, Int} # rows x cols in months
+    geometry::@compat Tuple{Int, Int} # rows x cols in months
     ncalStyle::Bool
     TwCalendarData( dt::Date ) = new( true, defaultCalendarHelpText, dt, 1, (1,1), false )
 end
