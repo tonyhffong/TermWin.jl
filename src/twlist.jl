@@ -566,7 +566,7 @@ function geometric_filter( o::TwObj{TwListData}, distfunc::Function,
     end
 end
 
-function updown_arrow_distance( to::(Int,Int,Int,Int), from::(Int,Int,Int,Int), sgn::Int )
+function updown_arrow_distance( to::Tuple{Int,Int,Int,Int}, from::Tuple{Int,Int,Int,Int}, sgn::Int )
     tocentx = to[2] + to[4] >> 1
     tocenty = to[1] + to[3] >> 1
 
@@ -587,7 +587,7 @@ function updown_arrow_distance( to::(Int,Int,Int,Int), from::(Int,Int,Int,Int), 
     return ret
 end
 
-function leftright_arrow_distance( to::(Int,Int,Int,Int), from::(Int,Int,Int,Int),sgn::Int )
+function leftright_arrow_distance( to::Tuple{Int,Int,Int,Int}, from::Tuple{Int,Int,Int,Int},sgn::Int )
     tocentx = to[2] + to[4] >> 1
     tocenty = to[1] + to[3] >> 1
 
@@ -610,7 +610,7 @@ end
 
 # used for mouse click
 # inside the area it returns zero, otherwise it's manhattan distance to the boundary
-function point_from_area( y::Int, x::Int, from::(Int,Int,Int,Int) )
+function point_from_area( y::Int, x::Int, from::Tuple{Int,Int,Int,Int} )
     xdist = 0
     if x < from[2]
         xdist += from[2]-x

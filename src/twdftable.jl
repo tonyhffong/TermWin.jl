@@ -77,7 +77,7 @@ end
 type TwTableView
     name::UTF8String
     pivots::Array{Symbol,1}
-    sortorder::Array{ (Symbol, Symbol), 1 } # [ (:col1, :asc ), (:col2, :desc), ... ]
+    sortorder::Array{ Tuple{Symbol,Symbol}, 1 } # [ (:col1, :asc ), (:col2, :desc), ... ]
     columns::Array{ Symbol, 1 }
     initdepth::Int
 end
@@ -141,11 +141,11 @@ function TwTableView( df::AbstractDataFrame, name::String;
     move_columns( removed, hidecols, finalcolorder )
 
     if eltype( sortorder ) == Symbol
-        actualsortorder = (Symbol,Symbol)[ (s,:asc) for s in sortorder ]
-    elseif eltype( sortorder ) == (Symbol,Symbol)
+        actualsortorder = Tuple{Symbol,Symbol}[ (s,:asc) for s in sortorder ]
+    elseif eltype( sortorder ) == Tuple{Symbol,Symbol}
         actualsortorder = sortorder
     else
-        error( "sortorder eltype expects Symbol, or (Symbol,Symbol): " * string( eltype( sortorder ) ) )
+        error( "sortorder eltype expects Symbol, or Tuple{Symbol,Symbol}: " * string( eltype( sortorder ) ) )
     end
 
     TwTableView( utf8(name), pivots, actualsortorder, finalcolorder, initdepth )
@@ -156,7 +156,7 @@ end
 type TwDfTableData
     rootnode::TwDfTableNode
     pivots::Array{ Symbol, 1 }
-    sortorder::Array{ (Symbol, Symbol), 1 } # [ (:col1, :asc ), (:col2, :desc), ... ]
+    sortorder::Array{ Tuple{Symbol,Symbol}, 1 } # [ (:col1, :asc ), (:col2, :desc), ... ]
     datalist::Array{Any, 1} # (tuple{symbol}, 0) -> node, (tuple{symbol},#) -> row within that sub-df
     datalistlen::Int
     datatreewidth::Int
@@ -177,7 +177,7 @@ type TwDfTableData
     searchText::UTF8String
     # calculated dimension
     TwDfTableData() = new( TwDfTableNode(),
-        Symbol[], (Symbol,Symbol)[], Any[], 0, 10, 1, 1, 1, 1, 1, 1, TwTableColInfo[],
+        Symbol[], Tuple{Symbol,Symbol}[], Any[], 0, 10, 1, 1, 1, 1, 1, 1, TwTableColInfo[],
         Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, "", 1, TwTableView[], Dict{Symbol,CalcPivot}(),utf8("") )
 end
 
@@ -188,7 +188,7 @@ function newTwDfTable( scr::TwObj, df::DataFrame;
         initdepth = 1,
         colorder = Any[ "*" ], # mix of symbol, regex, and "*" (the rest), "*" can be in the middle
         hidecols = Any[], # anything here trumps colorder, Symbol, or Regex
-        sortorder = (Symbol,Symbol)[],
+        sortorder = Tuple{Symbol,Symbol}[],
         title = "DataFrame",
         formatHints = Dict{Any,FormatHints}(), # Symbol/Type -> FormatHints
         aggrHints = Dict{Any,Any}(), # Symbol/Type -> string/symbol/expr/function
