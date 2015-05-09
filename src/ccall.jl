@@ -1,7 +1,7 @@
 #= PLEASE NOTE THAT ALL NCURSES FUNCS ARE ZERO-BASED
 =#
-libncurses = dlopen("libncurses")
-libpanel = dlopen("libpanel")
+libncurses = Libdl.dlopen("libncurses")
+libpanel = Libdl.dlopen("libpanel")
 
 function initscr()
     ccall( dlsym( libncurses, :initscr), Ptr{Void}, () )
