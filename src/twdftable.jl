@@ -631,7 +631,7 @@ function draw( o::TwObj{TwDfTableData} )
     end
 end
 
-function inject( o::TwObj{TwDfTableData}, token::Any )
+function inject( o::TwObj{TwDfTableData}, token )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
     viewContentHeight = o.height - 2 * o.borderSizeV - o.data.headerlines

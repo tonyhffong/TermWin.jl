@@ -215,7 +215,7 @@ function draw( o::TwObj{TwEntryData} )
     wattroff( o.window, inputflag )
 end
 
-function inject( o::TwObj{TwEntryData}, token::Any )
+function inject( o::TwObj{TwEntryData}, token )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
 

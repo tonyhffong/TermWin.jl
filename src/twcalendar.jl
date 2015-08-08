@@ -196,7 +196,7 @@ function monthNthWeekRange( y::Int, m::Int, n::Int )
     return (Date( y, m, max(ws, 1) ),Date( y, m, min( we, mdays )))
 end
 
-function inject( o::TwObj{TwCalendarData}, token::Any )
+function inject( o::TwObj{TwCalendarData}, token )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
 

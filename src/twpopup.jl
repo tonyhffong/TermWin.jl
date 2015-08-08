@@ -285,7 +285,7 @@ function update_popup_score( o::TwObj{TwPopupData} )
     end
 end
 
-function inject( o::TwObj{TwPopupData}, token::Any )
+function inject( o::TwObj{TwPopupData}, token )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
 

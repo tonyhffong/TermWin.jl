@@ -268,7 +268,7 @@ function activateTwObj( scr::TwObj{TwScreenData}, tokens::Any=nothing )
     end
 end
 
-function inject( scr::TwObj{TwScreenData}, token::Any )
+function inject( scr::TwObj{TwScreenData}, token )
     global rootTwScreen
     result = :pass
     if token == :KEY_MOUSE

@@ -351,7 +351,7 @@ function draw( o::TwObj{TwTreeData} )
     end
 end
 
-function inject( o::TwObj{TwTreeData}, token::Any )
+function inject( o::TwObj{TwTreeData}, token )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
     viewContentHeight = o.height - 2 * o.borderSizeV

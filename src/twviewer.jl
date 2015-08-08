@@ -135,7 +135,7 @@ function draw( o::TwObj{TwViewerData} )
     end
 end
 
-function inject( o::TwObj{TwViewerData}, token::Any )
+function inject( o::TwObj{TwViewerData}, token )
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
     viewContentHeight, viewContentWidth, viewStartRow = viewContentDimensions( o )

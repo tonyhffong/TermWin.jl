@@ -225,6 +225,20 @@ currency symbols, e.g. €, £, are fine..
 
 It supports date type
 
+### Examples:
+
+Getting a value or a string from a user:
+```julia
+```
+
+One out of many selection:
+```julia
+```
+
+Getting a multi-value selection:
+```julia
+```
+
 ### General comments on code organization
 
 The key type is `TwObj`. It is the type that renders something.

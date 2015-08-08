@@ -158,7 +158,7 @@ function select_search_next( o::TwObj{TwMultiSelectData}, step::Int, trivialstop
     end
 end
 
-function inject( o::TwObj{TwMultiSelectData}, token::Any )
+function inject( o::TwObj{TwMultiSelectData}, token )
     @lintpragma( "Ignore incompatible type comparison")
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it

@@ -346,7 +346,7 @@ function titleof( x::Any )
 end
 
 # it'd return the widget, which can be displayed again.
-function tshow( x::Any; kwargs... )
+function tshow( x; kwargs... )
     global callcount, rootwin, rootTwScreen
     title = extractkwarg!( kwargs, :title, titleof(x) )
     widget = nothing
@@ -453,14 +453,14 @@ end
 function testkeydialog()
     width = 42
     initsession()
-    win = winnewcenter( 4, width )
+    win = winnewcenter( 6, width )
     panel = new_panel( win )
     box( win, 0, 0 )
     title = "Test Key/Mouse/Unicode"
     keyhint = "[Esc to continue]"
 
-    mvwprintw( win, 0, (@compat Int( (width-length(title))/2)), "%s", title )
-    mvwprintw( win, 3, (@compat Int( (width-length(keyhint))/2)), "%s", keyhint )
+    mvwprintw( win, 0, (@compat Int( (width-length(title))>>1)), "%s", title )
+    mvwprintw( win, 5, (@compat Int( (width-length(keyhint))>>1)), "%s", keyhint )
     update_panels()
     doupdate()
     local token
@@ -482,6 +482,9 @@ function testkeydialog()
             if 1 <= (@compat UInt64(token[1])) <= 127
                 mvwprintw( win, 2, 2, "%s", "acs_val:        " )
                 mvwaddch( win, 2,11, get_acs_val( token[1] ) )
+
+                #mvwprintw( win, 3,2, "%s", "acs_val_wch:     " )
+                #mvwadd_wch( win, 3,11, get_acs_val( token[1] ) )
             else
                 mvwprintw( win, 2, 2, "%s        ", "print  :" * string(token[1]) )
             end
