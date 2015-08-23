@@ -177,7 +177,7 @@ type TwDfTableData
     searchText::UTF8String
     # calculated dimension
     TwDfTableData() = new( TwDfTableNode(),
-        Symbol[], (@compat Tuple{Symbol,Symbol})[], Any[], 0, 10, 1, 1, 1, 1, 1, 1, TwTableColInfo[],
+        Symbol[], Tuple{Symbol,Symbol}[], Any[], 0, 10, 1, 1, 1, 1, 1, 1, TwTableColInfo[],
         Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, "", 1, TwTableView[], Dict{Symbol,CalcPivot}(),utf8("") )
 end
 
@@ -188,7 +188,7 @@ function newTwDfTable( scr::TwObj, df::DataFrame;
         initdepth = 1,
         colorder = Any[ "*" ], # mix of symbol, regex, and "*" (the rest), "*" can be in the middle
         hidecols = Any[], # anything here trumps colorder, Symbol, or Regex
-        sortorder = (@compat Tuple{Symbol,Symbol})[],
+        sortorder = Tuple{Symbol,Symbol}[],
         title = "DataFrame",
         formatHints = Dict{Any,FormatHints}(), # Symbol/Type -> FormatHints
         aggrHints = Dict{Any,Any}(), # Symbol/Type -> string/symbol/expr/function
@@ -840,7 +840,7 @@ function inject( o::TwObj{TwDfTableData}, token )
     # reminder: (name, stack, exphints, skiplines, node )
     if token == :esc
         retcode = :exit_nothing
-    elseif ( token == " " || token == symbol( "return" ) || token == :enter ) && o.data.datalist[ o.data.currentLine ][3] != :single
+    elseif ( token == " " || token == Symbol( "return" ) || token == :enter ) && o.data.datalist[ o.data.currentLine ][3] != :single
         expandhint = o.data.datalist[ o.data.currentLine ][3]
         node = o.data.datalist[ o.data.currentLine][5]
         if node.isOpen
@@ -965,7 +965,7 @@ function inject( o::TwObj{TwDfTableData}, token )
                 retcode = :pass
             end
         end
-    elseif in( token, Any[ symbol("end") ] )
+    elseif in( token, Any[ Symbol("end") ] )
         if o.data.currentTop + viewContentHeight -1 < o.data.datalistlen
             o.data.currentTop = o.data.datalistlen - viewContentHeight + 1
             o.data.currentLine = o.data.datalistlen
@@ -1043,7 +1043,7 @@ function inject( o::TwObj{TwDfTableData}, token )
         newpivots = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
         if newpivots != nothing && newpivots != pvts
-            o.data.pivots = Symbol[ symbol( _ ) for _ in newpivots ]
+            o.data.pivots = Symbol[ Symbol( _ ) for _ in newpivots ]
             o.data.rootnode.children = Any[]
             o.data.rootnode.isOpen = false
             expandnode( o.data.rootnode, o.data.initdepth )
@@ -1062,7 +1062,7 @@ function inject( o::TwObj{TwDfTableData}, token )
         if newcols != nothing && newcols != visiblecols
             o.data.colInfo = TwTableColInfo[]
             for c in newcols
-                push!( o.data.colInfo, o.data.allcolInfo[ symbol( c ) ] )
+                push!( o.data.colInfo, o.data.allcolInfo[ Symbol( c ) ] )
             end
         end
         dorefresh = true
@@ -1079,7 +1079,7 @@ function inject( o::TwObj{TwDfTableData}, token )
             o.data.sortorder = v.sortorder
             o.data.initdepth = v.initdepth
             for c in v.columns
-                push!( o.data.colInfo, o.data.allcolInfo[ symbol( c ) ] )
+                push!( o.data.colInfo, o.data.allcolInfo[ Symbol( c ) ] )
             end
             o.data.rootnode.children = Any[]
             o.data.rootnode.isOpen = false

@@ -88,11 +88,11 @@ function liftAggrSpecToFunc( c::Symbol, dfa::Union( Function, Symbol, Expr ) )
 end
 
 # used by aggregation lifting and calcpivot lifting
-function convertExpression!( ex::Expr, column_ctx::Symbol = symbol("") )
+function convertExpression!( ex::Expr, column_ctx::Symbol = Symbol("") )
     for i in 1:length( ex.args )
         a = ex.args[i]
         if typeof( a ) == QuoteNode
-            if a.value == :_ && column_ctx != symbol("")
+            if a.value == :_ && column_ctx != Symbol("")
                 ex.args[i] = Expr( :quote, column_ctx )
             else
                 ex.args[i] = Expr( :quote, a.value )

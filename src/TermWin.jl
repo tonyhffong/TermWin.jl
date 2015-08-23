@@ -1,3 +1,5 @@
+VERSION >= v"0.4.0-dev+6521" && __precompile__(true)
+
 if VERSION < v"0.4-"
     if Pkg.installed( "Dates" ) == nothing
         Pkg.add( "Dates" )
@@ -11,10 +13,10 @@ using Formatting
 
 if VERSION < v"0.4-"
     using Dates
-    const fieldnames = Base.names
+    const fnames = Base.names
 else
     using Base.Dates
-    const fieldnames = Base.fieldnames
+    const fnames = Base.fieldnames
 end
 
 using DataArrays
@@ -64,6 +66,7 @@ include( "twmultiselect.jl")
 include( "twcalendar.jl")
 include( "twdftable.jl" )
 include( "twlist.jl" )
+include( "precompile.jl" )
 
 export tshow, activateTwObj, registerTwObj, unregisterTwObj
 export trun # experimental

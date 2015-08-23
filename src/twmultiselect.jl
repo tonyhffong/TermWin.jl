@@ -282,7 +282,7 @@ function inject( o::TwObj{TwMultiSelectData}, token )
         else
             beep()
         end
-    elseif in( token, Any[ symbol("end") ] )
+    elseif in( token, Any[ Symbol("end") ] )
         n = length( o.data.datalist )
         if o.data.currentLine != n
             o.data.currentLine = n
@@ -337,7 +337,7 @@ function inject( o::TwObj{TwMultiSelectData}, token )
             end
         end
         dorefresh = true
-    elseif token == :enter || token == symbol( "return" )
+    elseif token == :enter || token == Symbol( "return" )
         o.value = o.data.selected
         retcode = :exit_ok
     else

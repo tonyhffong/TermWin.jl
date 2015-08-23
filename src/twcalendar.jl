@@ -31,7 +31,7 @@ end
 function bestfitgeometry( ncalStyle, scr::TwScreen, box::Bool )
     ( parmaxy, parmaxx ) = getwinmaxyx( scr.window )
     leftcols = 0
-    monthdim = monthDimension( ncalStyle )
+    monthdim::Tuple{Int,Int} = monthDimension( ncalStyle )
     if ncalStyle
         allowed_geometry = [ (3,4), (2, 3), (1,3), (1,1 ) ]
         leftcols = 2
@@ -42,11 +42,11 @@ function bestfitgeometry( ncalStyle, scr::TwScreen, box::Bool )
     found = false
     finalg = (0,0,0,0)
     for g in allowed_geometry
-        h = 1+g[1] * monthdim[1] + (box?2:0) # box borders + contents + year title
-        w = leftcols + g[2] * monthdim[2] + (box?2:0)
+        h::Int = 1+g[1] * monthdim[1] + (box?2:0) # box borders + contents + year title
+        w::Int = leftcols + g[2] * monthdim[2] + (box?2:0)
         if w <= parmaxx && h <= parmaxy
             found = true
-            finalg = (h,w, g[1], g[2] )
+            finalg = (h,w, g[1]::Int, g[2]::Int )
             break
         end
     end
@@ -323,7 +323,7 @@ function inject( o::TwObj{TwCalendarData}, token )
     elseif token == "Q"
         o.data.date = o.data.date - Month(3)
         dorefresh = true
-    elseif token == :enter || token == symbol( "return" )
+    elseif token == :enter || token == Symbol( "return" )
         o.value = o.data.date
         retcode = :exit_ok
     else

@@ -1,9 +1,14 @@
 #= PLEASE NOTE THAT ALL NCURSES FUNCS ARE ZERO-BASED
 =#
-libncurses = Libdl.dlopen("libncurses")
-libpanel = Libdl.dlopen("libpanel")
+libncurses = false
+libpanel = false
 
 function initscr()
+    global libncurses, libpanel
+    if  libncurses == false
+        libncurses = Libdl.dlopen("libncurses")
+        libpanel = Libdl.dlopen("libpanel")
+    end
     ccall( Libdl.dlsym( libncurses, :initscr), Ptr{Void}, () )
 end
 

@@ -54,7 +54,7 @@ type TwPopupData
     helpText::String
     TwPopupData( arr::Array{UTF8String,1} ) = new( arr, Any[], maximum( map( z->length(z), arr ) ), nothing, 1, 1, 1, 0, "" )
 end
-TwPopupData{ T<:String} ( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8( x ), arr ) )
+TwPopupData{ T<:String}( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8( x ), arr ) )
 
 # the ways to use it:
 # standalone panel
@@ -436,7 +436,7 @@ function inject( o::TwObj{TwPopupData}, token )
         else
             beep()
         end
-    elseif in( token, Any[ symbol("end") ] )
+    elseif in( token, Any[ Symbol("end") ] )
         if usedatalist
             n = length( o.data.datalist )
         else
@@ -449,7 +449,7 @@ function inject( o::TwObj{TwPopupData}, token )
         else
             beep()
         end
-    elseif token == :enter || token == symbol( "return" )
+    elseif token == :enter || token == Symbol( "return" )
         if usedatalist
             if o.data.currentLine <= length( o.data.datalist )
                 o.value = o.data.datalist[ o.data.currentLine ][ 2]

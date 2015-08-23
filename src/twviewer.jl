@@ -205,14 +205,14 @@ function inject( o::TwObj{TwViewerData}, token )
         else
             beep()
         end
-    elseif in( token, Any[ symbol("end") ] )
+    elseif in( token, Any[ Symbol("end") ] )
         if o.data.currentTop + o.height-2 < o.data.msglen
             o.data.currentTop = o.data.msglen - o.height+ 2
             dorefresh = true
         else
             beep()
         end
-    elseif (token == :enter || token== symbol( "return" )) && o.data.trackLine
+    elseif (token == :enter || token== Symbol( "return" )) && o.data.trackLine
         if haskey( o.listeners, :select )
             for f in o.listeners[ :select ]
                 retcode = f( :select, o )

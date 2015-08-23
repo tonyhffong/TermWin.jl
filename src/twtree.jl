@@ -20,7 +20,7 @@ typefields  = Dict{ Any, Array{ Symbol, 1 } }()
 
 typefields[ Method ] = [ :sig, :isstaged ]
 typefields[ LambdaStaticData ] = [ :name, :module, :file, :line ]
-typefields[ DataType ] = [ :name, :super, symbol( "abstract" ), :mutable, :parameters ]
+typefields[ DataType ] = [ :name, :super, Symbol( "abstract" ), :mutable, :parameters ]
 typefields[ TypeName ] = [ :name, :module, :primary ]
 
 treeTypeMaxWidth = 30
@@ -412,7 +412,7 @@ function inject( o::TwObj{TwTreeData}, token )
 
     if token == :esc
         retcode = :exit_nothing
-    elseif token == " " || token == symbol( "return" ) || token == :enter
+    elseif token == " " || token == Symbol( "return" ) || token == :enter
         expandhint = o.data.datalist[ o.data.currentLine ][5]
         if expandhint != :single
             stck = o.data.datalist[ o.data.currentLine ][4]
@@ -648,7 +648,7 @@ function inject( o::TwObj{TwTreeData}, token )
             searchNext( ( (token == "n" || token == :ctrl_n ) ? 1 : -1), false )
         end
         dorefresh = true
-    elseif in( token, Any[ symbol("end") ] )
+    elseif in( token, Any[ Symbol("end") ] )
         if o.data.currentTop + viewContentHeight -1 < o.data.datalistlen
             o.data.currentTop = o.data.datalistlen - viewContentHeight + 1
             o.data.currentLine = o.data.datalistlen

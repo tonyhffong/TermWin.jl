@@ -438,7 +438,7 @@ function inject( o::TwObj{TwEntryData}, token )
         insertchar( token )
         checkcursor()
         dorefresh = true
-    elseif token == :enter || token == symbol( "return" )
+    elseif token == :enter || token == Symbol( "return" )
         (fieldcount, remainspacecount ) = getFieldDimension( o )
         (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
         if v != nothing
@@ -507,7 +507,7 @@ function evalNFormat( data::TwEntryData, s::String, fieldcount::Int )
             if length(stmp)==0
                 v = 0.0
             else
-                v = parsefloat( dt, stmp )
+                v = parse( dt, stmp )
             end
         end
         if v != nothing
@@ -523,7 +523,7 @@ function evalNFormat( data::TwEntryData, s::String, fieldcount::Int )
                 if length(stmp) == 0
                     v= 0
                 else
-                    v = parseint( dt.types[1], stmp )
+                    v = parse( dt.types[1], stmp )
                 end
             end
             if v != nothing
@@ -537,13 +537,13 @@ function evalNFormat( data::TwEntryData, s::String, fieldcount::Int )
                 if dpos == 1
                     iv = 0
                 else
-                    iv = parseint( dt.types[1], stmp[1:dpos-1] )
+                    iv = parse( dt.types[1], stmp[1:dpos-1] )
                 end
                 if dpos == length( stmp )
                     fv = 0 // 1
                 else
                     tail = stmp[dpos+1:end]
-                    fv = parseint( dt.types[2], tail ) // ( 10 ^ length(tail) )
+                    fv = parse( dt.types[2], tail ) // ( 10 ^ length(tail) )
                 end
             end
             if iv != nothing && fv != nothing
@@ -558,7 +558,7 @@ function evalNFormat( data::TwEntryData, s::String, fieldcount::Int )
             if length(stmp)==0
                 v = 0
             else
-                v = parseint( dt, stmp )
+                v = parse( dt, stmp )
             end
         end
         if v != nothing

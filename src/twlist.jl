@@ -322,19 +322,19 @@ function inject( o::TwObj{TwListData}, token::Any )
         # find the location of the current focus
         (w, yloc,xloc, height, width) = lowest_widget_location_area( o )
         if token in [ :up, :ctrl_up ]
-            distfunc = function( to::(Int,Int,Int,Int) )
+            distfunc = function( to::Tuple{Int,Int,Int,Int} )
                 updown_arrow_distance( to, (yloc,xloc,height,width), 1 )
             end
         elseif token in [ :down, :ctrl_down ]
-            distfunc = function( to::(Int,Int,Int,Int) )
+            distfunc = function( to::Tuple{Int,Int,Int,Int} )
                 updown_arrow_distance( to, (yloc,xloc,height,width), -1 )
             end
         elseif token in [ :left, :ctrl_left ]
-            distfunc = function( to::(Int,Int,Int,Int) )
+            distfunc = function( to::Tuple{Int,Int,Int,Int} )
                 leftright_arrow_distance( to, (yloc,xloc,height,width), 1 )
             end
         else
-            distfunc = function( to::(Int,Int,Int,Int) )
+            distfunc = function( to::Tuple{Int,Int,Int,Int} )
                 leftright_arrow_distance( to, (yloc,xloc,height,width), -1 )
             end
         end
@@ -399,7 +399,7 @@ function inject( o::TwObj{TwListData}, token::Any )
                 rely -= o.borderSizeV
                 relx -= o.borderSizeH
                 # find the closest widget
-                distfunc = function( to::(Int,Int,Int,Int) )
+                distfunc = function( to::Tuple{Int,Int,Int,Int} )
                     point_from_area( rely, relx, to )
                 end
                 wdists = Any[]
@@ -435,7 +435,7 @@ function inject( o::TwObj{TwListData}, token::Any )
             canvaslocy = o.data.canvaslocy
             canvaslocx2 = o.data.canvaslocx + o.width - o.borderSizeH*2
             canvaslocy2 = o.data.canvaslocy + o.height - o.borderSizeV*2
-            distfunc = function( to::(Int,Int,Int,Int) )
+            distfunc = function( to::Tuple{Int,Int,Int,Int} )
                 # a = area of the candidate box
                 # aOverlap = area overlap between candidate box and the canvas window
                 # d = distance between the candidate box and the current box's center
