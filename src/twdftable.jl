@@ -170,7 +170,6 @@ type TwDfTableData
     allcolInfo::Dict{ Symbol, TwTableColInfo } # including invisible ones
     bottomText::String
     helpText::String
-    searchText::String
     initdepth::Int
     views::Array{ TwTableView, 1 }
     calcpivots::Dict{ Symbol, CalcPivot }
@@ -178,7 +177,7 @@ type TwDfTableData
     # calculated dimension
     TwDfTableData() = new( TwDfTableNode(),
         Symbol[], Tuple{Symbol,Symbol}[], Any[], 0, 10, 1, 1, 1, 1, 1, 1, TwTableColInfo[],
-        Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, "", 1, TwTableView[], Dict{Symbol,CalcPivot}(),utf8("") )
+        Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, 1, TwTableView[], Dict{Symbol,CalcPivot}(),utf8("") )
 end
 
 #TODO: allow Regex in formatHints and aggrHints
