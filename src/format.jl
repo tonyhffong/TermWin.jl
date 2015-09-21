@@ -56,7 +56,7 @@ function applyformat{T<:Number}( v::T, fmt::FormatHints )
     end
 end
 
-function applyformat( v::Union(Date,DateTime), fmt::FormatHints )
+function applyformat( v::Union{Date,DateTime}, fmt::FormatHints )
     Dates.format( v, fmt.conversion )
 end
 

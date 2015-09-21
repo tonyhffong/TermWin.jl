@@ -30,7 +30,7 @@ function liftAggrSpecToFunc( c::Symbol, dfa::String )
     DataFrameAggrCache[ (c, dfa) ] = ret
 end
 
-function liftAggrSpecToFunc( c::Symbol, dfa::Union( Function, Symbol, Expr ) )
+function liftAggrSpecToFunc( c::Symbol, dfa::Union{ Function, Symbol, Expr } )
     if typeof( dfa ) == Function
         return dfa
     end
@@ -137,7 +137,7 @@ function uniqvalue( x::AbstractDataArray; skipna::Bool=true )
     return NA
 end
 
-function uniqvalue{T<:String}( x::Union( Array{T}, DataArray{T}, PooledDataArray{T} ); skipna::Bool=true, skipempty::Bool=true )
+function uniqvalue{T<:String}( x::Union{ Array{T}, DataArray{T}, PooledDataArray{T} }; skipna::Bool=true, skipempty::Bool=true )
     lvls = DataArrays.levels(x)
     if skipna
         l = dropna( lvls )
