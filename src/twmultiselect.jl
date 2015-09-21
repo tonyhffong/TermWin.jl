@@ -33,16 +33,16 @@ type TwMultiSelectData
     currentLeft::Int
     currentTop::Int
     selectmode::Int
-    helpText::String
+    helpText::UTF8String
     TwMultiSelectData( arr::Array{UTF8String,1}, selected::Array{UTF8String,1} ) = new( arr, selected, Any[], 0, nothing, 1, 1, 1, 0, "" )
 end
-TwMultiSelectData{T<:String,T2<:String}( arr::Array{T,1}, selected::Array{T2,1} ) = TwMultiSelectData( map( x->utf8( x ), arr ), map( x->utf8(x), selected ) )
+TwMultiSelectData{T<:AbstractString,T2<:AbstractString}( arr::Array{T,1}, selected::Array{T2,1} ) = TwMultiSelectData( map( x->utf8( x ), arr ), map( x->utf8(x), selected ) )
 
 # the ways to use it:
 # standalone panel
 # as a subwin as part of another widget (see next function)
 # w include title width, if it's shown on the left
-function newTwMultiSelect{T<:String}( scr::TwObj, arr::Array{T,1};
+function newTwMultiSelect{T<:AbstractString}( scr::TwObj, arr::Array{T,1};
         posy::Any = :center,posx::Any = :center,
         selected = UTF8String[],
         title = "", maxwidth = 50, maxheight = 20, minwidth = 25,
@@ -70,7 +70,7 @@ function newTwMultiSelect{T<:String}( scr::TwObj, arr::Array{T,1};
 
     link_parent_child( scr, obj, h,w, posy, posx )
 
-    obj.data.searchbox = newTwEntry( obj, String, width=minwidth, posy=:bottom, posx=1, box=false )
+    obj.data.searchbox = newTwEntry( obj, UTF8String, width=minwidth, posy=:bottom, posx=1, box=false )
     obj.data.searchbox.title = "?"
     obj.data.searchbox.hasFocus = false
     obj

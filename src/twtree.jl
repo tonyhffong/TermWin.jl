@@ -37,17 +37,17 @@ type TwTreeData
     currentLine::Int
     currentLeft::Int
     showLineInfo::Bool # e.g.1/100 1.0% at top right corner
-    bottomText::String
+    bottomText::UTF8String
     showHelp::Bool
-    helpText::String
-    searchText::String
+    helpText::UTF8String
+    searchText::UTF8String
     moduleall::Bool
     TwTreeData() = new( Dict{ Any, Bool }(), Any[], 0, 0, 0, 0, 1, 1, 1, true, "", true, defaultTreeHelpText, "", true )
 end
 
 function newTwTree( scr::TwObj, ex; height::Real=0.8,width::Real=0.8,posy::Any=:staggered, posx::Any=:staggered,
-        title::String = string(typeof( ex ) ), box::Bool=true, showLineInfo::Bool=true, showHelp::Bool=true,
-        bottomText::String = "" )
+        title::UTF8String = utf8(typeof( ex ) ), box::Bool=true, showLineInfo::Bool=true, showHelp::Bool=true,
+        bottomText::UTF8String = "" )
     obj = TwObj( TwTreeData(), Val{ :Tree } )
     obj.value = ex
     obj.title = title
@@ -70,7 +70,7 @@ end
 # skiplines are hints where we should not draw the vertical lines to the left
 # because it corresponds the end of some list at a lower depth level
 
-function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict{ Any, Bool }, stack::Array{Any,1}, skiplines::Array{Int,1}=Int[], moduleall::Bool = true )
+function tree_data( x::Any, name::UTF8String, list::Array{Any,1}, openstatemap::Dict{ Any, Bool }, stack::Array{Any,1}, skiplines::Array{Int,1}=Int[], moduleall::Bool = true )
     global modulenames, typefields
     isexp = haskey( openstatemap, stack ) && openstatemap[ stack ]
     typx = typeof( x )
@@ -87,7 +87,7 @@ function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict
     if typx == Symbol || typx <: Number ||
         typx == Any ||
         ( typx == DataType && !isempty( stack ) ) || # so won't expand deep
-        typx <: Ptr || typx <: String
+        typx <: Ptr || typx <: AbstractString
         s = string( name )
         t = string( typx )
         if typx <: Integer && typx <: Unsigned
@@ -141,7 +141,7 @@ function tree_data( x::Any, name::String, list::Array{Any,1}, openstatemap::Dict
         if isexp
             ktype = eltype(x)[1]
             ks = collect( keys( x ) )
-            if ktype <: Real || ktype <: String || ktype == Symbol
+            if ktype <: Real || ktype <: AbstractString || ktype == Symbol
                 sort!(ks)
             end
             for (i,k) in enumerate( ks )
@@ -632,7 +632,7 @@ function inject( o::TwObj{TwTreeData}, token )
             beep()
         end
     elseif token == "/"
-        helper = newTwEntry( o.screen.value, String; width=30, posy=:center, posx=:center, title = "Search: " )
+        helper = newTwEntry( o.screen.value, UTF8String; width=30, posy=:center, posx=:center, title = "Search: " )
         helper.data.inputText = o.data.searchText
         s = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )

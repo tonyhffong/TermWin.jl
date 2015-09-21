@@ -24,8 +24,8 @@ end
 type TwObj{T,S}
     screen::WeakRef # the parent screen
     screenIndex::Int
-    window::Union( Nothing, Ptr{Void}, TwWindow )
-    panel::Union( Nothing, Ptr{Void} ) # when window is a TwWindow, this is nothing
+    window::Union{ Void, Ptr{Void}, TwWindow }
+    panel::Union{ Void, Ptr{Void} } # when window is a TwWindow, this is nothing
     height::Int
     width::Int
     xpos::Int
@@ -39,8 +39,8 @@ type TwObj{T,S}
     isVisible::Bool
     data::T
     value::Any # the logical "content" that this object contains (return value if editable)
-    title::String
-    listeners::Dict{ Symbol, Array } # event=>array of registered listeners. each listener is of the type (o, ev)->Nothing
+    title::UTF8String
+    listeners::Dict{ Symbol, Array } # event=>array of registered listeners. each listener is of the type (o, ev)->Void
     function TwObj( data::T )
         x = new( WeakRef(), 0,
             nothing,
@@ -81,7 +81,7 @@ type TwListData
     focus::Int # which of the widgets has the focus
     canvasheight::Int
     canvaswidth::Int
-    pad::Union( Nothing, Ptr{Void} ) # nothing, or Ptr{Void} to the WINDOW from calling newpad()
+    pad::Union{ Void, Ptr{Void} } # nothing, or Ptr{Void} to the WINDOW from calling newpad()
     canvaslocx::Int # 0-based, view's location on canvas
     canvaslocy::Int # 0-based
     showLineInfo::Bool

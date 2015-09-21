@@ -20,7 +20,7 @@ end
 function FormatHints{T<:Unsigned}( ::Type{T} )
     FormatHints( 8, 1, 0, true, false, false, true, true, false, false, "", :none, "x" )
 end
-function FormatHints{T<:FloatingPoint}( ::Type{T} )
+function FormatHints{T<:AbstractFloat}( ::Type{T} )
     FormatHints( 10, 1.0, 2, true, false, false, true, true, false, false, "", :none, "f" )
 end
 function FormatHints{T<:Rational}( ::Type{T} )
@@ -60,7 +60,7 @@ function applyformat( v::Union{Date,DateTime}, fmt::FormatHints )
     Dates.format( v, fmt.conversion )
 end
 
-function applyformat{T<:String}( v::T, fmt::FormatHints )
+function applyformat{T<:AbstractString}( v::T, fmt::FormatHints )
     @lintpragma( "Ignore unused fmt" )
     return v
 end

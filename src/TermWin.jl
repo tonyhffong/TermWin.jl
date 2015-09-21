@@ -33,7 +33,7 @@ function logstart()
     debugloghandle = open( joinpath( Pkg.dir( "TermWin" ), "debug.log" ), "a+" )
 end
 
-function log( s::String )
+function log{T<:AbstractString}( s::T )
     global debugloghandle
     if debugloghandle != nothing
         write( debugloghandle, string(now()) * " " )
@@ -42,6 +42,8 @@ function log( s::String )
         flush( debugloghandle )
     end
 end
+
+import Base.getindex
 
 # uncomment this to provide logging functionality
 # or just call TermWin.logstart() in user's script
@@ -84,7 +86,7 @@ export COLOR_PAIR
 rootwin = nothing
 rootTwScreen = nothing
 callcount = 0
-acs_map_arr = Uint8[]
+acs_map_arr = UInt8[]
 COLORS = 8
 COLOR_PAIRS = 16
 
@@ -248,7 +250,7 @@ function tshow_( x; kwargs... )
     newTwTree( rootTwScreen, x; kwargs... )
 end
 
-function tshow_( x::String; kwargs... )
+function tshow_{T<:AbstractString}( x::T; kwargs... )
     pos = :center
     if length(x) > 100
         pos = :staggered
@@ -472,7 +474,7 @@ function testkeydialog()
             continue
         end
         k = ""
-        if isa( token, String )
+        if isa( token, AbstractString )
             for c in token
                 if isprint( c ) && isascii( c )
                     k *= string(c)

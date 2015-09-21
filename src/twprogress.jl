@@ -23,7 +23,7 @@ function updateProgressChannel( status::Symbol, v::Any )
     put!( twGlobProgressData.statusChannel, ( status, v ) )
 end
 
-function progressMessage( s::String )
+function progressMessage( s::UTF8String )
     global twGlobProgressData
     st = :normal
     val = nothing
@@ -68,7 +68,7 @@ end
 # w include title width, if it's shown on the left
 # the function f takes no argument. It's started right-away
 # the function can call
-# * TermWin.progressMessage( s::String ) # make sure height can accommodate the content
+# * TermWin.progressMessage( s::UTF8String ) # make sure height can accommodate the content
 # * TermWin.progressUpdate( n::Float64 ) # 0.0 <= n <= 1.0
 function newTwProgress( scr::TwObj; height::Real=5, width::Real=40, posy::Any=:center,posx::Any=:center, box=true, title = "" )
     global twGlobProgressData
@@ -128,7 +128,7 @@ function inject( o::TwObj{TwProgressData}, token::Any )
             retcode = :exit_ok
         else
             if typeof( val ) <: Dict && eltype( val ) <: (Symbol,Any)
-                if haskey( val, :message ) && typeof( val[:message] ) <: String
+                if haskey( val, :message ) && typeof( val[:message] ) <: AbstractString
                     twGlobProgressData.text = utf8( val[ :message ] )
                 end
                 if haskey( val, :progress ) && typeof( val[ :progress ] ) == Float64

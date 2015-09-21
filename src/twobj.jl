@@ -92,7 +92,7 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
     end
     if typeof( h ) <: Integer
         o.height = min( h, parmaxy )
-    elseif typeof( h ) <: FloatingPoint && 0.0 < h <= 1.0
+    elseif typeof( h ) <: AbstractFloat&& 0.0 < h <= 1.0
         o.height = (@compat round(Int, parmaxy * h ))
         if o.height == 0
             throw( "height is too small")
@@ -103,7 +103,7 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
 
     if typeof( w ) <: Integer
         o.width = min( w, parmaxx )
-    elseif typeof( w ) <: FloatingPoint && 0.0 < w <= 1.0
+    elseif typeof( w ) <: AbstractFloat&& 0.0 < w <= 1.0
         o.width = (@compat round(Int, parmaxx * w ))
         if o.width == 0
             throw( "width is too small")
@@ -143,7 +143,7 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
         end
         xpos = parbegx + widgetStaggerPosx
         widgetStaggerPosx += 4
-    elseif typeof( x ) <: FloatingPoint && 0.0 <= x <= 1.0
+    elseif typeof( x ) <: AbstractFloat&& 0.0 <= x <= 1.0
         xpos = @compat round(Int, parbegx + gapx * x )
     end
     xpos = max( min( xpos, lastx ), parbegx )
@@ -162,7 +162,7 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
         end
         ypos = parbegy + widgetStaggerPosy
         widgetStaggerPosy += 2
-    elseif typeof( y ) <: FloatingPoint  && 0.0 <= y <= 1.0
+    elseif typeof( y ) <: AbstractFloat&& 0.0 <= y <= 1.0
         ypos = @compat round(Int, parbegy + gapy * y )
     end
     ypos = max( min( ypos, lasty ), parbegy )

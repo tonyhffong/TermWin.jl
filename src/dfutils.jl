@@ -22,7 +22,7 @@ defaultAggr( ::Type{} ) = :uniqvalue
 defaultAggr{T<:Real}( ::Type{T} ) = :sum
 defaultAggr{T}( ::Type{Array{T,1}} ) = :unionall
 
-function liftAggrSpecToFunc( c::Symbol, dfa::String )
+function liftAggrSpecToFunc( c::Symbol, dfa::UTF8String )
     if haskey( DataFrameAggrCache, (c, dfa ) )
         return DataFrameAggrCache[ (c, dfa ) ]
     end
@@ -137,7 +137,7 @@ function uniqvalue( x::AbstractDataArray; skipna::Bool=true )
     return NA
 end
 
-function uniqvalue{T<:String}( x::Union{ Array{T}, DataArray{T}, PooledDataArray{T} }; skipna::Bool=true, skipempty::Bool=true )
+function uniqvalue{T<:AbstractString}( x::Union{ Array{T}, DataArray{T}, PooledDataArray{T} }; skipna::Bool=true, skipempty::Bool=true )
     lvls = DataArrays.levels(x)
     if skipna
         l = dropna( lvls )
@@ -177,8 +177,8 @@ end
 immutable CalcPivot
     spec::Expr
     by::Array{Symbol,1}
-    CalcPivot( x::String, by::Array{Symbol,1}=Symbol[] ) = CalcPivot( parse(x), by )
-    CalcPivot( x::String, by::Symbol ) = CalcPivot( parse(x), Symbol[ by ] )
+    CalcPivot( x::UTF8String, by::Array{Symbol,1}=Symbol[] ) = CalcPivot( parse(x), by )
+    CalcPivot( x::UTF8String, by::Symbol ) = CalcPivot( parse(x), Symbol[ by ] )
     function CalcPivot( x::Expr, by::Symbol )
         CalcPivot( x, Symbol[ by ] )
     end
@@ -600,7 +600,7 @@ end
 
 # names are expected to be unique
 # n is the maximum rank number to report. Actual outcome may depend on existence of a tie, and dense option
-function topnames{S<:String,T<:Real}( name::AbstractArray{S,1}, measure::AbstractArray{T,1}, n::Int;
+function topnames{S<:AbstractString,T<:Real}( name::AbstractArray{S,1}, measure::AbstractArray{T,1}, n::Int;
     absolute=false,
     ranksep = ". ",
     dense = true, # if there is a tie in the 2nd place, do we do "1,2,2,4", or "1,2,2,3"

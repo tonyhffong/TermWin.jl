@@ -11,7 +11,7 @@ function repr_symbol( s::Symbol )
 end
 
 #delete a code_point before the p "width" position
-function delete_char_before( s::String, p::Int )
+function delete_char_before( s::UTF8String, p::Int )
     local totalskip::Int = 0
     local lastj::Int = 0
     local lastcw::Int = 0
@@ -44,7 +44,7 @@ end
 
 # delete at least 1 code point, could be more if there
 # are trailing zero-width codepoints.
-function delete_char_at( s::String, p::Int )
+function delete_char_at( s::UTF8String, p::Int )
     local totalskip::Int = 0
     local lastj::Int = 0
     for (j,c) in enumerate( s )
@@ -67,7 +67,7 @@ end
 # TODO: test this thoroughly!!
 # Insert a (short) string at the "p" position
 # p is interpreted as the width position
-function insertstring( s::String, ch::String, p::Int, overwrite::Bool )
+function insertstring( s::UTF8String, ch::UTF8String, p::Int, overwrite::Bool )
     wskip = p-1
     local totalskip::Int = 0
     chwidth = strwidth( ch )
@@ -100,7 +100,7 @@ end
 # greedy-skip: all trailing 0 width chars will be skipped
 # greedy-include: all trailing 0-width chars will be included
 # if w is -1, it would take all the rest of the string
-function substr_by_width( s::String, wskip::Int, w::Int )
+function substr_by_width( s::UTF8String, wskip::Int, w::Int )
     local totalskip::Int = 0
     local totalwidth::Int = 0
     local startidx::Int = -1
@@ -149,7 +149,7 @@ function substr_by_width( s::String, wskip::Int, w::Int )
     return s[chr2ind(s,startidx):chr2ind(s,endidx)]
 end
 
-function ensure_length( s::String, w::Int, pad::Bool = true )
+function ensure_length( s::UTF8String, w::Int, pad::Bool = true )
     t = replace( s, "\n", "\\n" )
     t = replace( t, "\t", " " )
     if w <= 0
@@ -181,9 +181,9 @@ function ensure_length( s::String, w::Int, pad::Bool = true )
     end
 end
 
-function wordwrap( x::String, width::Int )
+function wordwrap( x::UTF8String, width::Int )
     spaceleft = width
-    lines = String[]
+    lines = UTF8String[]
     currline = ""
     words = @compat split( x, " ", keep=true ) # don't keep empty words
     for w in words
@@ -233,7 +233,7 @@ function levenstein_distance( s1, s2 )
     return v1[end]
 end
 
-function longest_common_prefix( s1::String, s2::String )
+function longest_common_prefix( s1::UTF8String, s2::UTF8String )
     m = min( length( s1 ), length( s2 ) )
     lcpidx = 0
     for i in 1:m

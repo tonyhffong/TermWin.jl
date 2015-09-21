@@ -83,7 +83,7 @@ type TwTableView
 end
 
 # convenient functions to construct views
-function TwTableView( df::AbstractDataFrame, name::String;
+function TwTableView( df::AbstractDataFrame, name::UTF8String;
     pivots = Symbol[], initdepth=1,
     colorder = Any[ "*" ],
     hidecols = Any[], sortorder = Any[] )
@@ -168,8 +168,8 @@ type TwDfTableData
     currentRight::Int # right most on-screen column
     colInfo::Array{ TwTableColInfo, 1 } # only the visible ones, maybe off-screen
     allcolInfo::Dict{ Symbol, TwTableColInfo } # including invisible ones
-    bottomText::String
-    helpText::String
+    bottomText::UTF8String
+    helpText::UTF8String
     initdepth::Int
     views::Array{ TwTableView, 1 }
     calcpivots::Dict{ Symbol, CalcPivot }
@@ -717,7 +717,7 @@ function inject( o::TwObj{TwDfTableData}, token )
                 else
                     v = node.subdataframesorted[ cn ][ o.data.datalist[i][2][end] ]
                 end
-                if !( typeof( v ) <: String )
+                if !( typeof( v ) <: AbstractString )
                     continue
                 end
 
@@ -751,7 +751,7 @@ function inject( o::TwObj{TwDfTableData}, token )
                     for col in 1:ncols
                         cn = o.data.colInfo[ col ].name
                         v = df[cn][j]
-                        if !(typeof(v)<:String)
+                        if !(typeof(v)<:AbstractString)
                             continue
                         end
                         if contains( lowercase( v ), o.data.searchText )
@@ -815,7 +815,7 @@ function inject( o::TwObj{TwDfTableData}, token )
                 for col in 1:ncols
                     cn = o.data.colInfo[ col ].name
                     v = node.subdataframesorted[ cn ][ o.data.datalist[i][2][end] ]
-                    if !( typeof( v ) <: String )
+                    if !( typeof( v ) <: AbstractString )
                         continue
                     end
 
@@ -1090,7 +1090,7 @@ function inject( o::TwObj{TwDfTableData}, token )
             dorefresh=true
         end
     elseif token == "/"
-        helper = newTwEntry( o.screen.value, String; width=30, posy=:center, posx=:center, title = "Search: " )
+        helper = newTwEntry( o.screen.value, UTF8String; width=30, posy=:center, posx=:center, title = "Search: " )
         helper.data.inputText = o.data.searchText
         s = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
@@ -1102,7 +1102,7 @@ function inject( o::TwObj{TwDfTableData}, token )
         end
         dorefresh = true
     elseif token == "?"
-        helper = newTwEntry( o.screen.value, String; width=30, posy=:center, posx=:center, title = "Search: " )
+        helper = newTwEntry( o.screen.value, UTF8String; width=30, posy=:center, posx=:center, title = "Search: " )
         helper.data.inputText = o.data.searchText
         s = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )

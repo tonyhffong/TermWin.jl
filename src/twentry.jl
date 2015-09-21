@@ -57,7 +57,7 @@ type TwEntryData
     function TwEntryData( dt::DataType )
         o = new( dt, false, "", "", 1, 1, 0, true, false, false, false,
            -1, true, true, "" )
-        if dt <: String
+        if dt <: AbstractString
             o.helpText = defaultEntryStringHelpText
             o.conversion = "s"
         elseif dt <: Number
@@ -198,7 +198,7 @@ function draw( o::TwObj{TwEntryData} )
         end
     end
     # visual way to show there are more content beyond the field boundaries
-    if o.data.valueType <: String
+    if o.data.valueType <: AbstractString
         if o.data.fieldLeftPos > 1
             c = substr_by_width( outstr, 0, 1 )
             wattron( o.window, firstflag | A_BOLD )
@@ -231,7 +231,7 @@ function inject( o::TwObj{TwEntryData}, token )
         else
             o.data.cursorPos = max( 1, min( length( o.data.inputText )+1, o.data.cursorPos ) )
         end
-        if o.data.valueType <: String
+        if o.data.valueType <: AbstractString
             if remainspacecount <= 0
                 if o.data.cursorPos - o.data.fieldLeftPos > fieldcount -1
                     o.data.fieldLeftPos = o.data.cursorPos - fieldcount +1
@@ -343,7 +343,7 @@ function inject( o::TwObj{TwEntryData}, token )
         else
             beep()
         end
-    elseif o.data.valueType == Bool && typeof( token ) <: String && isprint( token )
+    elseif o.data.valueType == Bool && typeof( token ) <: AbstractString && isprint( token )
         if token == "t"
             o.data.inputText = "true"
             o.data.cursorPos = 1
@@ -355,7 +355,7 @@ function inject( o::TwObj{TwEntryData}, token )
         else
             beep()
         end
-    elseif typeof( token ) <: String && o.data.valueType <: Date && !in( token, [ "?", "," ] )
+    elseif typeof( token ) <: AbstractString && o.data.valueType <: Date && !in( token, [ "?", "," ] )
         insertchar( token )
         dorefresh = true
     elseif token == "?" && o.data.valueType <: Date
@@ -385,9 +385,9 @@ function inject( o::TwObj{TwEntryData}, token )
             o.data.incomplete = true
             beep()
         end
-    elseif typeof( token ) <: String && o.data.valueType <: Number && o.data.valueType != Bool &&
+    elseif typeof( token ) <: AbstractString && o.data.valueType <: Number && o.data.valueType != Bool &&
         ( isdigit( token ) || token == "," ||
-          o.data.valueType <: FloatingPoint && in( token, [ ".", "e", "+", "-" ] ) ||
+          o.data.valueType <: AbstractFloating && in( token, [ ".", "e", "+", "-" ] ) ||
           o.data.valueType <: Rational && in( token, [ ".", "+", "-" ] ) ||
           o.data.valueType <: Signed && in( token, ["+", "-"] ) )
 
@@ -434,7 +434,7 @@ function inject( o::TwObj{TwEntryData}, token )
             insertchar( token )
             dorefresh = true
         end
-    elseif typeof( token ) <: String && o.data.valueType <: String && isprint( token )
+    elseif typeof( token ) <: AbstractString && o.data.valueType <: AbstractString && isprint( token )
         insertchar( token )
         checkcursor()
         dorefresh = true
@@ -485,11 +485,11 @@ function myNumFormat( v, data::TwEntryData, fieldcount::Int )
     s
 end
 
-function evalNFormat( data::TwEntryData, s::String, fieldcount::Int )
+function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
     @lintpragma( "Ignore unstable type variable v")
     @lintpragma( "Ignore unstable type variable iv")
     dt = data.valueType
-    if dt <: String
+    if dt <: AbstractString
         return( s, s )
     elseif dt == Bool
         if s == "true"
@@ -500,7 +500,7 @@ function evalNFormat( data::TwEntryData, s::String, fieldcount::Int )
             v = nothing
         end
         return v, s
-    elseif dt <: FloatingPoint
+    elseif dt <: AbstractFloat
         v = nothing
         stmp = replace( s, ",", "" )
         try

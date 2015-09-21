@@ -58,14 +58,14 @@ function mvwaddch( w::TwWindow, y::Int, x::Int, c )
     end
 end
 
-function mvwprintw( win::Ptr{Void}, row::Int, height::Int, fmt::String, str::String )
+function mvwprintw( win::Ptr{Void}, row::Int, height::Int, fmt::UTF8String, str::UTF8String )
     ccall( Libdl.dlsym( libncurses, :mvwprintw), Void,
-        ( Ptr{Void}, Int, Int, Ptr{Uint8}, Ptr{Uint8}),
+        ( Ptr{Void}, Int, Int, Ptr{UInt8}, Ptr{UInt8}),
         win, row, height, fmt, str )
 end
 
 # note that it could in turn call another TwWindow...
-function mvwprintw( w::TwWindow, y::Int, x::Int, fmt::String, s::String )
+function mvwprintw( w::TwWindow, y::Int, x::Int, fmt::UTF8String, s::UTF8String )
     if objtype( w.parent.value ) == :List && typeof( w.parent.value.window ) != TwWindow
         # terminal layer. use its pad
         mvwprintw( w.parent.value.data.pad, y+w.yloc, x+w.xloc, fmt, s )
@@ -159,7 +159,7 @@ function box( win::TwWindow, vchr::Integer, hchr::Integer, y::Int=win.yloc, x::I
 end
 
 function wgetch( win::Ptr{Void} )
-    ccall( Libdl.dlsym( libncurses, :wgetch ), Uint32, (Ptr{Void},), win )
+    ccall( Libdl.dlsym( libncurses, :wgetch ), UInt32, (Ptr{Void},), win )
 end
 
 function keypad( win::Ptr{Void}, bf )
@@ -268,7 +268,7 @@ function has_colors()
 end
 
 function wattroff( win::Ptr{Void}, attrs )
-    ccall( Libdl.dlsym(libncurses, :wattroff), Int, ( Ptr{Void}, Uint32 ), win, attrs )
+    ccall( Libdl.dlsym(libncurses, :wattroff), Int, ( Ptr{Void}, UInt32 ), win, attrs )
 end
 
 function wattroff( win::TwWindow, attrs )
@@ -281,7 +281,7 @@ function wattroff( win::TwWindow, attrs )
 end
 
 function wattron( win::Ptr{Void}, attrs )
-    ccall( Libdl.dlsym(libncurses, :wattron), Int, ( Ptr{Void}, Uint32 ), win, attrs )
+    ccall( Libdl.dlsym(libncurses, :wattron), Int, ( Ptr{Void}, UInt32 ), win, attrs )
 end
 
 function wattron( win::TwWindow, attrs )
@@ -294,15 +294,15 @@ function wattron( win::TwWindow, attrs )
 end
 
 function wattrset( win::Ptr{Void}, attrs )
-    ccall( Libdl.dlsym(libncurses, :wattrset), Int, ( Ptr{Void}, Uint32 ), win, attrs )
+    ccall( Libdl.dlsym(libncurses, :wattrset), Int, ( Ptr{Void}, UInt32 ), win, attrs )
 end
 
 function wbkgdset( win::Ptr{Void}, ch )
-    ccall( Libdl.dlsym(libncurses, :wbkgdset ), Void, ( Ptr{Void}, Uint32 ), win, ch )
+    ccall( Libdl.dlsym(libncurses, :wbkgdset ), Void, ( Ptr{Void}, UInt32 ), win, ch )
 end
 
 function wbkgd( win::Ptr{Void}, ch )
-    ccall( Libdl.dlsym(libncurses, :wbkgd ), Void, ( Ptr{Void}, Uint32 ), win, ch )
+    ccall( Libdl.dlsym(libncurses, :wbkgd ), Void, ( Ptr{Void}, UInt32 ), win, ch )
 end
 
 function curs_set( vis )
@@ -314,8 +314,8 @@ function has_mouse()
 end
 
 function mousemask( mask )
-    oldmm = Array( Uint64, 1 )
-    resultmm = ccall( Libdl.dlsym( libncurses, :mousemask), Uint64, (Uint64, Ptr{Uint64}), mask, oldmm )
+    oldmm = Array( UInt64, 1 )
+    resultmm = ccall( Libdl.dlsym( libncurses, :mousemask), UInt64, (UInt64, Ptr{UInt64}), mask, oldmm )
     ( resultmm, oldmm[1])
 end
 
@@ -324,7 +324,7 @@ function mouseinterval( n::Int )
 end
 
 #hack!
-const mouseByteString = bytestring( Array( Uint8, 64 ) )
+const mouseByteString = bytestring( Array( UInt8, 64 ) )
 function getmouse()
     #=
     type Mouse_Event_t
@@ -332,7 +332,7 @@ function getmouse()
         x::Int32 # int
         y::Int32 # int
         z::Int32 # int
-        bstate::Uint64 # unsigned long
+        bstate::UInt64 # unsigned long
     end
     =#
     # the 5th byte is x, 9th byte is y
@@ -340,7 +340,7 @@ function getmouse()
     # 17th byte is x02 if button 1 pressed
     # 17th byte is x01 if button 1 released
     # 17-18th is 0xfffd if mousewheel is pressed down
-    ccall( Libdl.dlsym( libncurses, :getmouse), Int, (Ptr{Uint8}, ), mouseByteString )
+    ccall( Libdl.dlsym( libncurses, :getmouse), Int, (Ptr{UInt8}, ), mouseByteString )
     bs = mouseByteString
     x = @compat UInt8(bs[5])
     y = @compat UInt8(bs[9])

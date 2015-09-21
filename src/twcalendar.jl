@@ -16,7 +16,7 @@ y,Y    : add/subtract a year
 """
 type TwCalendarData
     showHelp::Bool
-    helpText::String
+    helpText::UTF8String
     date::Date
     cursorweekofmonth::Int # cached "nth week" in the current month containing date, 1-based
     geometry::@compat Tuple{Int, Int} # rows x cols in months

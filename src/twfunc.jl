@@ -24,9 +24,9 @@ type TwFuncData
     currentLine::Int
     currentLeft::Int
     showLineInfo::Bool # e.g.1/100 1.0% at top right corner
-    bottomText::String
+    bottomText::UTF8String
     showHelp::Bool
-    helpText::String
+    helpText::UTF8String
     TwFuncData() = new( Method[], 0, 0, nothing,
         1, 1, 1, true, "", true, defaultFuncHelpText )
 end
@@ -52,9 +52,9 @@ function newTwFunc( scr::TwObj, ms::Array{Method,1}; kwargs... )
           file = files,
           line = lines,
           nargs = Int[ length(m.sig) for m in ms ],
-          arg1t = UTF8String[ (length(m.sig)>=1 ? ensure_length(string(m.sig[1]),35,false) : "") for m in ms ],
-          arg2t = UTF8String[ (length(m.sig)>=2 ? ensure_length(string(m.sig[2]),35,false) : "") for m in ms ],
-          arg3t = UTF8String[ (length(m.sig)>=3 ? ensure_length(string(m.sig[3]),35,false) : "") for m in ms ]
+          arg1t = UTF8String[ (length(m.sig)>=1 ? ensure_length(utf8(m.sig[1]),35,false) : "") for m in ms ],
+          arg2t = UTF8String[ (length(m.sig)>=2 ? ensure_length(utf8(m.sig[2]),35,false) : "") for m in ms ],
+          arg3t = UTF8String[ (length(m.sig)>=3 ? ensure_length(utf8(m.sig[3]),35,false) : "") for m in ms ]
           )
     colorder = extractkwarg!( kwargs, :colorder, [ :name, :sig, :nargs, "*" ] )
     pivots   = extractkwarg!( kwargs, :pivots, [ ] )

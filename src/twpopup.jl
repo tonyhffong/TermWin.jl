@@ -51,16 +51,16 @@ type TwPopupData
     currentLeft::Int
     currentTop::Int
     selectmode::Int
-    helpText::String
+    helpText::UTF8String
     TwPopupData( arr::Array{UTF8String,1} ) = new( arr, Any[], maximum( map( z->length(z), arr ) ), nothing, 1, 1, 1, 0, "" )
 end
-TwPopupData{ T<:String}( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8( x ), arr ) )
+TwPopupData{ T<:AbstractString}( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8( x ), arr ) )
 
 # the ways to use it:
 # standalone panel
 # as a subwin as part of another widget (see next function)
 # w include title width, if it's shown on the left
-function newTwPopup{T<:String}( scr::TwObj, arr::Array{T,1};
+function newTwPopup{T<:AbstractString}( scr::TwObj, arr::Array{T,1};
         posy::Any=:center,posx::Any=:center,
         title = "", maxwidth = 50, maxheight = 15, minwidth = 20,
         quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false )
@@ -99,7 +99,7 @@ function newTwPopup{T<:String}( scr::TwObj, arr::Array{T,1};
 
     link_parent_child( scr, obj, h, w, posy, posx )
 
-    obj.data.searchbox = newTwEntry( obj, String; width=minwidth, posy=:bottom, posx = 1, box=false )
+    obj.data.searchbox = newTwEntry( obj, UTF8String; width=minwidth, posy=:bottom, posx = 1, box=false )
     obj.data.searchbox.title = "?"
     obj.data.searchbox.hasFocus = false # so it looks dimmer than main cursor
     obj

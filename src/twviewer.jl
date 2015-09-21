@@ -16,12 +16,12 @@ type TwViewerData
     currentLine::Int
     currentLeft::Int
     showLineInfo::Bool # e.g.1/100 1.0% at top right corner
-    bottomText::String
+    bottomText::UTF8String
     trackLine::Bool
     showHelp::Bool
-    helpText::String
+    helpText::UTF8String
     tabWidth::Int
-    TwViewerData() = new( String[], 0, 0, 1, 1, 1, true, "", false, true, defaultViewerHelpText, 4 )
+    TwViewerData() = new( UTF8String[], 0, 0, 1, 1, 1, true, "", false, true, defaultViewerHelpText, 4 )
 end
 
 # the ways to use it:
@@ -67,7 +67,7 @@ function newTwViewer( scr::TwObj, msgs::Array;
     obj
 end
 
-function newTwViewer( scr::TwScreen, msg::String; kwargs... )
+function newTwViewer( scr::TwScreen, msg::UTF8String; kwargs... )
     newTwViewer( scr, split(msg,"\n"); kwargs... )
 end
 
