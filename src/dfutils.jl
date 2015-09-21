@@ -29,6 +29,7 @@ function liftAggrSpecToFunc( c::Symbol, dfa::UTF8String )
     ret = liftAggrSpecToFunc( c, parse( dfa ) )
     DataFrameAggrCache[ (c, dfa) ] = ret
 end
+liftAggrSpecToFunc( c::Symbol, dfa::ASCIIString ) = liftAggrSpecToFunc( c, utf8( dfa ) )
 
 function liftAggrSpecToFunc( c::Symbol, dfa::Union{ Function, Symbol, Expr } )
     if typeof( dfa ) == Function
@@ -178,7 +179,9 @@ immutable CalcPivot
     spec::Expr
     by::Array{Symbol,1}
     CalcPivot( x::UTF8String, by::Array{Symbol,1}=Symbol[] ) = CalcPivot( parse(x), by )
+    CalcPivot( x::ASCIIString, by::Array{Symbol,1}=Symbol[] ) = CalcPivot( parse(utf8(x)), by )
     CalcPivot( x::UTF8String, by::Symbol ) = CalcPivot( parse(x), Symbol[ by ] )
+    CalcPivot( x::ASCIIString, by::Symbol ) = CalcPivot( parse(utf8(x)), Symbol[ by ] )
     function CalcPivot( x::Expr, by::Symbol )
         CalcPivot( x, Symbol[ by ] )
     end

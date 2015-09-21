@@ -58,14 +58,14 @@ function mvwaddch( w::TwWindow, y::Int, x::Int, c )
     end
 end
 
-function mvwprintw( win::Ptr{Void}, row::Int, height::Int, fmt::UTF8String, str::UTF8String )
+function mvwprintw{T<:AbstractString}( win::Ptr{Void}, row::Int, height::Int, fmt::ASCIIString, str::T )
     ccall( Libdl.dlsym( libncurses, :mvwprintw), Void,
         ( Ptr{Void}, Int, Int, Ptr{UInt8}, Ptr{UInt8}),
         win, row, height, fmt, str )
 end
 
 # note that it could in turn call another TwWindow...
-function mvwprintw( w::TwWindow, y::Int, x::Int, fmt::UTF8String, s::UTF8String )
+function mvwprintw{T<:AbstractString}( w::TwWindow, y::Int, x::Int, fmt::ASCIIString, s::T )
     if objtype( w.parent.value ) == :List && typeof( w.parent.value.window ) != TwWindow
         # terminal layer. use its pad
         mvwprintw( w.parent.value.data.pad, y+w.yloc, x+w.xloc, fmt, s )

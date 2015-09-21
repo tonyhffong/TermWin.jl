@@ -1,5 +1,5 @@
 Lint 0.1.60
-julia 0.4-
+julia 0.4
 Compat 0.1
 Formatting 0.1.2
 DataArrays

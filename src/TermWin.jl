@@ -120,7 +120,7 @@ function initsession()
             throw( "terminal doesn't support colors")
         end
         mousemask( BUTTON1_PRESSED | REPORT_MOUSE_POSITION )
-        acs_map_ptr = cglobal( (:acs_map, :libncurses ), Uint32 )
+        acs_map_ptr = cglobal( (:acs_map, :libncurses ), UInt32 )
         acs_map_arr = pointer_to_array( acs_map_ptr, 128)
 
         start_color()

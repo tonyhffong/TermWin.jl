@@ -326,10 +326,10 @@ const keypadmap = Compat.@Dict(
 )
 
 function readtoken( win::Ptr{Void} )
-    local c::Uint32
-    local nc::Uint32
+    local c::UInt32
+    local nc::UInt32
 
-    nocharval = typemax( Uint32 )
+    nocharval = typemax( UInt32 )
 
     c = wgetch( win )
     if c == 27

@@ -100,7 +100,7 @@ end
 # greedy-skip: all trailing 0 width chars will be skipped
 # greedy-include: all trailing 0-width chars will be included
 # if w is -1, it would take all the rest of the string
-function substr_by_width( s::UTF8String, wskip::Int, w::Int )
+function substr_by_width{T<:AbstractString}( s::T, wskip::Int, w::Int )
     local totalskip::Int = 0
     local totalwidth::Int = 0
     local startidx::Int = -1
@@ -149,7 +149,7 @@ function substr_by_width( s::UTF8String, wskip::Int, w::Int )
     return s[chr2ind(s,startidx):chr2ind(s,endidx)]
 end
 
-function ensure_length( s::UTF8String, w::Int, pad::Bool = true )
+function ensure_length{T<:AbstractString}( s::T, w::Int, pad::Bool = true )
     t = replace( s, "\n", "\\n" )
     t = replace( t, "\t", " " )
     if w <= 0
