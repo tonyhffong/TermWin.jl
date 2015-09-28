@@ -387,7 +387,7 @@ function inject( o::TwObj{TwEntryData}, token )
         end
     elseif typeof( token ) <: AbstractString && o.data.valueType <: Number && o.data.valueType != Bool &&
         ( isdigit( token ) || token == "," ||
-          o.data.valueType <: AbstractFloating && in( token, [ ".", "e", "+", "-" ] ) ||
+          o.data.valueType <: AbstractFloat && in( token, [ ".", "e", "+", "-" ] ) ||
           o.data.valueType <: Rational && in( token, [ ".", "+", "-" ] ) ||
           o.data.valueType <: Signed && in( token, ["+", "-"] ) )
 

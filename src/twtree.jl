@@ -47,7 +47,7 @@ end
 
 function newTwTree( scr::TwObj, ex; height::Real=0.8,width::Real=0.8,posy::Any=:staggered, posx::Any=:staggered,
         title::UTF8String = utf8(typeof( ex ) ), box::Bool=true, showLineInfo::Bool=true, showHelp::Bool=true,
-        bottomText::UTF8String = "" )
+        bottomText::UTF8String = utf8("") )
     obj = TwObj( TwTreeData(), Val{ :Tree } )
     obj.value = ex
     obj.title = title

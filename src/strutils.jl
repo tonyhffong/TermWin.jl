@@ -10,6 +10,10 @@ function repr_symbol( s::Symbol )
     v
 end
 
+function delete_char_before( s::ASCIIString, p::Int )
+    return (s[1:p-2] * s[p:end], max(p-1,1) )
+end
+
 #delete a code_point before the p "width" position
 function delete_char_before( s::UTF8String, p::Int )
     local totalskip::Int = 0
@@ -42,6 +46,10 @@ function delete_char_before( s::UTF8String, p::Int )
     return (s[1:chr2ind(s,lastj-1)], p-lastcw)
 end
 
+function delete_char_at( s::ASCIIString, p::Int )
+    return s[1:p-1] * s[p+1:end]
+end
+
 # delete at least 1 code point, could be more if there
 # are trailing zero-width codepoints.
 function delete_char_at( s::UTF8String, p::Int )
@@ -67,7 +75,7 @@ end
 # TODO: test this thoroughly!!
 # Insert a (short) string at the "p" position
 # p is interpreted as the width position
-function insertstring( s::UTF8String, ch::UTF8String, p::Int, overwrite::Bool )
+function insertstring{T<:AbstractString}( s::UTF8String, ch::T, p::Int, overwrite::Bool )
     wskip = p-1
     local totalskip::Int = 0
     chwidth = strwidth( ch )

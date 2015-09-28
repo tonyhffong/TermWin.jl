@@ -60,7 +60,7 @@ end
 
 function mvwprintw{T<:AbstractString}( win::Ptr{Void}, row::Int, height::Int, fmt::ASCIIString, str::T )
     ccall( Libdl.dlsym( libncurses, :mvwprintw), Void,
-        ( Ptr{Void}, Int, Int, Ptr{UInt8}, Ptr{UInt8}),
+        ( Ptr{Void}, Int, Int, Cstring, Cstring ),
         win, row, height, fmt, str )
 end
 
