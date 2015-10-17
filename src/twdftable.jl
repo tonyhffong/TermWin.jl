@@ -1129,7 +1129,7 @@ function inject( o::TwObj{TwDfTableData}, token )
         else
             v = node.subdataframesorted[ colsym ][ o.data.datalist[o.data.currentLine][2][end] ]
         end
-        if typeof( v ) != NAtype && !in( v, [ nothing, None, Any ] )
+        if typeof( v ) != NAtype && !in( v, [ nothing, Void, Any ] )
             tshow( v; title = string( colsym ), posx=:center, posy=:center )
             dorefresh = true
         end
