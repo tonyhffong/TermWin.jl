@@ -47,7 +47,7 @@ end
 function newTwViewer( scr::TwObj, msgs::Array;
         posy::Any=:staggered,posx::Any=:staggered,
         box=true, showLineInfo=true, bottomText = "", showHelp=true, tabWidth = 4, trackLine = false, title="" )
-    newmsgs = map( z->replace( z, "\t", repeat( " ", tabWidth ) ), msgs )
+    newmsgs = map( z->escape_string( replace( z, "\t", repeat( " ", tabWidth ) ) ), msgs )
     obj = TwObj( TwViewerData(), Val{ :Viewer } )
     obj.title = title
     setTwViewerMsgs( obj, newmsgs )
@@ -67,7 +67,7 @@ function newTwViewer( scr::TwObj, msgs::Array;
     obj
 end
 
-function newTwViewer( scr::TwScreen, msg::UTF8String; kwargs... )
+function newTwViewer{T<:AbstractString}( scr::TwScreen, msg::T; kwargs... )
     newTwViewer( scr, split(msg,"\n"); kwargs... )
 end
 
