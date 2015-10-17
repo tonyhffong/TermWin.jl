@@ -14,7 +14,7 @@ function newTwList( scr::TwObj;
         canvaswidth = 128,
         box=true,
         horizontal=false,
-        title="",
+        title=utf8(""),
         showLineInfo=true)
     obj = TwObj( TwListData(), Val{:List } )
     obj.box = box
@@ -632,17 +632,17 @@ function helptext( o::TwObj{TwListData} )
     focus = o.data.focus
     isrootlist = typeof( o.window ) <: Ptr
     if focus == 0
-        return ""
+        return utf8("")
     end
     s = helptext( o.data.widgets[ focus ] )
     if isrootlist
-h = """
+h = utf8("""
 ctrl-F4 : toggle navigation mode
 mouse-click: activate nearest widget
 ctrl-arrows: directional focus movements
   (normal arrows work too if not consumed by the current widget)
 tab/shift-tab: cycle through all widgets
-"""
+""")
         if s == "" # just the navigation text
             s = h
         else # merge the help text into a single window

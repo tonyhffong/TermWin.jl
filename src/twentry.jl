@@ -1,6 +1,6 @@
 # hand-crafted numeric and string input field
 
-defaultEntryStringHelpText = """
+defaultEntryStringHelpText = utf8("""
 <-, -> : move cursor
 ctrl-a : move cursor to start
 ctrl-e : move cursor to end
@@ -8,9 +8,9 @@ ctrl-k : empty entry
 ctrl-r : Toggle insertion/overwrite mode
 
 Edges are highlighted if more beyond boundary
-"""
+""")
 
-defaultEntryNumberHelpText = """
+defaultEntryNumberHelpText = utf8("""
 <-, -> : move cursor
 ctrl-a : move cursor to start
 ctrl-e : move cursor to end
@@ -22,9 +22,9 @@ e      : (Floating Point only) exponent. 1e6 for 1,000,000.0
 ctrl-r : Toggle insertion/overwrite mode
 Shft-up: If configured, increase value by a tick-size
 Shft-dn: If configured, decrease value by a tick-size
-"""
+""")
 
-defaultEntryDateHelpText = """
+defaultEntryDateHelpText = utf8("""
 Format : YYYY-MM-DD standard, but allows formats such as
          20140101, 1/1/2014, 1Jan2014, 1 January 2014
          2014.01.01
@@ -37,7 +37,7 @@ ctrl-r : Toggle insertion/overwrite mode
 ?      : View calendar
 Shft-up: If configured, increase value by a tick-size
 Shft-dn: If configured, decrease value by a tick-size
-"""
+""")
 type TwEntryData
     valueType::DataType
     showHelp::Bool
@@ -55,7 +55,7 @@ type TwEntryData
     stripzeros::Bool
     conversion::ASCIIString
     function TwEntryData( dt::DataType )
-        o = new( dt, false, "", "", 1, 1, 0, true, false, false, false,
+        o = new( dt, false, utf8(""), utf8(""), 1, 1, 0, true, false, false, false,
            -1, true, true, "" )
         if dt <: AbstractString
             o.helpText = defaultEntryStringHelpText
@@ -88,7 +88,7 @@ end
 # y and x is relative to parentwin
 function newTwEntry( parent::TwObj, dt::DataType;
     width::Real=30,posy::Any=:staggered,posx::Any=:staggered,
-    box=true, showHelp=true, titleLeft=true, title = "",
+    box=true, showHelp=true, titleLeft=true, title = utf8(""),
     precision=-1, stripzeros= (precision == -1), conversion="" )
 
     data = TwEntryData( dt )
@@ -630,7 +630,7 @@ end
 
 function helptext( o::TwObj{TwEntryData} )
     if !o.data.showHelp
-        return ""
+        return utf8("")
     end
     o.data.helpText
 end

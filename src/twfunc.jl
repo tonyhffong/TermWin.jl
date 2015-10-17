@@ -1,5 +1,4 @@
-
-defaultFuncHelpText = """
+defaultFuncHelpText = utf8("""
 PgUp/PgDn  : method list navigation
 Up/Dn      : method list navigation
 Left/Right : search term cursor control
@@ -13,7 +12,7 @@ Shift-left/right : Navigate method list left and right
 Ctrl-Sht-lft/rgt : Jump method list to left and right edge
 F6         : explore Method as tree
 F8         : edit method
-"""
+""")
 
 type TwFuncData
     datalist::Array{Any,1}
@@ -28,7 +27,7 @@ type TwFuncData
     showHelp::Bool
     helpText::UTF8String
     TwFuncData() = new( Method[], 0, 0, nothing,
-        1, 1, 1, true, "", true, defaultFuncHelpText )
+        1, 1, 1, true, utf8(""), true, defaultFuncHelpText )
 end
 
 # the ways to use it:

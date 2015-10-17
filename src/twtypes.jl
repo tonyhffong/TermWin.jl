@@ -42,12 +42,13 @@ type TwObj{T,S}
     title::UTF8String
     listeners::Dict{ Symbol, Array } # event=>array of registered listeners. each listener is of the type (o, ev)->Void
     function TwObj( data::T )
+        log( "TwObj datatype=" * string( T ) * " TwObjSubtype="*string(S) )
         x = new( WeakRef(), 0,
             nothing,
             nothing,
             0, 0, 0, 0,
             false, 0, 0,
-            true, true, false, true, data, nothing, "", Dict{Symbol, Array{Function,1} }() )
+            true, true, false, true, data, nothing, utf8(""), Dict{Symbol, Array{Function,1} }() )
         finalizer( x, y->begin
             global rootwin
             if y.panel != nothing
@@ -100,7 +101,9 @@ end
 
 typealias TwScreen TwObj{TwScreenData}
 
-TwObj{T,S}( d::T, ::Type{Val{S}} ) = TwObj{T,S}(d)
+function TwObj{T,S}( d::T, ::Type{Val{S}} ) 
+    return( TwObj{T,S}(d) )
+end
 import Base.show
 
 function Base.show( io::IO, o::TwObj{TwListData} )

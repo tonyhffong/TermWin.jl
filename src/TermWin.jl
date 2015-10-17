@@ -246,9 +246,6 @@ function tshow_( x::WeakRef; kwargs... )
         tshow_( x.value; kwargs... )
     end
 end
-function tshow_( x; kwargs... )
-    newTwTree( rootTwScreen, x; kwargs... )
-end
 
 function tshow_{T<:AbstractString}( x::T; kwargs... )
     pos = :center
@@ -261,14 +258,11 @@ function tshow_{T<:AbstractString}( x::T; kwargs... )
 end
 
 function tshow_( f::Function; kwargs... )
-    funloc = "(anonymous)"
     try
-        funloc = string( functionloc( f ) )
-    end
-    if funloc == "(anonymous)"
-        return tshow_( string(f) * ":" * funloc; kwargs... )
-    else
-        return newTwFunc( rootTwScreen, f; kwargs... )
+        mt = methods( f )
+        return newTwFunc( rootTwScreen, mt; kwargs... )
+    catch y
+        return tshow_( string(f) * ": (anonymous?)\n" * string(y) ; kwargs... )
     end
 end
 
@@ -288,6 +282,10 @@ function tshow_( o::TwObj; kwargs... )
     @lintpragma( "Ignore unused kwargs")
     registerTwObj( rootTwScreen, o )
     return o
+end
+
+function tshow_( x; kwargs... )
+    newTwTree( rootTwScreen, x; kwargs... )
 end
 
 function winnewcenter( ysize, xsize, locy=0.5, locx=0.5 )
@@ -344,9 +342,9 @@ end
 function titleof( x::Any )
     typx = typeof( x )
     if typx == Module || typx == Function
-        return string( x )
+        return utf8( string( x ) )
     else
-        return string( typx )
+        return utf8( string( typx ) )
     end
 end
 
@@ -388,8 +386,8 @@ function tshow( x; kwargs... )
                 widget = tshow_(x; title=title, kwargs... )
             catch err
                 bt = catch_backtrace()
-                msg = string(err) * "\n" * string( bt )
-                widget = tshow_( msg; title="Error" )
+                msg = wordwrap( string(err) * "\n" * string( bt ), 80 )
+                widget = tshow_( msg; title=utf8("Error") )
             end
             if widget != nothing
                 refresh( rootTwScreen )
@@ -461,7 +459,7 @@ function testkeydialog()
     win = winnewcenter( 6, width )
     panel = new_panel( win )
     box( win, 0, 0 )
-    title = "Test Key/Mouse/Unicode"
+    title = utf8( "Test Key/Mouse/Unicode" )
     keyhint = "[Esc to continue]"
 
     mvwprintw( win, 0, (@compat Int( (width-length(title))>>1)), "%s", title )

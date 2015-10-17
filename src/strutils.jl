@@ -1,5 +1,5 @@
 function repr_symbol( s::Symbol )
-    v = string(s)
+    v = utf8(string(s))
     if length(v) == 0
         v = ":\"\""
     elseif match( r"^[a-zA-Z_][0-9a-zA-Z_]*$", v ) != nothing
@@ -129,7 +129,7 @@ function substr_by_width{T<:AbstractString}( s::T, wskip::Int, w::Int )
                     totalwidth += cw
                     continue
                 else
-                    return ""
+                    return convert( T, "" )
                 end
             end
         else
@@ -144,7 +144,7 @@ function substr_by_width{T<:AbstractString}( s::T, wskip::Int, w::Int )
     end
     if startidx == -1
         if w == -1
-            return ""
+            return convert( T,"" )
         end
         startidx = 1
     end
@@ -152,7 +152,7 @@ function substr_by_width{T<:AbstractString}( s::T, wskip::Int, w::Int )
         return s[chr2ind(s,startidx):end]
     end
     if endidx < startidx
-        return ""
+        return convert( T, "" )
     end
     return s[chr2ind(s,startidx):chr2ind(s,endidx)]
 end
@@ -189,10 +189,10 @@ function ensure_length{T<:AbstractString}( s::T, w::Int, pad::Bool = true )
     end
 end
 
-function wordwrap( x::UTF8String, width::Int )
+function wordwrap{T<:AbstractString}( x::T, width::Int )
     spaceleft = width
     lines = UTF8String[]
-    currline = ""
+    currline = convert( T,"" )
     words = @compat split( x, " ", keep=true ) # don't keep empty words
     for w in words
         wlen = strwidth(w)
