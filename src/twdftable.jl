@@ -301,7 +301,7 @@ function expandnode( n::TwDfTableNode, depth::Int=1 )
                     ns = names( n.subdataframe )
                     localdf = DataFrame( [ n.subdataframe[i] for i in 1:length(ns)], ns )
                     localdf[ nextpivot ] = colvalues
-                    gd = groupby( localdf, nextpivots )
+                    gd = DataFrames.groupby( localdf, nextpivots )
                 else
                     # figure out the aggregation dependency
                     # the lift function just now ensures we have this cache.
@@ -314,10 +314,10 @@ function expandnode( n::TwDfTableNode, depth::Int=1 )
                     # the aggregation spec on all needed columns,
                     # as keyword arguments
                     df = f( n.subdataframe, nextpivot; kwargs... )
-                    gd = groupby( join( n.subdataframe, df, on=pvtby, kind=:left ), nextpivots )
+                    gd = DataFrames.groupby( join( n.subdataframe, df, on=pvtby, kind=:left ), nextpivots )
                 end
             else
-                gd = groupby( n.subdataframe, nextpivots )
+                gd = DataFrames.groupby( n.subdataframe, nextpivots )
             end
             for g in gd
                 dfr = DataFrameRow( g[ gd.cols ], 1 )
