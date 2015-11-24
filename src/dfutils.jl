@@ -237,7 +237,7 @@ function liftCalcPivotToFunc( ex::Expr, by::Array{Symbol,1} )
     funnameouter = gensym("calcpvt")
     funname = gensym()
 
-    membernames = Dict{Symbol, Symbol}()
+    membernames = Dict{Union{Symbol,Expr}, Symbol}()
     cex = DataFramesMeta.replace_syms(cex, membernames)
     # keys are the columns. values are the unique gensyms
 
@@ -280,7 +280,7 @@ function liftCalcPivotToFunc( ex::Expr, by::Array{Symbol,1} )
         # dataframe into one row, and then attach this row's value (a constant) into every row.
         # However, I have not known any legitimate use case for this.
         CalcPivotAggrDepCache[ (ex, by )] = Symbol[]
-        funargs = map(x -> :( getindex( _df_, $(Meta.quot(x))) ), collect(keys(membernames)))
+        funargs = map(x -> :( getindex( _df_, $(x)) ), collect(keys(membernames)))
         code = :(
             function $funnameouter( _df_::AbstractDataFrame ) # we need kwargs here for aggregate specs
                 function $funname($(collect(values(membernames))...))
