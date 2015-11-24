@@ -70,9 +70,9 @@ function liftAggrSpecToFunc( c::Symbol, dfa::Union{ Function, Symbol, Expr } )
         cdfa = deepcopy( dfa )
         convertExpression!( cdfa, c )
 
-        membernames = Dict{Symbol, Symbol}()
+        membernames = Dict{Union{Symbol,Expr}, Symbol}()
         cdfa = DataFramesMeta.replace_syms(cdfa, membernames)
-        funargs = map(x -> :( getindex( _df_, $(Meta.quot(x))) ), collect(keys(membernames)))
+        funargs = map(x -> :( getindex( _df_, $(x)) ), collect(keys(membernames)))
         funnameouter = gensym("DFAggr")
         funname = gensym()
         code = quote
