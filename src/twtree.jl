@@ -19,7 +19,7 @@ moduleallnames = Dict{ Module, Array{ Symbol, 1 } }()
 typefields  = Dict{ Any, Array{ Symbol, 1 } }()
 
 typefields[ Method ] = [ :sig, :isstaged ]
-typefields[ LambdaStaticData ] = [ :name, :module, :file, :line ]
+typefields[ LambdaInfo ] = [ :name, :module, :file, :line ]
 typefields[ DataType ] = [ :name, :super, Symbol( "abstract" ), :mutable, :parameters ]
 typefields[ TypeName ] = [ :name, :module, :primary ]
 
