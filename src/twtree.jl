@@ -244,6 +244,7 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
                     v = getfield(x,n)
                     intern_tree_data( v, subname, newstack, i==len )
                 catch err
+                    @lintpragma( "Ignore unthrown ErrorException" )
                     intern_tree_data( ErrorException(string(err)), subname, newstack, i==len )
                     if typx == Module
                         if moduleall
