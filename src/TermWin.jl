@@ -120,16 +120,16 @@ function initsession()
             throw( "terminal doesn't support colors")
         end
         mousemask( BUTTON1_PRESSED | REPORT_MOUSE_POSITION )
-        acs_map_ptr = cglobal( (:acs_map, :libncurses ), UInt32 )
+        acs_map_ptr = cglobal( Libdl.dlsym( libncurses, :acs_map), UInt32 )
         acs_map_arr = pointer_to_array( acs_map_ptr, 128)
 
         start_color()
         # figure out how many colors are supported
-        colorsptr = cglobal( (:COLORS, :libncurses ), Int16 )
+        colorsptr = cglobal( Libdl.dlsym( libncurses, :COLORS), Int16 )
         colorsarr = pointer_to_array( colorsptr, 1 )
         COLORS = colorsarr[1]
 
-        colorsptr = cglobal( (:COLOR_PAIRS, :libncurses ), Int16 )
+        colorsptr = cglobal( Libdl.dlsym( libncurses, :COLOR_PAIRS), Int16 )
         colorsarr = pointer_to_array( colorsptr, 1 )
         COLOR_PAIRS = colorsarr[1]
 
