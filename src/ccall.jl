@@ -6,8 +6,16 @@ libpanel = false
 function initscr()
     global libncurses, libpanel
     if  libncurses == false
-        libncurses = Libdl.dlopen("libncurses")
-        libpanel = Libdl.dlopen("libpanel")
+        try
+            libncurses = Libdl.dlopen("libncurses")
+        catch
+            libncurses = Libdl.dlopen("libncursesw")
+        end
+        try
+            libpanel = Libdl.dlopen("libpanel")
+        catch
+            libpanel = Libdl.dlopen("libpanelw")
+        end
     end
     ccall( Libdl.dlsym( libncurses, :initscr), Ptr{Void}, () )
 end
