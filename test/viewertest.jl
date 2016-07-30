@@ -1,4 +1,4 @@
 using TermWin
 
-s = open( readall, joinpath( Pkg.dir( "TermWin" ), "src", "TermWin.jl" ) )
+s = open( readall, joinpath( dirname( @__FILE__ ), "..", "src", "TermWin.jl" ) )
 tshow( s )

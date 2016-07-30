@@ -30,7 +30,7 @@ debugloghandle = nothing
 
 function logstart()
     global debugloghandle
-    debugloghandle = open( joinpath( Pkg.dir( "TermWin" ), "debug.log" ), "a+" )
+    debugloghandle = open( joinpath( dirname( @__FILE__ ), "..", "debug.log" ), "a+" )
 end
 
 function log{T<:AbstractString}( s::T )
