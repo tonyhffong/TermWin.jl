@@ -66,14 +66,14 @@ function mvwaddch( w::TwWindow, y::Int, x::Int, c )
     end
 end
 
-function mvwprintw{T<:AbstractString}( win::Ptr{Void}, row::Int, height::Int, fmt::ASCIIString, str::T )
+function mvwprintw{T<:AbstractString}( win::Ptr{Void}, row::Int, height::Int, fmt::String, str::T )
     ccall( Libdl.dlsym( libncurses, :mvwprintw), Void,
         ( Ptr{Void}, Int, Int, Cstring, Cstring ),
         win, row, height, fmt, str )
 end
 
 # note that it could in turn call another TwWindow...
-function mvwprintw{T<:AbstractString}( w::TwWindow, y::Int, x::Int, fmt::ASCIIString, s::T )
+function mvwprintw{T<:AbstractString}( w::TwWindow, y::Int, x::Int, fmt::String, s::T )
     if objtype( w.parent.value ) == :List && typeof( w.parent.value.window ) != TwWindow
         # terminal layer. use its pad
         mvwprintw( w.parent.value.data.pad, y+w.yloc, x+w.xloc, fmt, s )
@@ -322,7 +322,7 @@ function has_mouse()
 end
 
 function mousemask( mask )
-    oldmm = Array( UInt64, 1 )
+    oldmm = Array{UInt64}(1)
     resultmm = ccall( Libdl.dlsym( libncurses, :mousemask), UInt64, (UInt64, Ptr{UInt64}), mask, oldmm )
     ( resultmm, oldmm[1])
 end

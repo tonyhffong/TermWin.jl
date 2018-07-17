@@ -9,9 +9,9 @@ type FormatHints
     hidezero      :: Bool
     alternative   :: Bool
     mixedfraction :: Bool
-    suffix        :: UTF8String
+    suffix        :: String
     autoscale     :: Symbol
-    conversion    :: ASCIIString
+    conversion    :: String
 end
 
 function FormatHints{T<:Integer}( ::Type{T} )
@@ -66,7 +66,7 @@ function applyformat{T<:AbstractString}( v::T, fmt::FormatHints )
 end
 
 function applyformat( v::AbstractArray, fmt::FormatHints )
-    strs = UTF8String[]
+    strs = String[]
     for s in v
         push!( strs, applyformat( s, fmt ) )
     end

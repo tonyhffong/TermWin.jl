@@ -6,7 +6,7 @@ type TwProgressData
     progress::Float64
     showProgress::Bool
     cursorPos::Int # where is the progress bar cursor
-    text::UTF8String
+    text::String
     redrawTime::Float64
     statusTime::Float64
     startTime::Float64
@@ -23,7 +23,7 @@ function updateProgressChannel( status::Symbol, v::Any )
     put!( twGlobProgressData.statusChannel, ( status, v ) )
 end
 
-function progressMessage( s::UTF8String )
+function progressMessage( s::String )
     global twGlobProgressData
     st = :normal
     val = nothing
@@ -68,7 +68,7 @@ end
 # w include title width, if it's shown on the left
 # the function f takes no argument. It's started right-away
 # the function can call
-# * TermWin.progressMessage( s::UTF8String ) # make sure height can accommodate the content
+# * TermWin.progressMessage( s::String ) # make sure height can accommodate the content
 # * TermWin.progressUpdate( n::Float64 ) # 0.0 <= n <= 1.0
 function newTwProgress( scr::TwObj; height::Real=5, width::Real=40, posy::Any=:center,posx::Any=:center, box=true, title = "" )
     global twGlobProgressData

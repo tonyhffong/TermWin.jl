@@ -41,8 +41,8 @@ Shft-dn: If configured, decrease value by a tick-size
 type TwEntryData
     valueType::DataType
     showHelp::Bool
-    helpText::UTF8String
-    inputText::UTF8String
+    helpText::String
+    inputText::String
     cursorPos::Int # where is the next char going to be
     fieldLeftPos::Int # what is the position of the first char on the field
     tickSize::Any
@@ -53,7 +53,7 @@ type TwEntryData
     precision::Int
     commas::Bool
     stripzeros::Bool
-    conversion::ASCIIString
+    conversion::String
     function TwEntryData( dt::DataType )
         o = new( dt, false, "", "", 1, 1, 0, true, false, false, false,
            -1, true, true, "" )
@@ -343,7 +343,7 @@ function inject( o::TwObj{TwEntryData}, token )
         else
             beep()
         end
-    elseif o.data.valueType == Bool && typeof( token ) <: AbstractString && isprint( token )
+    elseif o.data.valueType == Bool && typeof( token ) <: AbstractString && all(isprint, token )
         if token == "t"
             o.data.inputText = "true"
             o.data.cursorPos = 1
@@ -434,7 +434,7 @@ function inject( o::TwObj{TwEntryData}, token )
             insertchar( token )
             dorefresh = true
         end
-    elseif typeof( token ) <: AbstractString && o.data.valueType <: AbstractString && isprint( token )
+    elseif typeof( token ) <: AbstractString && o.data.valueType <: AbstractString && all(isprint, token )
         insertchar( token )
         checkcursor()
         dorefresh = true

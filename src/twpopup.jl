@@ -43,7 +43,7 @@ ctrl-p : move to the previous matched item
 """
 
 type TwPopupData
-    choices::Array{UTF8String,1}
+    choices::Array{String,1}
     datalist::Array{Any, 1}
     maxchoicelength::Int
     searchbox::Any
@@ -51,8 +51,8 @@ type TwPopupData
     currentLeft::Int
     currentTop::Int
     selectmode::Int
-    helpText::UTF8String
-    TwPopupData( arr::Array{UTF8String,1} ) = new( arr, Any[], maximum( map( z->length(z), arr ) ), nothing, 1, 1, 1, 0, "" )
+    helpText::String
+    TwPopupData( arr::Array{String,1} ) = new( arr, Any[], maximum( map( z->length(z), arr ) ), nothing, 1, 1, 1, 0, "" )
 end
 TwPopupData{ T<:AbstractString}( arr::Array{T, 1 } ) = TwPopupData( map( x-> x , arr ) )
 
@@ -111,7 +111,7 @@ function newTwPopup{T<:AbstractString}( scr::TwObj, arr::Array{T,1};
 
     link_parent_child( scr, obj, h, w, posy, posx )
 
-    obj.data.searchbox = newTwEntry( obj, UTF8String; width=minwidth, posy=:bottom, posx = 1, box=false )
+    obj.data.searchbox = newTwEntry( obj, String; width=minwidth, posy=:bottom, posx = 1, box=false )
     obj.data.searchbox.title = "?"
     obj.data.searchbox.hasFocus = false # so it looks dimmer than main cursor
     obj

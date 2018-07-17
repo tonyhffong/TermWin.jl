@@ -10,12 +10,8 @@ function repr_symbol( s::Symbol )
     v
 end
 
-function delete_char_before( s::ASCIIString, p::Int )
-    return (s[1:p-2] * s[p:end], max(p-1,1) )
-end
-
 #delete a code_point before the p "width" position
-function delete_char_before( s::UTF8String, p::Int )
+function delete_char_before( s::String, p::Int )
     local totalskip::Int = 0
     local lastj::Int = 0
     local lastcw::Int = 0
@@ -46,13 +42,9 @@ function delete_char_before( s::UTF8String, p::Int )
     return (s[1:chr2ind(s,lastj-1)], p-lastcw)
 end
 
-function delete_char_at( s::ASCIIString, p::Int )
-    return s[1:p-1] * s[p+1:end]
-end
-
 # delete at least 1 code point, could be more if there
 # are trailing zero-width codepoints.
-function delete_char_at( s::UTF8String, p::Int )
+function delete_char_at( s::String, p::Int )
     local totalskip::Int = 0
     local lastj::Int = 0
     for (j,c) in enumerate( s )
@@ -75,7 +67,7 @@ end
 # TODO: test this thoroughly!!
 # Insert a (short) string at the "p" position
 # p is interpreted as the width position
-function insertstring{T<:AbstractString}( s::UTF8String, ch::T, p::Int, overwrite::Bool )
+function insertstring{T<:AbstractString}( s::String, ch::T, p::Int, overwrite::Bool )
     wskip = p-1
     local totalskip::Int = 0
     chwidth = strwidth( ch )
@@ -191,7 +183,7 @@ end
 
 function wordwrap{T<:AbstractString}( x::T, width::Int )
     spaceleft = width
-    lines = UTF8String[]
+    lines = String[]
     currline = convert( T,"" )
     words = @compat split( x, " ", keep=true ) # don't keep empty words
     for w in words
@@ -241,7 +233,7 @@ function levenstein_distance( s1, s2 )
     return v1[end]
 end
 
-function longest_common_prefix( s1::UTF8String, s2::UTF8String )
+function longest_common_prefix( s1::String, s2::String )
     m = min( length( s1 ), length( s2 ) )
     lcpidx = 0
     for i in 1:m

@@ -37,10 +37,10 @@ type TwTreeData
     currentLine::Int
     currentLeft::Int
     showLineInfo::Bool # e.g.1/100 1.0% at top right corner
-    bottomText::UTF8String
+    bottomText::String
     showHelp::Bool
-    helpText::UTF8String
-    searchText::UTF8String
+    helpText::String
+    searchText::String
     moduleall::Bool
     function TwTreeData()
         log( "TwTreeData 0")
@@ -52,8 +52,8 @@ type TwTreeData
 end
 
 function newTwTree( scr::TwObj, ex; height::Real=0.8,width::Real=0.8,posy::Any=:staggered, posx::Any=:staggered,
-        title::UTF8String = string( typeof( ex ) ), box::Bool=true, showLineInfo::Bool=true, showHelp::Bool=true,
-        bottomText::UTF8String = "" )
+        title::String = string( typeof( ex ) ), box::Bool=true, showLineInfo::Bool=true, showHelp::Bool=true,
+        bottomText::String = "" )
     log( "newTwTree 0")
     obj = TwObj( TwTreeData(), Val{ :Tree } )
     log( "newTwTree 1")
@@ -80,7 +80,7 @@ end
 # skiplines are hints where we should not draw the vertical lines to the left
 # because it corresponds the end of some list at a lower depth level
 
-function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap::Dict{ Any, Bool }, stack::Array{Any,1}, skiplines::Array{Int,1}=Int[], moduleall::Bool = true )
+function tree_data{T}( x::Any, name::String, list::Array{T,1}, openstatemap::Dict{ Any, Bool }, stack::Array{Any,1}, skiplines::Array{Int,1}=Int[], moduleall::Bool = true )
     global modulenames, typefields
     isexp = haskey( openstatemap, stack ) && openstatemap[ stack ]
     typx = typeof( x )
@@ -651,7 +651,7 @@ function inject( o::TwObj{TwTreeData}, token )
             beep()
         end
     elseif token == "/"
-        helper = newTwEntry( o.screen.value, UTF8String; width=30, posy=:center, posx=:center, title = "Search: " )
+        helper = newTwEntry( o.screen.value, String; width=30, posy=:center, posx=:center, title = "Search: " )
         helper.data.inputText = o.data.searchText
         s = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )

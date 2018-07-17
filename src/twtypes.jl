@@ -39,9 +39,9 @@ type TwObj{T,S}
     isVisible::Bool
     data::T
     value::Any # the logical "content" that this object contains (return value if editable)
-    title::UTF8String
+    title::String
     listeners::Dict{ Symbol, Array } # event=>array of registered listeners. each listener is of the type (o, ev)->Void
-    function TwObj( data::T )
+    function TwObj{T,S}( data::T ) where {T,S}
         log( "TwObj datatype=" * string( T ) * " TwObjSubtype="*string(S) )
         x = new( WeakRef(), 0,
             nothing,
@@ -87,7 +87,7 @@ type TwListData
     canvaslocy::Int # 0-based
     showLineInfo::Bool
     navigationmode::Bool
-    bottomText::UTF8String
+    bottomText::String
     function TwListData()
         ret = new( false, TwObj[], 0, 0, 0, nothing, 0, 0, false, false, "" )
         finalizer( ret, y->begin
@@ -99,7 +99,7 @@ type TwListData
     end
 end
 
-typealias TwScreen TwObj{TwScreenData}
+const TwScreen = TwObj{TwScreenData}
 
 function TwObj{T,S}( d::T, ::Type{Val{S}} ) 
     return( TwObj{T,S}(d) )

@@ -85,11 +85,11 @@ function update_list_canvas( o::TwObj{TwListData} )
             end
         end
         if o.data.horizontal
-            o.data.canvasheight = maximum( map( _->objtype(_)==:List? _.data.canvasheight : _.height, ws ) )
-            o.data.canvaswidth = sum( map( _->objtype(_)==:List? _.data.canvaswidth : _.width, ws ) )
+            o.data.canvasheight = maximum( map( x->objtype(x)==:List? x.data.canvasheight : x.height, ws ) )
+            o.data.canvaswidth = sum( map( x->objtype(x)==:List? x.data.canvaswidth : x.width, ws ) )
         else
-            o.data.canvasheight = sum( map( _->objtype(_)==:List? _.data.canvasheight: _.height, ws ) )
-            o.data.canvaswidth = maximum( map( _->objtype(_)==:List? _.data.canvaswidth : _.width, ws ) )
+            o.data.canvasheight = sum( map( x->objtype(x)==:List? x.data.canvasheight: x.height, ws ) )
+            o.data.canvaswidth = maximum( map( x->objtype(x)==:List? x.data.canvaswidth : x.width, ws ) )
         end
         if !(typeof( o.window ) <: Ptr)
             o.height = o.data.canvasheight + (o.box?2:0)

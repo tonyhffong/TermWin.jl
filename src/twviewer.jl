@@ -16,12 +16,12 @@ type TwViewerData
     currentLine::Int
     currentLeft::Int
     showLineInfo::Bool # e.g.1/100 1.0% at top right corner
-    bottomText::UTF8String
+    bottomText::String
     trackLine::Bool
     showHelp::Bool
-    helpText::UTF8String
+    helpText::String
     tabWidth::Int
-    TwViewerData() = new( UTF8String[], 0, 0, 1, 1, 1, true, "", false, true, defaultViewerHelpText, 4 )
+    TwViewerData() = new( String[], 0, 0, 1, 1, 1, true, "", false, true, defaultViewerHelpText, 4 )
 end
 
 # the ways to use it:

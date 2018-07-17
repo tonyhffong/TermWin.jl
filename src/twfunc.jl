@@ -23,23 +23,31 @@ type TwFuncData
     currentLine::Int
     currentLeft::Int
     showLineInfo::Bool # e.g.1/100 1.0% at top right corner
-    bottomText::UTF8String
+    bottomText::String
     showHelp::Bool
-    helpText::UTF8String
+    helpText::String
     TwFuncData() = new( Method[], 0, 0, nothing,
         1, 1, 1, true, "", true, defaultFuncHelpText )
+end
+
+function argName(s, n)
+    try
+        return s.types[n]
+    catch
+        return argName(s.body, n)
+    end
 end
 
 # the ways to use it:
 # exact dimensions known: h,w,y,x, content to add later
 # exact dimensions unknown, but content known and content drives dimensions
 function newTwFunc( scr::TwObj, ms::Array{Method,1}; kwargs... )
-    ns = UTF8String[] # names
-    sig  = UTF8String[]
-    files = UTF8String[]
+    ns = String[] # names
+    sig  = String[]
+    files = String[]
     lines = Int[]
     for m in ms
-        push!( ns, string( m.func.code.name ) )
+        push!( ns, string( m.name ) )
         push!( sig, string( m.sig ) )
         tv, decls, file, line = Base.arg_decl_parts(m)
         push!( files, string( file ) )
@@ -50,10 +58,10 @@ function newTwFunc( scr::TwObj, ms::Array{Method,1}; kwargs... )
           sig = sig,
           file = files,
           line = lines,
-          nargs = Int[ length(m.sig) for m in ms ],
-          arg1t = UTF8String[ (length(m.sig)>=1 ? ensure_length(m.sig[1],35,false) : "") for m in ms ],
-          arg2t = UTF8String[ (length(m.sig)>=2 ? ensure_length(m.sig[2],35,false) : "") for m in ms ],
-          arg3t = UTF8String[ (length(m.sig)>=3 ? ensure_length(m.sig[3],35,false) : "") for m in ms ]
+          nargs = Int[ m.nargs for m in ms ],
+          arg1t = String[ (m.nargs>=1 ? ensure_length(string(argName(m.sig,1)),35,false) : "") for m in ms ],
+          arg2t = String[ (m.nargs>=2 ? ensure_length(string(argName(m.sig,2)),35,false) : "") for m in ms ],
+          arg3t = String[ (m.nargs>=3 ? ensure_length(string(argName(m.sig,3)),35,false) : "") for m in ms ]
           )
     colorder = extractkwarg!( kwargs, :colorder, [ :name, :sig, :nargs, "*" ] )
     pivots   = extractkwarg!( kwargs, :pivots, [ ] )
