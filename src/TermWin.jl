@@ -22,6 +22,7 @@ end
 using DataArrays
 using DataFrames
 using DataFramesMeta
+using Missings
 
 macro lintpragma( s )
 end
@@ -120,7 +121,11 @@ function initsession()
             throw( "terminal doesn't support colors")
         end
         mousemask( BUTTON1_PRESSED | REPORT_MOUSE_POSITION )
-        acs_map_ptr = cglobal( Libdl.dlsym( libncurses, :acs_map), UInt64 )
+	if is_apple()
+	    acs_map_ptr = cglobal( Libdl.dlsym( libncurses, :acs_map), UInt32 )
+	else
+            acs_map_ptr = cglobal( Libdl.dlsym( libncurses, :acs_map), UInt64 )
+	end
         acs_map_arr = unsafe_wrap(Array, acs_map_ptr, 128)
 
         start_color()
