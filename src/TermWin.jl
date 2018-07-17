@@ -120,17 +120,17 @@ function initsession()
             throw( "terminal doesn't support colors")
         end
         mousemask( BUTTON1_PRESSED | REPORT_MOUSE_POSITION )
-        acs_map_ptr = cglobal( Libdl.dlsym( libncurses, :acs_map), UInt32 )
-        acs_map_arr = pointer_to_array( acs_map_ptr, 128)
+        acs_map_ptr = cglobal( Libdl.dlsym( libncurses, :acs_map), UInt64 )
+        acs_map_arr = unsafe_wrap(Array, acs_map_ptr, 128)
 
         start_color()
         # figure out how many colors are supported
         colorsptr = cglobal( Libdl.dlsym( libncurses, :COLORS), Int16 )
-        colorsarr = pointer_to_array( colorsptr, 1 )
+        colorsarr = unsafe_wrap(Array,  colorsptr, 1 )
         COLORS = colorsarr[1]
 
         colorsptr = cglobal( Libdl.dlsym( libncurses, :COLOR_PAIRS), Int16 )
-        colorsarr = pointer_to_array( colorsptr, 1 )
+        colorsarr = unsafe_wrap(Array,  colorsptr, 1 )
         COLOR_PAIRS = colorsarr[1]
 
         init_pair( 1, COLOR_RED,    COLOR_BLACK )
@@ -342,9 +342,9 @@ end
 function titleof( x::Any )
     typx = typeof( x )
     if typx == Module || typx == Function
-        return utf8( string( x ) )
+        return string( x )
     else
-        return utf8( string( typx ) )
+        return string( typx )
     end
 end
 
@@ -387,7 +387,7 @@ function tshow( x; kwargs... )
             catch err
                 bt = catch_backtrace()
                 msg = wordwrap( string(err) * "\n" * string( bt ), 80 )
-                widget = tshow_( msg; title=utf8("Error") )
+                widget = tshow_( msg; title="Error" )
             end
             if widget != nothing
                 refresh( rootTwScreen )
@@ -459,7 +459,7 @@ function testkeydialog()
     win = winnewcenter( 6, width )
     panel = new_panel( win )
     box( win, 0, 0 )
-    title = utf8( "Test Key/Mouse/Unicode" )
+    title = "Test Key/Mouse/Unicode"
     keyhint = "[Esc to continue]"
 
     mvwprintw( win, 0, (@compat Int( (width-length(title))>>1)), "%s", title )

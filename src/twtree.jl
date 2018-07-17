@@ -1,4 +1,4 @@
-defaultTreeHelpText = utf8("""
+defaultTreeHelpText = """
 PgUp/PgDn,
 Arrow keys : standard navigation
 <spc>,<rtn>: toggle leaf expansion
@@ -12,14 +12,14 @@ F6         : popup window for value
     Shift-F6   : popup window for type
             n, p       : Move to next/previous matched line
             m          : (Module Only) toggle export-only vs all names
-""")
+"""
 
 modulenames = Dict{ Module, Array{ Symbol, 1 } }()
 moduleallnames = Dict{ Module, Array{ Symbol, 1 } }()
 typefields  = Dict{ Any, Array{ Symbol, 1 } }()
 
 typefields[ Method ] = [ :sig, :isstaged ]
-typefields[ VERSION < v"0.5-" ? LambdaStaticData : LambdaInfo ] = [ :name, :module, :file, :line ]
+#typefields[ VERSION < v"0.5-" ? LambdaStaticData : LambdaInfo ] = [ :name, :module, :file, :line ]
 typefields[ DataType ] = [ :name, :super, Symbol( "abstract" ), :mutable, :parameters ]
 typefields[ TypeName ] = [ :name, :module, :primary ]
 
@@ -45,15 +45,15 @@ type TwTreeData
     function TwTreeData()
         log( "TwTreeData 0")
         rv = new( Dict{ Any, Bool }(), Any[], 0, 0, 0, 0, 1, 1, 1, true,
-            utf8(""), true, utf8(defaultTreeHelpText), utf8(""), true )
+            "", true, defaultTreeHelpText, "", true )
         log( "TwTreeData 1")
         return( rv )
     end
 end
 
 function newTwTree( scr::TwObj, ex; height::Real=0.8,width::Real=0.8,posy::Any=:staggered, posx::Any=:staggered,
-        title::UTF8String = utf8( string( typeof( ex ) ) ), box::Bool=true, showLineInfo::Bool=true, showHelp::Bool=true,
-        bottomText::UTF8String = utf8("") )
+        title::UTF8String = string( typeof( ex ) ), box::Bool=true, showLineInfo::Bool=true, showHelp::Bool=true,
+        bottomText::UTF8String = "" )
     log( "newTwTree 0")
     obj = TwObj( TwTreeData(), Val{ :Tree } )
     log( "newTwTree 1")
@@ -141,7 +141,7 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
                 subname = "[" * repeat( " ", szdigits - length(istr)) * istr * "]"
                 newstack = copy( stack )
                 push!( newstack, i )
-                intern_tree_data( a, utf8(subname), newstack, i==len )
+                intern_tree_data( a, subname, newstack, i==len )
             end
         end
     elseif typx <: Associative
@@ -167,7 +167,7 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
                 end
                 newstack = copy( stack )
                 push!( newstack, k )
-                intern_tree_data( v, utf8(subname), newstack, i==len )
+                intern_tree_data( v, subname, newstack, i==len )
             end
         end
     elseif typx == Function
@@ -187,7 +187,7 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
                 subname = "Method[" * repeat( " ", szdigits - length(istr)) * istr * "]"
                 newstack = copy( stack )
                 push!( newstack, i )
-                intern_tree_data( m, utf8(subname), newstack, i==len )
+                intern_tree_data( m, subname, newstack, i==len )
             end
         end
     elseif typx == Module && !isempty( stack ) # don't want to recursively descend
@@ -237,7 +237,7 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
         push!( list, (s, t, v, stack, expandhint, skiplines ) )
         if isexp && !isempty( ns )
             for (i,n) in enumerate(ns)
-                subname = utf8(string(n))
+                subname = string(n)
                 newstack = copy( stack )
                 push!( newstack, n )
                 try
@@ -377,7 +377,7 @@ function inject( o::TwObj{TwTreeData}, token )
 
     update_tree_data = ()->begin
         o.data.datalist = Any[]
-        tree_data( o.value, utf8(o.title), o.data.datalist, o.data.openstatemap, Any[], Int[], o.data.moduleall )
+        tree_data( o.value, o.title, o.data.datalist, o.data.openstatemap, Any[], Int[], o.data.moduleall )
         updateTreeDimensions(o)
         viewContentWidth = o.data.datatreewidth + o.data.datatypewidth+o.data.datavaluewidth + 2
     end
@@ -707,6 +707,6 @@ function helptext( o::TwObj{TwTreeData} )
     if o.data.showHelp
         o.data.helpText
     else
-        utf8("")
+        ""
     end
 end

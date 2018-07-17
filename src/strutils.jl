@@ -1,5 +1,5 @@
 function repr_symbol( s::Symbol )
-    v = utf8(string(s))
+    v = string(s)
     if length(v) == 0
         v = ":\"\""
     elseif match( r"^[a-zA-Z_][0-9a-zA-Z_]*$", v ) != nothing

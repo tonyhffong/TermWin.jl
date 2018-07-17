@@ -3,7 +3,7 @@
 SELECTEDORDERABLE    = 1 # whether selected items are orderable, selected always on top
 SELECTSUBSTR         = 2 # search by substring (default by prefix)
 
-defaultMultiSelectHelpText = utf8("""
+defaultMultiSelectHelpText = """
 arrows : move cursor
 home   : move to top
 end    : move to bottom
@@ -21,7 +21,7 @@ ctrl-r : Toggle insertion/overwrite mode
 
 ctrl-n : move to the next matched item
 ctrl-p : move to the previous matched item
-""")
+"""
 
 type TwMultiSelectData
     choices::Array{UTF8String,1}
@@ -34,9 +34,9 @@ type TwMultiSelectData
     currentTop::Int
     selectmode::Int
     helpText::UTF8String
-    TwMultiSelectData( arr::Array{UTF8String,1}, selected::Array{UTF8String,1} ) = new( arr, selected, Any[], 0, nothing, 1, 1, 1, 0, utf8("") )
+    TwMultiSelectData( arr::Array{UTF8String,1}, selected::Array{UTF8String,1} ) = new( arr, selected, Any[], 0, nothing, 1, 1, 1, 0, "" )
 end
-TwMultiSelectData{T<:AbstractString,T2<:AbstractString}( arr::Array{T,1}, selected::Array{T2,1} ) = TwMultiSelectData( map( x->utf8( x ), arr ), map( x->utf8(x), selected ) )
+TwMultiSelectData{T<:AbstractString,T2<:AbstractString}( arr::Array{T,1}, selected::Array{T2,1} ) = TwMultiSelectData( map( x->x , arr ), map( x->x, selected ) )
 
 # the ways to use it:
 # standalone panel
@@ -45,9 +45,9 @@ TwMultiSelectData{T<:AbstractString,T2<:AbstractString}( arr::Array{T,1}, select
 function newTwMultiSelect{T<:AbstractString}( scr::TwObj, arr::Array{T,1};
         posy::Any = :center,posx::Any = :center,
         selected = UTF8String[],
-        title = utf8(""), maxwidth = 50, maxheight = 20, minwidth = 25,
+        title = "", maxwidth = 50, maxheight = 20, minwidth = 25,
         orderable = false, substrsearch=false )
-    obj = TwObj( TwMultiSelectData( arr, UTF8String[ utf8(string(_)) for _ in selected ] ), Val{ :MultiSelect } )
+    obj = TwObj( TwMultiSelectData( arr, UTF8String[ string(_) for _ in selected ] ), Val{ :MultiSelect } )
     obj.box = true
     obj.title = title
     obj.borderSizeV= 1
@@ -71,7 +71,7 @@ function newTwMultiSelect{T<:AbstractString}( scr::TwObj, arr::Array{T,1};
     link_parent_child( scr, obj, h,w, posy, posx )
 
     obj.data.searchbox = newTwEntry( obj, UTF8String, width=minwidth, posy=:bottom, posx=1, box=false )
-    obj.data.searchbox.title = utf8("?")
+    obj.data.searchbox.title = "?"
     obj.data.searchbox.hasFocus = false
     obj
 end

@@ -19,14 +19,14 @@ POPUPHIDEUNMATCHED  = 4
 POPUPSORTMATCHED    = 8
 POPUPALLOWNEW       = 16
 
-defaultPopupHelpText = utf8("""
+defaultPopupHelpText = """
 arrows : move cursor
 home   : move to top
 end    : move to bottom
 enter  : select
-""")
+"""
 
-defaultPopupQuickHelpText = utf8("""
+defaultPopupQuickHelpText = """
 arrows : move item cursor
 home   : move to top
 end    : move to bottom
@@ -40,7 +40,7 @@ ctrl-r : Toggle insertion/overwrite mode
 
 ctrl-n : move to the next matched item
 ctrl-p : move to the previous matched item
-""")
+"""
 
 type TwPopupData
     choices::Array{UTF8String,1}
@@ -52,9 +52,9 @@ type TwPopupData
     currentTop::Int
     selectmode::Int
     helpText::UTF8String
-    TwPopupData( arr::Array{UTF8String,1} ) = new( arr, Any[], maximum( map( z->length(z), arr ) ), nothing, 1, 1, 1, 0, utf8("") )
+    TwPopupData( arr::Array{UTF8String,1} ) = new( arr, Any[], maximum( map( z->length(z), arr ) ), nothing, 1, 1, 1, 0, "" )
 end
-TwPopupData{ T<:AbstractString}( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8( x ), arr ) )
+TwPopupData{ T<:AbstractString}( arr::Array{T, 1 } ) = TwPopupData( map( x-> x , arr ) )
 
 # the ways to use it:
 # standalone panel
@@ -62,10 +62,10 @@ TwPopupData{ T<:AbstractString}( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8
 # w include title width, if it's shown on the left
 function newTwPopup( scr::TwObj, arr::Array{Symbol,1};
         posy::Any=:center,posx::Any=:center,
-        title = utf8(""), maxwidth = 50, maxheight = 15, minwidth = 20,
+        title = "", maxwidth = 50, maxheight = 15, minwidth = 20,
         quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false )
 
-    return( newTwPopup( scr, map(x->utf8(string(x)),arr),
+    return( newTwPopup( scr, map(x->string(x),arr),
         posy=posy,posx=posx,
         title=title,maxwidth=maxwidth,maxheight=maxheight,minwidth=minwidth,
         quickselect=quickselect,substrsearch=substrsearch,
@@ -74,7 +74,7 @@ end
 
 function newTwPopup{T<:AbstractString}( scr::TwObj, arr::Array{T,1};
         posy::Any=:center,posx::Any=:center,
-        title = utf8(""), maxwidth = 50, maxheight = 15, minwidth = 20,
+        title = "", maxwidth = 50, maxheight = 15, minwidth = 20,
         quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false )
     obj = TwObj( TwPopupData(arr), Val{ :Popup } )
     obj.box = true
@@ -112,7 +112,7 @@ function newTwPopup{T<:AbstractString}( scr::TwObj, arr::Array{T,1};
     link_parent_child( scr, obj, h, w, posy, posx )
 
     obj.data.searchbox = newTwEntry( obj, UTF8String; width=minwidth, posy=:bottom, posx = 1, box=false )
-    obj.data.searchbox.title = utf8("?")
+    obj.data.searchbox.title = "?"
     obj.data.searchbox.hasFocus = false # so it looks dimmer than main cursor
     obj
 end

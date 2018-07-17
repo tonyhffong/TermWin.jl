@@ -1,6 +1,6 @@
 # hand-crafted numeric and string input field
 
-defaultEntryStringHelpText = utf8("""
+defaultEntryStringHelpText = """
 <-, -> : move cursor
 ctrl-a : move cursor to start
 ctrl-e : move cursor to end
@@ -8,9 +8,9 @@ ctrl-k : empty entry
 ctrl-r : Toggle insertion/overwrite mode
 
 Edges are highlighted if more beyond boundary
-""")
+"""
 
-defaultEntryNumberHelpText = utf8("""
+defaultEntryNumberHelpText = """
 <-, -> : move cursor
 ctrl-a : move cursor to start
 ctrl-e : move cursor to end
@@ -22,9 +22,9 @@ e      : (Floating Point only) exponent. 1e6 for 1,000,000.0
 ctrl-r : Toggle insertion/overwrite mode
 Shft-up: If configured, increase value by a tick-size
 Shft-dn: If configured, decrease value by a tick-size
-""")
+"""
 
-defaultEntryDateHelpText = utf8("""
+defaultEntryDateHelpText = """
 Format : YYYY-MM-DD standard, but allows formats such as
          20140101, 1/1/2014, 1Jan2014, 1 January 2014
          2014.01.01
@@ -37,7 +37,7 @@ ctrl-r : Toggle insertion/overwrite mode
 ?      : View calendar
 Shft-up: If configured, increase value by a tick-size
 Shft-dn: If configured, decrease value by a tick-size
-""")
+"""
 type TwEntryData
     valueType::DataType
     showHelp::Bool
@@ -55,7 +55,7 @@ type TwEntryData
     stripzeros::Bool
     conversion::ASCIIString
     function TwEntryData( dt::DataType )
-        o = new( dt, false, utf8(""), utf8(""), 1, 1, 0, true, false, false, false,
+        o = new( dt, false, "", "", 1, 1, 0, true, false, false, false,
            -1, true, true, "" )
         if dt <: AbstractString
             o.helpText = defaultEntryStringHelpText
@@ -88,7 +88,7 @@ end
 # y and x is relative to parentwin
 function newTwEntry( parent::TwObj, dt::DataType;
     width::Real=30,posy::Any=:staggered,posx::Any=:staggered,
-    box=true, showHelp=true, titleLeft=true, title = utf8(""),
+    box=true, showHelp=true, titleLeft=true, title = "",
     precision=-1, stripzeros= (precision == -1), conversion="" )
 
     data = TwEntryData( dt )
@@ -568,7 +568,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
     elseif dt <: Date
         v = nothing
         s = strip( s )
-        res = Compat.@Dict( r"^[0-9]{2}[a-z]{3}[0-9]{4}$"i => "dduuuyyyy",
+        res = Dict( r"^[0-9]{2}[a-z]{3}[0-9]{4}$"i => "dduuuyyyy",
                 r"^[0-9][a-z]{3}[0-9]{4}$"i => "duuuyyyy",
                 r"^[0-9]{2}[a-z]{3}[0-9]{2}$"i => "dduuuyy",
                 r"^[0-9][a-z]{3}[0-9]{2}$"i => "duuuyy",
@@ -630,7 +630,7 @@ end
 
 function helptext( o::TwObj{TwEntryData} )
     if !o.data.showHelp
-        return utf8("")
+        return ""
     end
     o.data.helpText
 end

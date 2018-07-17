@@ -48,7 +48,7 @@ type TwObj{T,S}
             nothing,
             0, 0, 0, 0,
             false, 0, 0,
-            true, true, false, true, data, nothing, utf8(""), Dict{Symbol, Array{Function,1} }() )
+            true, true, false, true, data, nothing, "", Dict{Symbol, Array{Function,1} }() )
         finalizer( x, y->begin
             global rootwin
             if y.panel != nothing
@@ -89,7 +89,7 @@ type TwListData
     navigationmode::Bool
     bottomText::UTF8String
     function TwListData()
-        ret = new( false, TwObj[], 0, 0, 0, nothing, 0, 0, false, false, utf8("") )
+        ret = new( false, TwObj[], 0, 0, 0, nothing, 0, 0, false, false, "" )
         finalizer( ret, y->begin
             if y.pad != nothing
                 delwin( y.pad )

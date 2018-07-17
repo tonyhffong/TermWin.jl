@@ -7,14 +7,14 @@ function initscr()
     global libncurses, libpanel
     if  libncurses == false
         try
-            libncurses = Libdl.dlopen("libncurses")
-        catch
             libncurses = Libdl.dlopen("libncursesw")
+        catch
+            libncurses = Libdl.dlopen("libncurses")
         end
         try
-            libpanel = Libdl.dlopen("libpanel")
-        catch
             libpanel = Libdl.dlopen("libpanelw")
+        catch
+            libpanel = Libdl.dlopen("libpanel")
         end
     end
     ccall( Libdl.dlsym( libncurses, :initscr), Ptr{Void}, () )
@@ -332,7 +332,7 @@ function mouseinterval( n::Int )
 end
 
 #hack!
-const mouseByteString = bytestring( Array( UInt8, 64 ) )
+mouseByteString = Vector{UInt8}(64) #unsafe_string( Array( UInt8, 64 ) )
 function getmouse()
     #=
     type Mouse_Event_t

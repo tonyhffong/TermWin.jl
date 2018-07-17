@@ -1,4 +1,4 @@
-const keymap = Compat.@Dict(
+const keymap = Dict(
     "\eOA"    => :up,
     "\e[1;2A" => :shift_up,
     "\e[1;5A" => :ctrl_up,
@@ -125,7 +125,7 @@ const keymap = Compat.@Dict(
     "\e"*string(@compat Char(0x152)) => :alt_pagedown
 )
 
-ncnummap = Compat.@Dict(
+ncnummap = Dict(
     (@compat UInt(0x7f)) => :backspace,
     (@compat UInt(0x01)) => :ctrl_a,
     (@compat UInt(0x02)) => :ctrl_b,
@@ -305,7 +305,7 @@ ncnummap = Compat.@Dict(
 )
 
 
-const keypadmap = Compat.@Dict(
+const keypadmap = Dict(
     :keypad_dot => ".",
     :keypad_enter => Symbol( "return" ),
     :keypad_asterisk => "*",

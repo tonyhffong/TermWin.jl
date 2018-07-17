@@ -148,7 +148,7 @@ function TwTableView( df::AbstractDataFrame, name::UTF8String;
         error( "sortorder eltype expects Symbol, or Tuple{Symbol,Symbol}: " * string( eltype( sortorder ) ) )
     end
 
-    TwTableView( utf8(name), pivots, actualsortorder, finalcolorder, initdepth )
+    TwTableView( name, pivots, actualsortorder, finalcolorder, initdepth )
 end
 
 # this is the widget data. all subnodes hold a weakref back to this to
@@ -177,7 +177,7 @@ type TwDfTableData
     # calculated dimension
     TwDfTableData() = new( TwDfTableNode(),
         Symbol[], Tuple{Symbol,Symbol}[], Any[], 0, 10, 1, 1, 1, 1, 1, 1, TwTableColInfo[],
-        Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, 1, TwTableView[], Dict{Symbol,CalcPivot}(),utf8("") )
+        Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, 1, TwTableView[], Dict{Symbol,CalcPivot}(),"" )
 end
 
 #TODO: allow Regex in formatHints and aggrHints
@@ -205,7 +205,7 @@ function newTwDfTable( scr::TwObj, df::DataFrame;
     obj.data.rootnode.subdataframe = df
     obj.data.rootnode.context = WeakRef( obj.data )
 
-    mainV = TwTableView( df, utf8( "#Main"), pivots = pivots,
+    mainV = TwTableView( df, "#Main", pivots = pivots,
         initdepth=initdepth, sortorder=sortorder, colorder=colorder, hidecols=hidecols )
 
     obj.data.pivots = mainV.pivots
@@ -225,7 +225,7 @@ function newTwDfTable( scr::TwObj, df::DataFrame;
         vcolorder = get( d, :colorder, colorder )
         vhidecols = get( d, :hidecols, hidecols )
         vsortorder = get( d, :sortorder, sortorder )
-        v = TwTableView( df, utf8( vname ), pivots = vpivots, initdepth = vinitdepth,
+        v = TwTableView( df, vname, pivots = vpivots, initdepth = vinitdepth,
             sortorder=vsortorder, colorder = vcolorder, hidecols = vhidecols )
         push!( obj.data.views, v )
     end
@@ -1035,9 +1035,9 @@ function inject( o::TwObj{TwDfTableData}, token )
             end
         end
     elseif token == "p"
-        allcols = map(_->utf8(string(_)), names( o.data.rootnode.subdataframe ) )
-        append!( allcols, map( _->utf8(string(_)), collect( keys( o.data.calcpivots ) ) ) )
-        pvts = map( _->utf8(string(_)), o.data.pivots )
+        allcols = map(_->string(_), names( o.data.rootnode.subdataframe ) )
+        append!( allcols, map( _->string(_), collect( keys( o.data.calcpivots ) ) ) )
+        pvts = map( _->string(_), o.data.pivots )
         helper = newTwMultiSelect( o.screen.value, allcols, selected = pvts, title="Pivot order", orderable=true, substrsearch=true )
         newpivots = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
@@ -1053,8 +1053,8 @@ function inject( o::TwObj{TwDfTableData}, token )
         end
         dorefresh = true
     elseif token == "c"
-        allcols = map(_->utf8(string(_)), names( o.data.rootnode.subdataframe ) )
-        visiblecols = map( _->utf8(string(_.name)), o.data.colInfo )
+        allcols = map(_->string(_), names( o.data.rootnode.subdataframe ) )
+        visiblecols = map( _->string(_.name), o.data.colInfo )
         helper = newTwMultiSelect( o.screen.value, allcols, selected = visiblecols, title="Visible columns & their order", orderable=true, substrsearch=true )
         newcols = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )

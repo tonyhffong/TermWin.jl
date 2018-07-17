@@ -29,7 +29,7 @@ function liftAggrSpecToFunc( c::Symbol, dfa::UTF8String )
     ret = liftAggrSpecToFunc( c, parse( dfa ) )
     DataFrameAggrCache[ (c, dfa) ] = ret
 end
-liftAggrSpecToFunc( c::Symbol, dfa::ASCIIString ) = liftAggrSpecToFunc( c, utf8( dfa ) )
+liftAggrSpecToFunc( c::Symbol, dfa::ASCIIString ) = liftAggrSpecToFunc( c,  dfa  )
 
 function liftAggrSpecToFunc( c::Symbol, dfa::Union{ Function, Symbol, Expr } )
     if typeof( dfa ) == Function
@@ -179,9 +179,9 @@ immutable CalcPivot
     spec::Expr
     by::Array{Symbol,1}
     CalcPivot( x::UTF8String, by::Array{Symbol,1}=Symbol[] ) = CalcPivot( parse(x), by )
-    CalcPivot( x::ASCIIString, by::Array{Symbol,1}=Symbol[] ) = CalcPivot( parse(utf8(x)), by )
+    CalcPivot( x::ASCIIString, by::Array{Symbol,1}=Symbol[] ) = CalcPivot( parse(x), by )
     CalcPivot( x::UTF8String, by::Symbol ) = CalcPivot( parse(x), Symbol[ by ] )
-    CalcPivot( x::ASCIIString, by::Symbol ) = CalcPivot( parse(utf8(x)), Symbol[ by ] )
+    CalcPivot( x::ASCIIString, by::Symbol ) = CalcPivot( parse(x), Symbol[ by ] )
     function CalcPivot( x::Expr, by::Symbol )
         CalcPivot( x, Symbol[ by ] )
     end
@@ -391,13 +391,13 @@ function cut_categories{S<:Real, T<:Real}( ::Type{S}, breaks::Vector{T};
             if leftequal
                 brackL = "["
                 brackR = ")"
-                compareL = utf8( "<" )
+                compareL =  "<"
                 compareR = "≥"
             else
                 brackL = "("
                 brackR = "]"
                 compareL = "≤"
-                compareR = utf8(">")
+                compareR = ">"
             end
             poolindexshift = -1
             if boundedness in [ :unbounded, :boundedabove ]
@@ -425,9 +425,9 @@ function cut_categories{S<:Real, T<:Real}( ::Type{S}, breaks::Vector{T};
         end
         if leftequal
             compareL = " ≤ "
-            compareR = utf8(" < ")
+            compareR = " < "
         else
-            compareL = utf8(" < ")
+            compareL = " < "
             compareR = " ≤ "
         end
         poolindexshift = -1
