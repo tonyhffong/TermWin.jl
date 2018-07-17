@@ -509,6 +509,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
             else
                 v = parse( dt, stmp )
             end
+        catch
         end
         if v != nothing
             v = convert(dt, v)
@@ -525,6 +526,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
                 else
                     v = parse( dt.types[1], stmp )
                 end
+            catch
             end
             if v != nothing
                 v = convert( dt, v)
@@ -545,6 +547,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
                     tail = stmp[dpos+1:end]
                     fv = parse( dt.types[2], tail ) // ( 10 ^ length(tail) )
                 end
+            catch
             end
             if iv != nothing && fv != nothing
                 v = iv + (sign(iv) > 0? fv : -fv )
@@ -560,6 +563,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
             else
                 v = parse( dt, stmp )
             end
+        catch
         end
         if v != nothing
             v = convert( dt, v)
@@ -590,6 +594,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
             if m != nothing
                 try
                     v = Date( s, f )
+                catch
                 end
                 if v != nothing
                     fmt = f

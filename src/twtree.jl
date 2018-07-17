@@ -225,6 +225,7 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
                     if length(ns) > 20
                         sort!(ns)
                     end
+                catch
                 end
                 typefields[ typx ] = ns
             end
