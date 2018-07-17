@@ -6,11 +6,11 @@ type TwProgressData
     progress::Float64
     showProgress::Bool
     cursorPos::Int # where is the progress bar cursor
-    text::UTF8String
+    text::String
     redrawTime::Float64
     statusTime::Float64
     startTime::Float64
-    TwProgressData() = new( RemoteRef(), RemoteRef(), 0.0, true, 1, utf8(""), time(), time(), time() )
+    TwProgressData() = new( RemoteRef(), RemoteRef(), 0.0, true, 1, "", time(), time(), time() )
 end
 
 twGlobProgressData = TwProgressData()
@@ -23,7 +23,7 @@ function updateProgressChannel( status::Symbol, v::Any )
     put!( twGlobProgressData.statusChannel, ( status, v ) )
 end
 
-function progressMessage( s::UTF8String )
+function progressMessage( s::String )
     global twGlobProgressData
     st = :normal
     val = nothing
@@ -34,11 +34,11 @@ function progressMessage( s::UTF8String )
         end
     end
     if typeof( val ) <: Dict && eltype( val ) <: (Symbol, Any)
-        val[ :message ] = utf8(s)
+        val[ :message ] = s
         put!( twGlobProgressData.statusChannel, ( st, val ) )
     else
         if st != :error && st != :done
-            put!( twGlobProgressData.statusChannel, (st, @compat Dict{Symbol,Any}( :message => utf8(s) ) ) )
+            put!( twGlobProgressData.statusChannel, (st, @compat Dict{Symbol,Any}( :message => s ) ) )
         end
     end
 end
@@ -68,9 +68,9 @@ end
 # w include title width, if it's shown on the left
 # the function f takes no argument. It's started right-away
 # the function can call
-# * TermWin.progressMessage( s::UTF8String ) # make sure height can accommodate the content
+# * TermWin.progressMessage( s::String ) # make sure height can accommodate the content
 # * TermWin.progressUpdate( n::Float64 ) # 0.0 <= n <= 1.0
-function newTwProgress( scr::TwObj; height::Real=5, width::Real=40, posy::Any=:center,posx::Any=:center, box=true, title = utf8("") )
+function newTwProgress( scr::TwObj; height::Real=5, width::Real=40, posy::Any=:center,posx::Any=:center, box=true, title = "" )
     global twGlobProgressData
     obj = TwObj( TwProgressData(), Val{ :Progress } )
     obj.data = twGlobProgressData
@@ -119,7 +119,7 @@ function inject( o::TwObj{TwProgressData}, token::Any )
         if st == :init
             twGlobProgressData.startTime = t
             twGlobProgressData.progress = 0.0
-            twGlobProgressData.text = utf8( "init" * strftime( " %H:%M:%S", time() )  )
+            twGlobProgressData.text = "init" * strftime( " %H:%M:%S", time() )
         elseif st == :error
             o.value = val
             retcode = :exit_nothing
@@ -129,11 +129,11 @@ function inject( o::TwObj{TwProgressData}, token::Any )
         else
             if typeof( val ) <: Dict && eltype( val ) <: (Symbol,Any)
                 if haskey( val, :message ) && typeof( val[:message] ) <: AbstractString
-                    twGlobProgressData.text = utf8( val[ :message ] )
+                    twGlobProgressData.text = val[ :message ] 
                 end
                 if haskey( val, :progress ) && typeof( val[ :progress ] ) == Float64
                     twGlobProgressData.progress = val[ :progress ]
-                    #twGlobProgressData.text = utf8( string( st ) * strftime( " %H:%M:%S", time() ) )
+                    #twGlobProgressData.text = string( st ) * strftime( " %H:%M:%S", time() )
                 end
             end
             dorefresh = true

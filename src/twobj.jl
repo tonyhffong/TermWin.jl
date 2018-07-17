@@ -263,4 +263,4 @@ end
 
 refresh( o::TwObj ) = (erase(o);draw(o))
 
-helptext( _::TwObj ) = utf8("")
+helptext( _::TwObj ) = ""

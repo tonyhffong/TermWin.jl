@@ -1,4 +1,4 @@
-const keymap = Compat.@Dict(
+const keymap = Dict(
     "\eOA"    => :up,
     "\e[1;2A" => :shift_up,
     "\e[1;5A" => :ctrl_up,
@@ -125,7 +125,7 @@ const keymap = Compat.@Dict(
     "\e"*string(@compat Char(0x152)) => :alt_pagedown
 )
 
-ncnummap = Compat.@Dict(
+ncnummap = Dict(
     (@compat UInt(0x7f)) => :backspace,
     (@compat UInt(0x01)) => :ctrl_a,
     (@compat UInt(0x02)) => :ctrl_b,
@@ -305,7 +305,7 @@ ncnummap = Compat.@Dict(
 )
 
 
-const keypadmap = Compat.@Dict(
+const keypadmap = Dict(
     :keypad_dot => ".",
     :keypad_enter => Symbol( "return" ),
     :keypad_asterisk => "*",
@@ -369,39 +369,39 @@ function readtoken( win::Ptr{Void} )
             return string( @compat Char( c ) )
         end
     elseif 192 <= c <= 223 # utf8 based logic starts here
-        bs = Array( UInt8, 2 )
+        bs = Array{UInt8}( 2 )
         bs[1] = @compat UInt8( c )
         bs[2] = @compat UInt8( wgetch( win ) )
-        return convert( UTF8String, bs )
+        return convert( String, bs )
     elseif  224 <= c <= 239
-        bs = Array( UInt8, 3 )
+        bs = Array{UInt8}( 3 )
         bs[1] = @compat UInt8( c )
         bs[2] = @compat UInt8( wgetch( win ) )
         bs[3] = @compat UInt8( wgetch( win ) )
-        return convert( UTF8String, bs )
+        return convert( String, bs )
     elseif  240 <= c <= 247
-        bs = Array( UInt8, 4 )
+        bs = Array{UInt8}( 4 )
         bs[1] = @compat UInt8( c )
         bs[2] = @compat UInt8( wgetch( win ) )
         bs[3] = @compat UInt8( wgetch( win ) )
         bs[4] = @compat UInt8( wgetch( win ) )
-        return convert( UTF8String, bs )
+        return convert( String, bs )
     elseif  248 <= c <= 251
-        bs = Array( UInt8, 5 )
+        bs = Array{UInt8}( 5 )
         bs[1] = @compat UInt8( c )
         bs[2] = @compat UInt8( wgetch( win ) )
         bs[3] = @compat UInt8( wgetch( win ) )
         bs[4] = @compat UInt8( wgetch( win ) )
         bs[5] = @compat UInt8( wgetch( win ) )
-        return convert( UTF8String, bs )
+        return convert( String, bs )
     elseif  252 <= c <= 253
-        bs = Array( UInt8, 6 )
+        bs = Array{UInt8}( 6 )
         bs[1] = @compat UInt8( c )
         bs[2] = @compat UInt8( wgetch( win ) )
         bs[3] = @compat UInt8( wgetch( win ) )
         bs[4] = @compat UInt8( wgetch( win ) )
         bs[5] = @compat UInt8( wgetch( win ) )
         bs[6] = @compat UInt8( wgetch( win ) )
-        return convert( UTF8String, bs )
+        return convert( String, bs )
     end
 end

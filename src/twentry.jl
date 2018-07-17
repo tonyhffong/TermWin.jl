@@ -1,6 +1,6 @@
 # hand-crafted numeric and string input field
 
-defaultEntryStringHelpText = utf8("""
+defaultEntryStringHelpText = """
 <-, -> : move cursor
 ctrl-a : move cursor to start
 ctrl-e : move cursor to end
@@ -8,9 +8,9 @@ ctrl-k : empty entry
 ctrl-r : Toggle insertion/overwrite mode
 
 Edges are highlighted if more beyond boundary
-""")
+"""
 
-defaultEntryNumberHelpText = utf8("""
+defaultEntryNumberHelpText = """
 <-, -> : move cursor
 ctrl-a : move cursor to start
 ctrl-e : move cursor to end
@@ -22,9 +22,9 @@ e      : (Floating Point only) exponent. 1e6 for 1,000,000.0
 ctrl-r : Toggle insertion/overwrite mode
 Shft-up: If configured, increase value by a tick-size
 Shft-dn: If configured, decrease value by a tick-size
-""")
+"""
 
-defaultEntryDateHelpText = utf8("""
+defaultEntryDateHelpText = """
 Format : YYYY-MM-DD standard, but allows formats such as
          20140101, 1/1/2014, 1Jan2014, 1 January 2014
          2014.01.01
@@ -37,12 +37,12 @@ ctrl-r : Toggle insertion/overwrite mode
 ?      : View calendar
 Shft-up: If configured, increase value by a tick-size
 Shft-dn: If configured, decrease value by a tick-size
-""")
+"""
 type TwEntryData
     valueType::DataType
     showHelp::Bool
-    helpText::UTF8String
-    inputText::UTF8String
+    helpText::String
+    inputText::String
     cursorPos::Int # where is the next char going to be
     fieldLeftPos::Int # what is the position of the first char on the field
     tickSize::Any
@@ -53,9 +53,9 @@ type TwEntryData
     precision::Int
     commas::Bool
     stripzeros::Bool
-    conversion::ASCIIString
+    conversion::String
     function TwEntryData( dt::DataType )
-        o = new( dt, false, utf8(""), utf8(""), 1, 1, 0, true, false, false, false,
+        o = new( dt, false, "", "", 1, 1, 0, true, false, false, false,
            -1, true, true, "" )
         if dt <: AbstractString
             o.helpText = defaultEntryStringHelpText
@@ -88,7 +88,7 @@ end
 # y and x is relative to parentwin
 function newTwEntry( parent::TwObj, dt::DataType;
     width::Real=30,posy::Any=:staggered,posx::Any=:staggered,
-    box=true, showHelp=true, titleLeft=true, title = utf8(""),
+    box=true, showHelp=true, titleLeft=true, title = "",
     precision=-1, stripzeros= (precision == -1), conversion="" )
 
     data = TwEntryData( dt )
@@ -343,7 +343,7 @@ function inject( o::TwObj{TwEntryData}, token )
         else
             beep()
         end
-    elseif o.data.valueType == Bool && typeof( token ) <: AbstractString && isprint( token )
+    elseif o.data.valueType == Bool && typeof( token ) <: AbstractString && all(isprint, token )
         if token == "t"
             o.data.inputText = "true"
             o.data.cursorPos = 1
@@ -434,7 +434,7 @@ function inject( o::TwObj{TwEntryData}, token )
             insertchar( token )
             dorefresh = true
         end
-    elseif typeof( token ) <: AbstractString && o.data.valueType <: AbstractString && isprint( token )
+    elseif typeof( token ) <: AbstractString && o.data.valueType <: AbstractString && all(isprint, token )
         insertchar( token )
         checkcursor()
         dorefresh = true
@@ -509,6 +509,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
             else
                 v = parse( dt, stmp )
             end
+        catch
         end
         if v != nothing
             v = convert(dt, v)
@@ -525,6 +526,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
                 else
                     v = parse( dt.types[1], stmp )
                 end
+            catch
             end
             if v != nothing
                 v = convert( dt, v)
@@ -545,6 +547,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
                     tail = stmp[dpos+1:end]
                     fv = parse( dt.types[2], tail ) // ( 10 ^ length(tail) )
                 end
+            catch
             end
             if iv != nothing && fv != nothing
                 v = iv + (sign(iv) > 0? fv : -fv )
@@ -560,6 +563,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
             else
                 v = parse( dt, stmp )
             end
+        catch
         end
         if v != nothing
             v = convert( dt, v)
@@ -568,7 +572,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
     elseif dt <: Date
         v = nothing
         s = strip( s )
-        res = Compat.@Dict( r"^[0-9]{2}[a-z]{3}[0-9]{4}$"i => "dduuuyyyy",
+        res = Dict( r"^[0-9]{2}[a-z]{3}[0-9]{4}$"i => "dduuuyyyy",
                 r"^[0-9][a-z]{3}[0-9]{4}$"i => "duuuyyyy",
                 r"^[0-9]{2}[a-z]{3}[0-9]{2}$"i => "dduuuyy",
                 r"^[0-9][a-z]{3}[0-9]{2}$"i => "duuuyy",
@@ -590,6 +594,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
             if m != nothing
                 try
                     v = Date( s, f )
+                catch
                 end
                 if v != nothing
                     fmt = f
@@ -630,7 +635,7 @@ end
 
 function helptext( o::TwObj{TwEntryData} )
     if !o.data.showHelp
-        return utf8("")
+        return ""
     end
     o.data.helpText
 end

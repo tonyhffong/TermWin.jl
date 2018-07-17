@@ -14,7 +14,7 @@ function newTwList( scr::TwObj;
         canvaswidth = 128,
         box=true,
         horizontal=false,
-        title=utf8(""),
+        title="",
         showLineInfo=true)
     obj = TwObj( TwListData(), Val{:List } )
     obj.box = box
@@ -85,11 +85,11 @@ function update_list_canvas( o::TwObj{TwListData} )
             end
         end
         if o.data.horizontal
-            o.data.canvasheight = maximum( map( _->objtype(_)==:List? _.data.canvasheight : _.height, ws ) )
-            o.data.canvaswidth = sum( map( _->objtype(_)==:List? _.data.canvaswidth : _.width, ws ) )
+            o.data.canvasheight = maximum( map( x->objtype(x)==:List? x.data.canvasheight : x.height, ws ) )
+            o.data.canvaswidth = sum( map( x->objtype(x)==:List? x.data.canvaswidth : x.width, ws ) )
         else
-            o.data.canvasheight = sum( map( _->objtype(_)==:List? _.data.canvasheight: _.height, ws ) )
-            o.data.canvaswidth = maximum( map( _->objtype(_)==:List? _.data.canvaswidth : _.width, ws ) )
+            o.data.canvasheight = sum( map( x->objtype(x)==:List? x.data.canvasheight: x.height, ws ) )
+            o.data.canvaswidth = maximum( map( x->objtype(x)==:List? x.data.canvaswidth : x.width, ws ) )
         end
         if !(typeof( o.window ) <: Ptr)
             o.height = o.data.canvasheight + (o.box?2:0)
@@ -632,17 +632,17 @@ function helptext( o::TwObj{TwListData} )
     focus = o.data.focus
     isrootlist = typeof( o.window ) <: Ptr
     if focus == 0
-        return utf8("")
+        return ""
     end
     s = helptext( o.data.widgets[ focus ] )
     if isrootlist
-h = utf8("""
+h = """
 ctrl-F4 : toggle navigation mode
 mouse-click: activate nearest widget
 ctrl-arrows: directional focus movements
   (normal arrows work too if not consumed by the current widget)
 tab/shift-tab: cycle through all widgets
-""")
+"""
         if s == "" # just the navigation text
             s = h
         else # merge the help text into a single window

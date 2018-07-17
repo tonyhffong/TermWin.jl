@@ -31,7 +31,7 @@ end
 
 type TwTableColInfo
     name::Symbol
-    displayname::UTF8String
+    displayname::String
     format::FormatHints
     aggr::Any
 end
@@ -64,7 +64,7 @@ function getindex( n::TwDfTableNode, c::Symbol )
         context = n.context.value
         aggr = context.allcolInfo[ c ].aggr
         f = liftAggrSpecToFunc( c, aggr )
-        ret = f( n.subdataframe )
+        ret = Base.invokelatest(f, n.subdataframe )
         if typeof( ret ) <: AbstractDataFrame
             ret = ret[1][1] # first col, first row
         end
@@ -75,7 +75,7 @@ function getindex( n::TwDfTableNode, c::Symbol )
 end
 
 type TwTableView
-    name::UTF8String
+    name::String
     pivots::Array{Symbol,1}
     sortorder::Array{ (@compat Tuple{Symbol,Symbol}), 1 } # [ (:col1, :asc ), (:col2, :desc), ... ]
     columns::Array{ Symbol, 1 }
@@ -83,7 +83,7 @@ type TwTableView
 end
 
 # convenient functions to construct views
-function TwTableView( df::AbstractDataFrame, name::UTF8String;
+function TwTableView( df::AbstractDataFrame, name::String;
     pivots = Symbol[], initdepth=1,
     colorder = Any[ "*" ],
     hidecols = Any[], sortorder = Any[] )
@@ -148,7 +148,7 @@ function TwTableView( df::AbstractDataFrame, name::UTF8String;
         error( "sortorder eltype expects Symbol, or Tuple{Symbol,Symbol}: " * string( eltype( sortorder ) ) )
     end
 
-    TwTableView( utf8(name), pivots, actualsortorder, finalcolorder, initdepth )
+    TwTableView( name, pivots, actualsortorder, finalcolorder, initdepth )
 end
 
 # this is the widget data. all subnodes hold a weakref back to this to
@@ -168,16 +168,16 @@ type TwDfTableData
     currentRight::Int # right most on-screen column
     colInfo::Array{ TwTableColInfo, 1 } # only the visible ones, maybe off-screen
     allcolInfo::Dict{ Symbol, TwTableColInfo } # including invisible ones
-    bottomText::UTF8String
-    helpText::UTF8String
+    bottomText::String
+    helpText::String
     initdepth::Int
     views::Array{ TwTableView, 1 }
     calcpivots::Dict{ Symbol, CalcPivot }
-    searchText::UTF8String
+    searchText::String
     # calculated dimension
     TwDfTableData() = new( TwDfTableNode(),
         Symbol[], Tuple{Symbol,Symbol}[], Any[], 0, 10, 1, 1, 1, 1, 1, 1, TwTableColInfo[],
-        Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, 1, TwTableView[], Dict{Symbol,CalcPivot}(),utf8("") )
+        Dict{Symbol,TwTableColInfo}(), "", defaultTableHelpText, 1, TwTableView[], Dict{Symbol,CalcPivot}(),"" )
 end
 
 #TODO: allow Regex in formatHints and aggrHints
@@ -192,7 +192,7 @@ function newTwDfTable( scr::TwObj, df::DataFrame;
         formatHints = Dict{Any,FormatHints}(), # Symbol/Type -> FormatHints
         aggrHints = Dict{Any,Any}(), # Symbol/Type -> string/symbol/expr/function
         widthHints = Dict{Symbol,Int}(),
-        headerHints = Dict{Symbol,UTF8String}(),
+        headerHints = Dict{Symbol,String}(),
         bottomText = defaultTableBottomText,
         views = Dict{Symbol,Any}[],
         calcpivots = Dict{Symbol,CalcPivot}() )
@@ -205,7 +205,7 @@ function newTwDfTable( scr::TwObj, df::DataFrame;
     obj.data.rootnode.subdataframe = df
     obj.data.rootnode.context = WeakRef( obj.data )
 
-    mainV = TwTableView( df, utf8( "#Main"), pivots = pivots,
+    mainV = TwTableView( df, "#Main", pivots = pivots,
         initdepth=initdepth, sortorder=sortorder, colorder=colorder, hidecols=hidecols )
 
     obj.data.pivots = mainV.pivots
@@ -225,7 +225,7 @@ function newTwDfTable( scr::TwObj, df::DataFrame;
         vcolorder = get( d, :colorder, colorder )
         vhidecols = get( d, :hidecols, hidecols )
         vsortorder = get( d, :sortorder, sortorder )
-        v = TwTableView( df, utf8( vname ), pivots = vpivots, initdepth = vinitdepth,
+        v = TwTableView( df, vname, pivots = vpivots, initdepth = vinitdepth,
             sortorder=vsortorder, colorder = vcolorder, hidecols = vhidecols )
         push!( obj.data.views, v )
     end
@@ -292,7 +292,7 @@ function expandnode( n::TwDfTableNode, depth::Int=1 )
                 pvtby   = setdiff( calcpvt.by, npivots )
                 f = liftCalcPivotToFunc( pvtspec, pvtby )
                 if isempty( pvtby )
-                    colvalues = f( n.subdataframe )
+                    colvalues = Base.invokelatest(f, n.subdataframe )
                     # Note that setindex! doesn't work for subdataframe
                     # And we most certainly don't want to mutate the original
                     # dataframe (if the node n here is the rootnode)
@@ -313,7 +313,7 @@ function expandnode( n::TwDfTableNode, depth::Int=1 )
                     # the lifted function expects us to provide
                     # the aggregation spec on all needed columns,
                     # as keyword arguments
-                    df = f( n.subdataframe, nextpivot; kwargs... )
+                    df = Base.invokelatest(f, n.subdataframe, nextpivot; kwargs... )
                     gd = DataFrames.groupby( join( n.subdataframe, df, on=pvtby, kind=:left ), nextpivots )
                 end
             else
@@ -348,13 +348,13 @@ function ordernode( n::TwDfTableNode )
         if length( sortorder ) > 0
             sort!( n.children, lt = (x,y) -> begin
                 for sc in sortorder
-                    if isna( x[sc[1]] )
-                        if !isna( y[sc[1]] )
+                    if ismissing( x[sc[1]] )
+                        if !ismissing( y[sc[1]] )
                             return false
                         else
                             continue
                         end
-                    elseif isna( y[sc[1]] )
+                    elseif ismissing( y[sc[1]] )
                         return true
                     end
                     if x[sc[1]] == y[sc[1]]
@@ -556,7 +556,7 @@ function draw( o::TwObj{TwDfTableData} )
             end
             width = ( col == lastcol ? lastwidth : o.data.colInfo[ col ].format.width )
             isred = false
-            if typeof( v ) == NAtype
+            if typeof( v ) == Missing
                 str = ensure_length( "", width )
             elseif typeof( v ) <: Real
                 str = applyformat( v, o.data.colInfo[col].format )
@@ -954,7 +954,7 @@ function inject( o::TwObj{TwDfTableData}, token )
                 dorefresh = true
             end
             if o.data.datatreewidth+1<relx<o.width-1 && o.data.headerlines<=rely<o.height-1
-                cumwidths = cumsum( map( _->_+1, widths[o.data.currentLeft:end] ) ) # with boundary
+                cumwidths = cumsum( map( x->x+1, widths[o.data.currentLeft:end] ) ) # with boundary
                 widthrng = searchsorted( cumwidths, relx - o.data.datatreewidth - 1)
                 o.data.currentCol = min( length( o.data.colInfo ), o.data.currentLeft + widthrng.start - 1 )
                 checkLeft()
@@ -1035,9 +1035,9 @@ function inject( o::TwObj{TwDfTableData}, token )
             end
         end
     elseif token == "p"
-        allcols = map(_->utf8(string(_)), names( o.data.rootnode.subdataframe ) )
-        append!( allcols, map( _->utf8(string(_)), collect( keys( o.data.calcpivots ) ) ) )
-        pvts = map( _->utf8(string(_)), o.data.pivots )
+        allcols = map(x->string(x), names( o.data.rootnode.subdataframe ) )
+        append!( allcols, map( x->string(x), collect( keys( o.data.calcpivots ) ) ) )
+        pvts = map( x->string(x), o.data.pivots )
         helper = newTwMultiSelect( o.screen.value, allcols, selected = pvts, title="Pivot order", orderable=true, substrsearch=true )
         newpivots = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
@@ -1053,8 +1053,8 @@ function inject( o::TwObj{TwDfTableData}, token )
         end
         dorefresh = true
     elseif token == "c"
-        allcols = map(_->utf8(string(_)), names( o.data.rootnode.subdataframe ) )
-        visiblecols = map( _->utf8(string(_.name)), o.data.colInfo )
+        allcols = map(x->string(x), names( o.data.rootnode.subdataframe ) )
+        visiblecols = map( x->string(x.name), o.data.colInfo )
         helper = newTwMultiSelect( o.screen.value, allcols, selected = visiblecols, title="Visible columns & their order", orderable=true, substrsearch=true )
         newcols = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
@@ -1066,12 +1066,12 @@ function inject( o::TwObj{TwDfTableData}, token )
         end
         dorefresh = true
     elseif token == "v"
-        allviews = map( _->_.name, o.data.views )
+        allviews = map( x->x.name, o.data.views )
         helper = newTwPopup( o.screen.value, allviews, substrsearch=true, title = "Views" )
         vname = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
         if vname != nothing
-            idx = findfirst( _->_.name == vname, o.data.views )
+            idx = findfirst( x->x.name == vname, o.data.views )
             v = o.data.views[idx]
             o.data.colInfo = TwTableColInfo[]
             o.data.pivots = v.pivots
@@ -1090,7 +1090,7 @@ function inject( o::TwObj{TwDfTableData}, token )
             dorefresh=true
         end
     elseif token == "/"
-        helper = newTwEntry( o.screen.value, UTF8String; width=30, posy=:center, posx=:center, title = "Search: " )
+        helper = newTwEntry( o.screen.value, String; width=30, posy=:center, posx=:center, title = "Search: " )
         helper.data.inputText = o.data.searchText
         s = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
@@ -1102,7 +1102,7 @@ function inject( o::TwObj{TwDfTableData}, token )
         end
         dorefresh = true
     elseif token == "?"
-        helper = newTwEntry( o.screen.value, UTF8String; width=30, posy=:center, posx=:center, title = "Search: " )
+        helper = newTwEntry( o.screen.value, String; width=30, posy=:center, posx=:center, title = "Search: " )
         helper.data.inputText = o.data.searchText
         s = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
@@ -1129,7 +1129,7 @@ function inject( o::TwObj{TwDfTableData}, token )
         else
             v = node.subdataframesorted[ colsym ][ o.data.datalist[o.data.currentLine][2][end] ]
         end
-        if typeof( v ) != NAtype && !in( v, [ nothing, Void, Any ] )
+        if typeof( v ) != Missing && !in( v, [ nothing, Void, Any ] )
             tshow( v; title = string( colsym ), posx=:center, posy=:center )
             dorefresh = true
         end
@@ -1143,7 +1143,7 @@ function inject( o::TwObj{TwDfTableData}, token )
             println( out, "\nRoot table stats" )
             describe( out, o.data.rootnode.subdataframe[ colsym ] )
         end
-        tshow( takebuf_string( out ); title = string( colsym )  * " stats", posx=:center,posy=:center)
+        tshow( String( take!(out) ); title = string( colsym )  * " stats", posx=:center,posy=:center)
         dorefresh = true
     else
         retcode = :pass # I don't know what to do with it
