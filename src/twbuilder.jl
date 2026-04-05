@@ -85,6 +85,8 @@ const _TW_WIDGET_CTORS = Dict{Symbol,Symbol}(
     :tree        => :newTwTree,
     :multiselect => :newTwMultiSelect,
     :calendar    => :newTwCalendar,
+    :spacer      => :newTwSpacer,
+    :label       => :newTwLabel,
 )
 
 # Transform one statement from a @twlayout body.

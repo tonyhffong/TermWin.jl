@@ -192,6 +192,8 @@ Short names available inside `@twlayout`:
 | `multiselect` | `newTwMultiSelect` |
 | `tree`        | `newTwTree`        |
 | `calendar`    | `newTwCalendar`    |
+| `spacer`      | `newTwSpacer`      |
+| `label`       | `newTwLabel`       |
 
 Any other expression is passed through unchanged, so you can nest `vstack`/`hstack`
 calls inside the block.

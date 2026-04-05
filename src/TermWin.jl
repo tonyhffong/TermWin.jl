@@ -50,6 +50,7 @@ include( "twmultiselect.jl")
 include( "twcalendar.jl")
 include( "twdftable.jl" )
 include( "twlist.jl" )
+include( "twlabel.jl" )
 include( "twbuilder.jl" )
 include( "precompile.jl" )
 
@@ -61,6 +62,7 @@ export vstack, hstack, @twlayout
 export newTwEntry, newTwTree, newTwFunc, newTwViewer
 export newTwCalendar, newTwPopup, newTwMultiSelect
 export newTwDfTable, newTwList
+export newTwSpacer, newTwLabel
 
 export uniqvalue, unionall
 export CalcPivot, discretize, topnames
