@@ -1,6 +1,6 @@
 # progress bar
 
-type TwProgressData
+mutable struct TwProgressData
     uiChannel::RemoteRef
     statusChannel::RemoteRef
     progress::Float64

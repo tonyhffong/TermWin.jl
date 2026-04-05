@@ -1,4 +1,4 @@
-# TermWin.jl
+# TermWin
 
 [![TermWin](http://pkg.julialang.org/badges/TermWin_release.svg)](http://pkg.julialang.org/?pkg=TermWin&ver=0.3)
 [![Build Status](https://travis-ci.org/tonyhffong/TermWin.jl.svg?branch=master)](https://travis-ci.org/tonyhffong/TermWin.jl)
@@ -15,10 +15,7 @@ It requires color support, `xterm-256color` strongly encouraged.
 Most viewers have help text via the `F1` key.
 
 The advantages of using TermWin compared to other established GUI framework are that
-* Minimal binary dependency. It just depends on ncurses binary, which is widely available. You may be
-connecting to a machine via ssh and you can still gain productivity using TermWin.
-* light-weight. We leave more resources for other intensive tasks. Useful if we need to examine large data.
-* efficiency. We try to emphasize keyboard shortcuts so users can be highly productive after
+* Efficiency. We try to emphasize keyboard shortcuts so users can be highly productive after
   investing a bit of time. Also, as an open source julia module, it is quite easy to get close to
   the data and to be cleverer about using the information only when we need them (such as dataframe aggregations).
 * Aesthetically flexible. Everything on screen is a utf8 code point, so it is easy to get something
@@ -46,7 +43,7 @@ tshow( TermWin ) # to see what functionalities it implements
 ```
 
 ### Functions and Methods
-To show `Function` and `MethodTable`,
+To show `Function` and `Method`,
 ```julia
 using TermWin
 tshow( deleteat! ) # searchable, pivotable methods table
@@ -202,9 +199,7 @@ container viewers, which remember the pivot states, the column order, etc.
 
 ## Installation
 
-As stated on the tin, TermWin requires ncurses. It is being developed on MacOS/iTerm.
-It also requires Lint.jl for a superficial code cleanliness test. (Not sure how
-to unit-test a GUI than actually using it manually.)
+As stated on the tin, TermWin requires Notcurse. It is being developed on MacOS/iTerm.
 ```julia
 Pkg.add( "TermWin" )
 ```
@@ -212,13 +207,15 @@ Pkg.add( "TermWin" )
 If you are using iTerm2 on MacOS, it is known that its `modern parser` for CSI codes are not
 compatible to this package. You should disable it.
 
-## Using TermWin to compose dialogs and ncurses applications
+Also, F1, F2 and F4 may be "eaten" by iTerm2 as it is often translated into escape sequences so it would be simple
+interpreted as an "ESC" and exit the window. In Preferences, Profiles, Keys, Key Bindings, map F1 to the hex codes
+0x1b 0x4f 0x50 and so on.
 
 ### Input Widgets
 
 Numeric, text, date input field (See `test/twentry.jl`). Designed to maximize
 entry efficiency and accuracy (See F1 help screen).
-UTF-8 input and output are supported with correct cursor movement.
+UTF8 input and output are supported with correct cursor movement.
 Most European typesets,
 Han characters, Thai (with compound vowel issues),
 currency symbols, e.g. €, £, are fine..

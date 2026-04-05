@@ -1,4 +1,4 @@
-defaultTreeHelpText = utf8("""
+defaultTreeHelpText = """
 PgUp/PgDn,
 Arrow keys : standard navigation
 <spc>,<rtn>: toggle leaf expansion
@@ -12,21 +12,21 @@ F6         : popup window for value
     Shift-F6   : popup window for type
             n, p       : Move to next/previous matched line
             m          : (Module Only) toggle export-only vs all names
-""")
+"""
 
 modulenames = Dict{ Module, Array{ Symbol, 1 } }()
 moduleallnames = Dict{ Module, Array{ Symbol, 1 } }()
 typefields  = Dict{ Any, Array{ Symbol, 1 } }()
 
 typefields[ Method ] = [ :sig, :isstaged ]
-typefields[ VERSION < v"0.5-" ? LambdaStaticData : LambdaInfo ] = [ :name, :module, :file, :line ]
-typefields[ DataType ] = [ :name, :super, Symbol( "abstract" ), :mutable, :parameters ]
-typefields[ TypeName ] = [ :name, :module, :primary ]
+typefields[ Core.CodeInfo ] = [ :code, :slotnames, :slottypes ]
+typefields[ DataType ] = [ :name, :super, :abstract, :mutable, :parameters ]
+typefields[ Type ] = [ :name, :module, :primary ]
 
 treeTypeMaxWidth = 30
 treeValueMaxWidth = 40
 
-type TwTreeData
+mutable struct TwTreeData
     openstatemap::Dict{ Any, Bool }
     datalist::Array{Any, 1}
     datalistlen::Int
@@ -37,23 +37,23 @@ type TwTreeData
     currentLine::Int
     currentLeft::Int
     showLineInfo::Bool # e.g.1/100 1.0% at top right corner
-    bottomText::UTF8String
+    bottomText::String
     showHelp::Bool
-    helpText::UTF8String
-    searchText::UTF8String
+    helpText::String
+    searchText::String
     moduleall::Bool
     function TwTreeData()
         log( "TwTreeData 0")
         rv = new( Dict{ Any, Bool }(), Any[], 0, 0, 0, 0, 1, 1, 1, true,
-            utf8(""), true, utf8(defaultTreeHelpText), utf8(""), true )
+            "", true, defaultTreeHelpText, "", true )
         log( "TwTreeData 1")
         return( rv )
     end
 end
 
 function newTwTree( scr::TwObj, ex; height::Real=0.8,width::Real=0.8,posy::Any=:staggered, posx::Any=:staggered,
-        title::UTF8String = utf8( string( typeof( ex ) ) ), box::Bool=true, showLineInfo::Bool=true, showHelp::Bool=true,
-        bottomText::UTF8String = utf8("") )
+        title::String = string( typeof( ex ) ), box::Bool=true, showLineInfo::Bool=true, showHelp::Bool=true,
+        bottomText::String = "" )
     log( "newTwTree 0")
     obj = TwObj( TwTreeData(), Val{ :Tree } )
     log( "newTwTree 1")
@@ -80,12 +80,12 @@ end
 # skiplines are hints where we should not draw the vertical lines to the left
 # because it corresponds the end of some list at a lower depth level
 
-function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap::Dict{ Any, Bool }, stack::Array{Any,1}, skiplines::Array{Int,1}=Int[], moduleall::Bool = true )
+function tree_data( x::Any, name::String, list::Array{T,1}, openstatemap::Dict{ Any, Bool }, stack::Array{Any,1}, skiplines::Array{Int,1}=Int[], moduleall::Bool = true ) where {T}
     global modulenames, typefields
     isexp = haskey( openstatemap, stack ) && openstatemap[ stack ]
     typx = typeof( x )
 
-    log( "tree leaf name="string(name) * " depth=" * string(length(list)) )
+    log( "tree leaf name=" * string(name) * " depth=" * string(length(list)) )
     intern_tree_data = ( subx, subn, substack, islast )->begin
         log( string(subn) * " type=" * string(typeof(subn)) )
         if islast
@@ -116,7 +116,7 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
     elseif typx == WeakRef
         s = string( name )
         t = string( typx )
-        v = x.value == nothing? "<nothing>" : @sprintf( "id:0x%x", object_id( x.value ) )
+        v = x.value === nothing ? "<nothing>" : @sprintf( "id:0x%x", object_id( x.value ) )
         push!( list, (s, t, v, stack, :single, skiplines ) )
     elseif typx <: Array || typx <: Tuple
         s = string( name )
@@ -141,10 +141,10 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
                 subname = "[" * repeat( " ", szdigits - length(istr)) * istr * "]"
                 newstack = copy( stack )
                 push!( newstack, i )
-                intern_tree_data( a, utf8(subname), newstack, i==len )
+                intern_tree_data( a, subname, newstack, i==len )
             end
         end
-    elseif typx <: Associative
+    elseif isa( x, AbstractDict )
         s = string( name )
         t = string( typx)
         len = length(x)
@@ -153,7 +153,7 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
         expandhint = isempty(x) ? :single : (isexp ? :open : :close )
         push!( list, (s,t,v, stack, expandhint, skiplines ))
         if isexp
-            ktype = eltype(typx).parameters[1]
+            ktype = keytype(x)
             ks = collect( keys( x ) )
             if ktype <: Real || ktype <: AbstractString || ktype == Symbol
                 sort!(ks)
@@ -167,7 +167,7 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
                 end
                 newstack = copy( stack )
                 push!( newstack, k )
-                intern_tree_data( v, utf8(subname), newstack, i==len )
+                intern_tree_data( v, subname, newstack, i==len )
             end
         end
     elseif typx == Function
@@ -187,7 +187,7 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
                 subname = "Method[" * repeat( " ", szdigits - length(istr)) * istr * "]"
                 newstack = copy( stack )
                 push!( newstack, i )
-                intern_tree_data( m, utf8(subname), newstack, i==len )
+                intern_tree_data( m, subname, newstack, i==len )
             end
         end
     elseif typx == Module && !isempty( stack ) # don't want to recursively descend
@@ -203,7 +203,7 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
                 if haskey( moduleallnames, x )
                     ns = moduleallnames[ x ]
                 else
-                    ns = filter( y->!startswith( string(y), "@" ), names( x, true ) )
+                    ns = filter( y->!startswith( string(y), "@" ), names( x, all=true ) )
                     sort!( ns )
                     moduleallnames[ x ] = ns
                 end
@@ -221,10 +221,11 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
                 ns = typefields[ typx ]
             else
                 try
-                    ns = fieldnames( typx )
+                    ns = collect( fieldnames( typx ) )
                     if length(ns) > 20
                         sort!(ns)
                     end
+                catch
                 end
                 typefields[ typx ] = ns
             end
@@ -237,25 +238,24 @@ function tree_data{T}( x::Any, name::UTF8String, list::Array{T,1}, openstatemap:
         push!( list, (s, t, v, stack, expandhint, skiplines ) )
         if isexp && !isempty( ns )
             for (i,n) in enumerate(ns)
-                subname = utf8(string(n))
+                subname = string(n)
                 newstack = copy( stack )
                 push!( newstack, n )
                 try
                     v = getfield(x,n)
                     intern_tree_data( v, subname, newstack, i==len )
                 catch err
-                    @lintpragma( "Ignore unthrown ErrorException" )
                     intern_tree_data( ErrorException(string(err)), subname, newstack, i==len )
                     if typx == Module
                         if moduleall
-                            todel = find( y->y==n, moduleallnames[ x] )
+                            todel = findall( y->y==n, moduleallnames[ x] )
                             deleteat!( moduleallnames[x], todel[1] )
                         else
-                            todel = find( y->y==n, modulenames[ x] )
+                            todel = findall( y->y==n, modulenames[ x] )
                             deleteat!( modulenames[x], todel[1] )
                         end
                     else
-                        todel = find( y->y==n, typefields[ typx ] )
+                        todel = findall( y->y==n, typefields[ typx ] )
                         deleteat!( typefields[ typx ], todel[1] )
                     end
                 end
@@ -268,8 +268,8 @@ function getvaluebypath( x, path )
     if isempty( path )
         return x
     end
-    key = shift!( path )
-    if typeof( x ) <: Array || typeof( x ) <: Associative || typeof( x ) <: Tuple
+    key = popfirst!( path )
+    if typeof( x ) <: Array || isa( x, AbstractDict ) || typeof( x ) <: Tuple
         return getvaluebypath( x[key], path )
     elseif typeof( x ) == Function
         mt = methods( x )
@@ -311,13 +311,13 @@ function draw( o::TwObj{TwTreeData} )
                 titlestr *= "(exported )"
             end
         end
-        mvwprintw( o.window, 0, (@compat round(Int,( o.width - length(titlestr) )/2 )), "%s", titlestr )
+        mvwprintw( o.window, 0, round( Int, ( o.width - length(titlestr) )/2 ), "%s", titlestr )
     end
     if o.data.showLineInfo && o.box
         if o.data.datalistlen <= viewContentHeight
             msg = "ALL"
         else
-            msg = @sprintf( "%d/%d %5.1f%%", o.data.currentLine, o.data.datalistlen,
+            msg = @sprintf("%d/%d %5.1f%%", o.data.currentLine, o.data.datalistlen,
                 o.data.currentLine / o.data.datalistlen * 100 )
         end
         mvwprintw( o.window, 0, o.width - length(msg)-3, "%s", msg )
@@ -355,9 +355,9 @@ function draw( o::TwObj{TwTreeData} )
             mvwaddch( o.window, 1+r-o.data.currentTop, 2*stacklen+1, get_acs_val('q') ) # horizontal line
         end
         if o.data.datalist[r][5] == :close
-            mvwprintw( o.window, 1+r-o.data.currentTop, 2*stacklen+2, "%s", string( @compat Char( 0x25b8 ) ) ) # right-pointing small triangle
+            mvwprintw( o.window, 1+r-o.data.currentTop, 2*stacklen+2, "%s", string( Char( 0x25b8 ) ) ) # right-pointing small triangle
         elseif o.data.datalist[r][5] == :open
-            mvwprintw( o.window, 1+r-o.data.currentTop, 2*stacklen+2, "%s", string( @compat Char( 0x25be ) ) ) # down-pointing small triangle
+            mvwprintw( o.window, 1+r-o.data.currentTop, 2*stacklen+2, "%s", string( Char( 0x25be ) ) ) # down-pointing small triangle
         end
 
         if r == o.data.currentLine
@@ -365,7 +365,7 @@ function draw( o::TwObj{TwTreeData} )
         end
     end
     if length( o.data.bottomText ) != 0 && o.box
-        mvwprintw( o.window, o.height-1, (@compat round(Int, (o.width - length(o.data.bottomText))/2 )), "%s", o.data.bottomText )
+        mvwprintw( o.window, o.height-1, round( Int, (o.width - length(o.data.bottomText))/2 ), "%s", o.data.bottomText )
     end
 end
 
@@ -377,7 +377,7 @@ function inject( o::TwObj{TwTreeData}, token )
 
     update_tree_data = ()->begin
         o.data.datalist = Any[]
-        tree_data( o.value, utf8(o.title), o.data.datalist, o.data.openstatemap, Any[], Int[], o.data.moduleall )
+        tree_data( o.value, o.title, o.data.datalist, o.data.openstatemap, Any[], Int[], o.data.moduleall )
         updateTreeDimensions(o)
         viewContentWidth = o.data.datatreewidth + o.data.datatypewidth+o.data.datavaluewidth + 2
     end
@@ -411,8 +411,8 @@ function inject( o::TwObj{TwTreeData}, token )
         o.data.searchText = lowercase(o.data.searchText)
         i = trivialstop ? st : ( mod( st-1+step, o.data.datalistlen ) + 1 )
         while true
-            if contains( lowercase( o.data.datalist[i][1]), o.data.searchText ) ||
-                contains( lowercase( o.data.datalist[i][3]), o.data.searchText )
+            if occursin( o.data.searchText, lowercase( o.data.datalist[i][1]) ) ||
+                occursin( o.data.searchText, lowercase( o.data.datalist[i][3]) )
                 o.data.currentLine = i
                 if abs( i-st ) > viewContentHeight
                     o.data.currentTop = o.data.currentLine - (viewContentHeight>>1)
@@ -462,7 +462,7 @@ function inject( o::TwObj{TwTreeData}, token )
                 if currentstack == o.data.datalist[ i ][4]
                     o.data.currentLine = i
                     if abs( i - prevline ) > viewContentHeight
-                        o.data.currentTop = i - @compat round(Int,viewContentHeight/2)
+                        o.data.currentTop = i - round(Int,viewContentHeight/2)
                     end
                     break
                 end
@@ -498,7 +498,7 @@ function inject( o::TwObj{TwTreeData}, token )
                     if currentstack == o.data.datalist[ i ][4]
                         o.data.currentLine = i
                         if abs( i-prevline ) > viewContentHeight
-                            o.data.currentTop = i - @compat round(Int,viewContentHeight / 2)
+                            o.data.currentTop = i - round(Int,viewContentHeight / 2)
                         end
                         break
                     end
@@ -523,7 +523,7 @@ function inject( o::TwObj{TwTreeData}, token )
             if currentstack == o.data.datalist[ i ][4]
                 o.data.currentLine = i
                 if abs( i-prevline ) > viewContentHeight
-                    o.data.currentTop = o.data.currentLine - @compat round(Int,viewContentHeight / 2)
+                    o.data.currentTop = o.data.currentLine - round(Int,viewContentHeight / 2)
                 end
                 break
             end
@@ -563,14 +563,14 @@ function inject( o::TwObj{TwTreeData}, token )
         v = getvaluebypath( o.value, stck )
         if typeof( v ) == Method
             try
-                f = eval( v.func.code.name )
+                f = getfield(v.module, v.name)
                 edit( f, v.sig )
                 dorefresh = true
             catch err
                 tshow( "Error showing Method\n" * string( err ), title=string(lastkey) )
                 dorefresh = true
             end
-        elseif !in( v, [ nothing, Void, Any ] )
+        elseif !in( v, [ nothing, Nothing, Any ] )
             tshow( v, title=string(lastkey) )
             dorefresh = true
         end
@@ -583,7 +583,7 @@ function inject( o::TwObj{TwTreeData}, token )
         end
         v = getvaluebypath( o.value, stck )
         vtyp = typeof( v )
-        if !in( v, [ nothing, Void, Any ] )
+        if !in( v, [ nothing, Nothing, Any ] )
             tshow( vtyp )
             dorefresh = true
         end
@@ -626,9 +626,9 @@ function inject( o::TwObj{TwTreeData}, token )
     elseif token == :KEY_MOUSE
         (mstate,x,y, bs ) = getmouse()
         if mstate == :scroll_up
-            dorefresh = moveby( -(@compat round(Int, viewContentHeight/5 ) ))
+            dorefresh = moveby( -(round(Int, viewContentHeight/5 ) ))
         elseif mstate == :scroll_down
-            dorefresh = moveby( @compat round(Int, viewContentHeight/5 ) )
+            dorefresh = moveby( round(Int, viewContentHeight/5 ) )
         elseif mstate == :button1_pressed
             begy,begx = getwinbegyx( o.window )
             relx = x - begx
@@ -650,11 +650,11 @@ function inject( o::TwObj{TwTreeData}, token )
             beep()
         end
     elseif token == "/"
-        helper = newTwEntry( o.screen.value, UTF8String; width=30, posy=:center, posx=:center, title = "Search: " )
+        helper = newTwEntry( o.screen.value, String; width=30, posy=:center, posx=:center, title = "Search: " )
         helper.data.inputText = o.data.searchText
         s = activateTwObj( helper )
         unregisterTwObj( o.screen.value, helper )
-        if s != nothing
+        if s !== nothing
             if s != "" && o.data.searchText != s
                 o.data.searchText = s
                 searchNext( 1, true )
@@ -675,7 +675,7 @@ function inject( o::TwObj{TwTreeData}, token )
             beep()
         end
     elseif token == "L" # move half-way toward the end
-        target = min( (@compat round(Int, ceil((o.data.currentLine + o.data.datalistlen)/2))), o.data.datalistlen )
+        target = min( round(Int, ceil((o.data.currentLine + o.data.datalistlen)/2)), o.data.datalistlen )
         if target != o.data.currentLine
             o.data.currentLine = target
             checkTop()
@@ -684,7 +684,7 @@ function inject( o::TwObj{TwTreeData}, token )
             beep()
         end
     elseif token == "l" # move half-way toward the beginning
-        target = max( (@compat round(Int,floor( o.data.currentLine /2))), 1)
+        target = max( round(Int,floor( o.data.currentLine /2)), 1)
         if target != o.data.currentLine
             o.data.currentLine = target
             checkTop()
@@ -707,6 +707,6 @@ function helptext( o::TwObj{TwTreeData} )
     if o.data.showHelp
         o.data.helpText
     else
-        utf8("")
+        ""
     end
 end

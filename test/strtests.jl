@@ -1,5 +1,5 @@
 using TermWin
-using Base.Test
+using Test
 
 @test TermWin.substr_by_width( "abc", 0, 3 ) == "abc"
 @test TermWin.substr_by_width( "abc", 0, 1 ) == "a"

@@ -10,7 +10,7 @@ Three ways to instantiate the DataFrameAggr
    The underscore `:_` column is special -- it's interpreted on-the-fly as the column that
    needs to be aggregated. So multiple columns can use the same expression `mean(_,:wcol)` and
    they will all use the same weight (from `wcol`), but produces target specific mean.
-* Function: (most likely lambda) e.g. `df -> quantile( df[:col], 0.5 )`. It is expected
+* Function: (most likely lambda) e.g. `df -> quantile( df[!,:col], 0.5 )`. It is expected
    to generate either a value (typically a scalar consistent to the column type), or
    a 1-row, 1-col dataframe.
 """ ->
@@ -18,33 +18,54 @@ Three ways to instantiate the DataFrameAggr
 
 DataFrameAggrCache = Dict{Any,Function}()
 
-defaultAggr( ::Type{} ) = :uniqvalue
-defaultAggr{T<:Real}( ::Type{T} ) = :sum
-defaultAggr{T}( ::Type{Array{T,1}} ) = :unionall
+defaultAggr( ::Type ) = :uniqvalue
+defaultAggr( ::Type{T} ) where {T<:Real} = :sum
+defaultAggr( ::Type{Array{T,1}} ) where {T} = :unionall
 
-function liftAggrSpecToFunc( c::Symbol, dfa::UTF8String )
+function liftAggrSpecToFunc( c::Symbol, dfa::String )
     if haskey( DataFrameAggrCache, (c, dfa ) )
         return DataFrameAggrCache[ (c, dfa ) ]
     end
-    ret = liftAggrSpecToFunc( c, parse( dfa ) )
+    ret = liftAggrSpecToFunc( c, Meta.parse( dfa ) )
     DataFrameAggrCache[ (c, dfa) ] = ret
 end
-liftAggrSpecToFunc( c::Symbol, dfa::ASCIIString ) = liftAggrSpecToFunc( c, utf8( dfa ) )
+
+# replace_col_syms: walk an expression and replace :col (QuoteNode or Expr(:quote,:col))
+# with a gensym variable; populate membernames with col->gensym mapping
+function replace_col_syms( ex, membernames::Dict )
+    if isa( ex, QuoteNode ) && isa( ex.value, Symbol )
+        sym = ex.value
+        if !haskey( membernames, sym )
+            membernames[sym] = gensym( string(sym) )
+        end
+        return membernames[sym]
+    elseif isa( ex, Expr ) && ex.head == :quote && length(ex.args) == 1 && isa( ex.args[1], Symbol )
+        sym = ex.args[1]
+        if !haskey( membernames, sym )
+            membernames[sym] = gensym( string(sym) )
+        end
+        return membernames[sym]
+    elseif isa( ex, Expr )
+        return Expr( ex.head, [ replace_col_syms(a, membernames) for a in ex.args ]... )
+    else
+        return ex
+    end
+end
 
 function liftAggrSpecToFunc( c::Symbol, dfa::Union{ Function, Symbol, Expr } )
-    if typeof( dfa ) == Function
+    if isa( dfa, Function )
         return dfa
     end
     if haskey( DataFrameAggrCache, (c, dfa) )
         return DataFrameAggrCache[ (c, dfa ) ]
     end
     # "mean" or "Module.aggrfunc"
-    if typeof( dfa ) == Symbol || typeof( dfa ) == Expr && dfa.head == :(.) && all( x->typeof(x)==Symbol, dfa.args )
+    if isa( dfa, Symbol ) || isa( dfa, Expr ) && dfa.head == :(.) && all( x->isa(x,Symbol), dfa.args )
         funnameouter = gensym( "DFAggr" )
         code = :(
             function $funnameouter( _df_::AbstractDataFrame )
             end )
-        push!( code.args[2].args, Expr( :call, dfa, Expr( :call, :getindex, :_df_, QuoteNode(c) ) ) )
+        push!( code.args[2].args, Expr( :call, dfa, Expr( :ref, :_df_, :!, QuoteNode(c) ) ) )
         ret = eval( code )
     else # expr
         if !Base.Meta.isexpr( dfa, :call )
@@ -54,14 +75,14 @@ function liftAggrSpecToFunc( c::Symbol, dfa::Union{ Function, Symbol, Expr } )
         fname = dfa.args[1]
         if Base.Meta.isexpr( dfa, :curly )
             error( "DataFrameAggr: curly not supported")
-        elseif !( typeof( fname ) <: Symbol ) && !Base.Meta.isexpr( fname, :(.) )
+        elseif !isa( fname, Symbol ) && !Base.Meta.isexpr( fname, :(.) )
             error( "DataFrameAggr: only simple function name please")
         end
-        if contains( string(fname), "!" )
+        if occursin( "!", string(fname) )
             error( string(fname) * " seems to have side effects" )
         end
 
-        # replace _ with _df_[$c], and then leverage @with
+        # replace _ with _df_[!,$c], and then leverage replace_col_syms
 
         # before we do that, note that
         # (A) in DataFramesMeta, macro converts :x to Expr( :quote, :x ) but
@@ -70,9 +91,9 @@ function liftAggrSpecToFunc( c::Symbol, dfa::Union{ Function, Symbol, Expr } )
         cdfa = deepcopy( dfa )
         convertExpression!( cdfa, c )
 
-        membernames = Dict{Union{Symbol,Expr}, Symbol}()
-        cdfa = DataFramesMeta.replace_syms(cdfa, membernames)
-        funargs = map(x -> :( getindex( _df_, $(x)) ), collect(keys(membernames)))
+        membernames = Dict{Symbol,Symbol}()
+        cdfa = replace_col_syms(cdfa, membernames)
+        funargs = map(x -> Expr( :ref, :_df_, :!, QuoteNode(x) ), collect(keys(membernames)))
         funnameouter = gensym("DFAggr")
         funname = gensym()
         code = quote
@@ -92,96 +113,41 @@ end
 function convertExpression!( ex::Expr, column_ctx::Symbol = Symbol("") )
     for i in 1:length( ex.args )
         a = ex.args[i]
-        if typeof( a ) == QuoteNode
+        if isa( a, QuoteNode )
             if a.value == :_ && column_ctx != Symbol("")
                 ex.args[i] = Expr( :quote, column_ctx )
             else
                 ex.args[i] = Expr( :quote, a.value )
             end
-        elseif typeof( a ) == Expr
+        elseif isa( a, Expr )
             convertExpression!( a )
         end
     end
 end
 
-function unionall( x::AbstractDataArray )
-    l = dropna( x )
+function unionall( x::AbstractVector )
     t = eltype( eltype( x ) )
     s = Set{t}()
-    for el in l
+    for el in skipmissing(x)
         push!( s, el... )
     end
     collect( s )
 end
 
-function unionall( x::Array )
-    t = eltype( eltype( x ) )
-    s = Set{t}()
-    for el in x
-        push!( s, el... )
+function uniqvalue( x::AbstractVector; skipna::Bool=true, skipempty::Bool=false )
+    work = skipna ? collect(skipmissing(x)) : collect(x)
+    if skipempty && eltype(work) <: AbstractString
+        filter!( !isempty, work )
     end
-    collect( s )
+    lvls = unique(work)
+    length(lvls) == 1 ? lvls[1] : missing
 end
 
-function uniqvalue( x::AbstractDataArray; skipna::Bool=true )
-    lvls = DataArrays.levels(x)
-    if skipna
-        l = dropna( lvls )
-        if length(l) == 1
-            return l[1]
-        end
-        return NA
-    end
-    if length(lvls) == 1
-        return lvls[1]
-    end
-    return NA
-end
-
-function uniqvalue{T<:AbstractString}( x::Union{ Array{T}, DataArray{T}, PooledDataArray{T} }; skipna::Bool=true, skipempty::Bool=true )
-    lvls = DataArrays.levels(x)
-    if skipna
-        l = dropna( lvls )
-        if skipempty
-            emptyidx = findfirst( l, "" )
-            if length( l ) == 1 && emptyidx == 0
-                return l[1]
-            elseif length( l ) == 2 && emptyidx != 0
-                if emptyidx == 1
-                    return l[2]
-                else
-                    return l[1]
-                end
-            end
-        elseif length( l ) == 1
-            return l[1]
-        end
-        return NA
-    end
-    if skipempty
-        emptyidx = findfirst( lvls, "" )
-        if length( lvls ) == 1 && emptyidx == 0
-            return lvls[1] # could be NA
-        elseif length( lvls ) == 2 && emptyidx != 0
-            if emptyidx == 1
-                return lvls[2]
-            else
-                return lvls[1]
-            end
-        end
-    elseif length( lvls ) == 1
-        return lvls[1]
-    end
-    return NA
-end
-
-immutable CalcPivot
+struct CalcPivot
     spec::Expr
     by::Array{Symbol,1}
-    CalcPivot( x::UTF8String, by::Array{Symbol,1}=Symbol[] ) = CalcPivot( parse(x), by )
-    CalcPivot( x::ASCIIString, by::Array{Symbol,1}=Symbol[] ) = CalcPivot( parse(utf8(x)), by )
-    CalcPivot( x::UTF8String, by::Symbol ) = CalcPivot( parse(x), Symbol[ by ] )
-    CalcPivot( x::ASCIIString, by::Symbol ) = CalcPivot( parse(utf8(x)), Symbol[ by ] )
+    CalcPivot( x::String, by::Array{Symbol,1}=Symbol[] ) = CalcPivot( Meta.parse(x), by )
+    CalcPivot( x::String, by::Symbol ) = CalcPivot( Meta.parse(x), Symbol[ by ] )
     function CalcPivot( x::Expr, by::Symbol )
         CalcPivot( x, Symbol[ by ] )
     end
@@ -193,16 +159,16 @@ immutable CalcPivot
         fname = ex.args[1]
         if Base.Meta.isexpr( ex, :curly )
             error( "CalcPivot: curly not supported")
-        elseif !( typeof( fname ) <: Symbol ) && !Base.Meta.isexpr( fname, :(.) )
+        elseif !isa( fname, Symbol ) && !Base.Meta.isexpr( fname, :(.) )
             error( "CalcPivot: only simple function name please")
         end
-        if contains( string(fname), "!" )
+        if occursin( "!", string(fname) )
             error( string(fname) * " seems to have side effects" )
         end
 
         if fname == :topnames # ensure we have the name in "by"
             # expect the first argument is a QuoteNode, or Expr( :quote, symbol )
-            if typeof( ex.args[2] ) == QuoteNode
+            if isa( ex.args[2], QuoteNode )
                 name_col = ex.args[2].value
             elseif Base.Meta.isexpr( ex.args[2], :quote )
                 name_col = ex.args[2].args[1]
@@ -237,24 +203,28 @@ function liftCalcPivotToFunc( ex::Expr, by::Array{Symbol,1} )
     funnameouter = gensym("calcpvt")
     funname = gensym()
 
-    membernames = Dict{Union{Symbol,Expr}, Symbol}()
-    cex = DataFramesMeta.replace_syms(cex, membernames)
+    membernames = Dict{Symbol,Symbol}()
+    cex = replace_col_syms(cex, membernames)
     # keys are the columns. values are the unique gensyms
 
     if !isempty( by ) # micro split-apply-combine
-        funargs = map(x -> :( getindex( byf, $(Meta.quot(x))) ), collect(keys(membernames)))
+        funargs = map(x -> Expr( :ref, :byf, :!, QuoteNode(x) ), collect(keys(membernames)))
         aggregates = setdiff( collect( keys( membernames ) ), by )
         CalcPivotAggrDepCache[ (ex, by ) ] = aggregates
         # basically we want to do
-        # byf = by(_df_, by, lambdadf -> DataFrame(b = aggrfuncs[:b](lambdadf), c = aggrfuncs[:c](lambdadf), ... )
+        # byf = combine(groupby(_df_, by), lambdadf -> DataFrame(b = aggrfuncs[:b](lambdadf), c = aggrfuncs[:c](lambdadf), ... )
         aggr_args = Any[]
         lambdasym = gensym( "lambdadf" )
         for a in aggregates
-            push!( aggr_args, Expr( :kw, a, Expr( :call, Expr( :ref, :aggrfuncs, QuoteNode( a ) ), lambdasym ) ) )
+            # Use invokelatest: aggrfuncs[:a] is created by liftAggrSpecToFunc's
+            # eval(), which runs at a newer world age than funnameouter itself.
+            # The lambda is compiled at funnameouter's world age, so a direct call
+            # would fail with "method too new".
+            push!( aggr_args, Expr( :kw, a, Expr( :call, :(Base.invokelatest), Expr( :ref, :aggrfuncs, QuoteNode( a ) ), lambdasym ) ) )
         end
 
-        bycolsexpr=Expr( :vcat, map( _->QuoteNode(_), by )... ) # [ :a, :b, :c ... ]
-        aggrcode = Expr( :->, lambdasym, Expr( :call, DataFrame, aggr_args... ) )
+        bycolsexpr=Expr( :vcat, map( x->QuoteNode(x), by )... ) # [ :a, :b, :c ... ]
+        aggrcode = Expr( :->, lambdasym, Expr( :call, :DataFrame, aggr_args... ) )
         code = :(
             function $funnameouter( _df_::AbstractDataFrame, c::Symbol; kwargs... ) # we need kwargs here for aggregate specs
                 aggrfuncs = Dict{Symbol,Function}()
@@ -263,24 +233,24 @@ function liftCalcPivotToFunc( ex::Expr, by::Array{Symbol,1} )
                     aggrfuncs[aggrc] = TermWin.liftAggrSpecToFunc(aggrc, spec )
                 end
                 # if kwargs doesn't have the required columns, it'll throw in this line
-                byf = DataFrames.by( _df_, $bycolsexpr, $aggrcode )
+                byf = combine(groupby( _df_, $bycolsexpr ), $aggrcode)
                 function $funname($(collect(values(membernames))...))
                     $cex
                 end
                 vals = $funname($(funargs...))
-                ret = byf[ $bycolsexpr ]
-                ret[ c ] = vals
+                ret = DataFrames.select(byf, $bycolsexpr)
+                ret[!, c] = vals
                 ret # This has all the "by" columns and the result, named by c
                 # combine is done by the caller
             end
         )
-    else # much simplier, we are doing line-by-line apply.
+    else # much simpler, we are doing line-by-line apply.
         # Common use case: a simple bucketing, or a line by line ranking.
         # a "pure" reading on empty "by" array may mean we aggregate everything in the
         # dataframe into one row, and then attach this row's value (a constant) into every row.
         # However, I have not known any legitimate use case for this.
         CalcPivotAggrDepCache[ (ex, by )] = Symbol[]
-        funargs = map(x -> :( getindex( _df_, $(x)) ), collect(keys(membernames)))
+        funargs = map(x -> Expr( :ref, :_df_, :!, QuoteNode(x) ), collect(keys(membernames)))
         code = :(
             function $funnameouter( _df_::AbstractDataFrame ) # we need kwargs here for aggregate specs
                 function $funname($(collect(values(membernames))...))
@@ -295,7 +265,7 @@ function liftCalcPivotToFunc( ex::Expr, by::Array{Symbol,1} )
     CalcPivotFuncCache[ (ex, by ) ] = ret
 end
 
-function cut_categories{S<:Real, T<:Real}( ::Type{S}, breaks::Vector{T};
+function cut_categories( ::Type{S}, breaks::Vector{T};
     boundedness = :unbounded,
     leftequal=true, # t1 <= x < t2 or t1 < x <= t2?
     absolute=false, # t1 <= |x| < t2?
@@ -309,11 +279,11 @@ function cut_categories{S<:Real, T<:Real}( ::Type{S}, breaks::Vector{T};
     prefix="", suffix="", scale=1, precision=-1,
     commas=false,stripzeros=(precision==-1),parens=false,
     mixedfraction=false,autoscale=:none,conversion=""
-    )
+    ) where {S<:Real, T<:Real}
     n = length(breaks)
-    breakstrs = UTF8String[]
-    function formatter(_)
-        prefix * format( _*scale,
+    breakstrs = String[]
+    function formatter(x)
+        prefix * format( x*scale,
             precision=precision,
             commas=commas,
             stripzeros=stripzeros,
@@ -332,7 +302,7 @@ function cut_categories{S<:Real, T<:Real}( ::Type{S}, breaks::Vector{T};
     else
         ncategories = n
     end
-    pool = Array(UTF8String, ncategories )
+    pool = Vector{String}(undef, ncategories )
     if rank
         rankwidth = length(string(ncategories))
     end
@@ -347,7 +317,7 @@ function cut_categories{S<:Real, T<:Real}( ::Type{S}, breaks::Vector{T};
         if S <: Integer && T <: Integer && scale == 1
             # we use 1...5, 6, 7...10, 11+etc.
             if leftequal
-                breakminus1strs = UTF8String[]
+                breakminus1strs = String[]
                 for b in breaks
                     push!( breakminus1strs, formatter( b-1 ) )
                 end
@@ -367,7 +337,7 @@ function cut_categories{S<:Real, T<:Real}( ::Type{S}, breaks::Vector{T};
                     pool[n+1+poolindexshift] = rankprefixfunc(n+1+poolindexshift)*breakstrs[n]*"+"
                 end
             else
-                breakplus1strs = UTF8String[]
+                breakplus1strs = String[]
                 for b in breaks
                     push!( breakminus1strs, formatter( b+1 ) )
                 end
@@ -391,13 +361,13 @@ function cut_categories{S<:Real, T<:Real}( ::Type{S}, breaks::Vector{T};
             if leftequal
                 brackL = "["
                 brackR = ")"
-                compareL = utf8( "<" )
+                compareL = "<"
                 compareR = "≥"
             else
                 brackL = "("
                 brackR = "]"
                 compareL = "≤"
-                compareR = utf8(">")
+                compareR = ">"
             end
             poolindexshift = -1
             if boundedness in [ :unbounded, :boundedabove ]
@@ -425,9 +395,9 @@ function cut_categories{S<:Real, T<:Real}( ::Type{S}, breaks::Vector{T};
         end
         if leftequal
             compareL = " ≤ "
-            compareR = utf8(" < ")
+            compareR = " < "
         else
-            compareL = utf8(" < ")
+            compareL = " < "
             compareR = " ≤ "
         end
         poolindexshift = -1
@@ -453,12 +423,12 @@ end
 
 # boundedness:
 #    unbounded    gives n+1 categories for n breaks.
-#    boundedbelow gives n   categories for n breaks. Values below min will be NA
-#    boundedabove gives n   categories for n breaks. Values above max will be NA
-#    bounded      gives n-1 categories for n breaks. Values below min or above max will be NA
-function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
+#    boundedbelow gives n   categories for n breaks. Values below min will be missing
+#    boundedabove gives n   categories for n breaks. Values above max will be missing
+#    bounded      gives n-1 categories for n breaks. Values below min or above max will be missing
+function discretize( x::AbstractArray{<:Union{S,Missing},1}, breaks::Vector{T};
     boundedness = :unbounded,
-    bucketstrs = UTF8String[], # if provided, all of below will be ignored. length must be length(breaks)+1
+    bucketstrs = String[], # if provided, all of below will be ignored. length must be length(breaks)+1
     leftequal=true, # t1 <= x < t2 or t1 < x <= t2?
     absolute=false, # t1 <= |x| < t2?
     rank=true, # add a rank to the string output for easier sorting?
@@ -471,14 +441,14 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
     prefix="", suffix="", scale=1, precision=-1,
     commas=false,stripzeros=(precision==-1),parens=false,
     mixedfraction=false,autoscale=:none,conversion=""
-    )
+    ) where {S<:Real, T<:Real}
     if !issorted(breaks)
         sort!(breaks)
     end
-    refs = fill(zero(DataArrays.DEFAULT_POOLED_REF_TYPE), length(x))
+    refs = fill(UInt32(0), length(x))
     n = length(breaks)
     if absolute
-        x2 = abs(x)
+        x2 = abs.(x)
     else
         x2 = x
     end
@@ -511,7 +481,7 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
 
     if leftequal
         for i in 1:length(x)
-            if isna( x, i )
+            if ismissing( x[i] )
                 refs[i] = 0
             elseif x2[i] <  breaks[1]
                 refs[i] = below_min_mult
@@ -529,7 +499,7 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
         end
     else
         for i in 1:length(x)
-            if isna( x, i )
+            if ismissing( x[i] )
                 refs[i] = 0
             elseif x2[i] < breaks[1]
                 refs[i] = below_min_mult
@@ -550,12 +520,12 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
             maxref = maximum( refs )
             s = "ncategories < max refs \n maxref="  * string( maxref ) * "\n ncategories=" * string( ncategories )
             s *= "\n buckets = " * string( bucketstrs )
-            idx = findfirst( refs, maxref )
+            idx = findfirst( isequal(maxref), refs )
             s *= "\n Example x = " * string(x2[idx] )
             s *= "\n breaks" * string( breaks )
             error( s )
         end
-        return DataArrays.PooledDataArray(DataArrays.RefArray(refs), bucketstrs )
+        return CategoricalArray( Union{Missing,String}[ refs[i] == 0 ? missing : String(bucketstrs[refs[i]]) for i in 1:length(refs) ] )
     end
     pool = cut_categories( S, breaks,
         boundedness = boundedness,
@@ -571,15 +541,15 @@ function discretize{S<:Real, T<:Real}(x::AbstractArray{S,1}, breaks::Vector{T};
         mixedfraction=mixedfraction,autoscale=autoscale,conversion=conversion
         )
 
-    DataArrays.PooledDataArray(DataArrays.RefArray(refs), pool)
+    CategoricalArray( Union{Missing,String}[ refs[i] == 0 ? missing : pool[refs[i]] for i in 1:length(refs) ] )
 end
 
 # quantile-based auto-breaks
 # weighted quantile is not implemented
 # use scale=100.0, suffix="%", to express the quantiles in percentages
-function discretize{S<:Real}(x::AbstractArray{S,1}; quantiles = Float64[], ngroups::Int = 4, kwargs ... )
+function discretize( x::AbstractArray{S,1}; quantiles = Float64[], ngroups::Int = 4, kwargs... ) where {S<:Real}
     if length( quantiles ) != 0
-        if any( _ -> _ < 0.0 || _ > 1.0 , quantiles )
+        if any( x -> x < 0.0 || x > 1.0 , quantiles )
             error( "illegal quantile numbers outside [0,1]")
         end
         if !issorted(quantiles)
@@ -595,7 +565,7 @@ function discretize{S<:Real}(x::AbstractArray{S,1}; quantiles = Float64[], ngrou
         bucketstrs = cut_categories( Float64, quantiles; boundedness = :bounded, kwargs... )
         discretize( x, quantile( x, quantiles ); bucketstrs = bucketstrs, boundedness = :bounded, kwargs... )
     else
-        qs = [0:ngroups]/ngroups
+        qs = collect(0:ngroups) ./ ngroups
         bucketstrs = cut_categories( Float64, qs; boundedness = :bounded, kwargs... )
         discretize( x, quantile( x, qs); bucketstrs = bucketstrs, boundedness = :bounded, kwargs... )
     end
@@ -603,25 +573,25 @@ end
 
 # names are expected to be unique
 # n is the maximum rank number to report. Actual outcome may depend on existence of a tie, and dense option
-function topnames{S<:AbstractString,T<:Real}( name::AbstractArray{S,1}, measure::AbstractArray{T,1}, n::Int;
+function topnames( name::AbstractArray{S,1}, measure::AbstractArray{T,1}, n::Int;
     absolute=false,
     ranksep = ". ",
     dense = true, # if there is a tie in the 2nd place, do we do "1,2,2,4", or "1,2,2,3"
     tol = 0,  # if absolute, what is the smallest contribution that we would consider
     others = "Others",
     parens = false # put parentheses around names with negative measure?
-    )
+    ) where {S<:AbstractString, T<:Real}
 
     if absolute
-        df = DataFrame( name = name, measure = measure, absmeasure = abs(measure) )
+        df = DataFrame( name = name, measure = measure, absmeasure = abs.(measure) )
         if tol > 0 # filter out too small names
-            dfsorted = sort( df[ df[ :absmeasure ] >= tol ], cols = [:absmeasure, :measure ], rev=[true,true] )
+            dfsorted = sort( df[ df.absmeasure .>= tol, :], [:absmeasure, :measure], rev=[true,true] )
         else
-            dfsorted = sort( df, cols = [ :absmeasure, :measure ], rev = [ true, true ] )
+            dfsorted = sort( df, [:absmeasure, :measure], rev = [true, true] )
         end
     else
         df = DataFrame( name = name, measure = measure )
-        dfsorted = sort( df, cols = [ :measure ], rev = [ true ] )
+        dfsorted = sort( df, [:measure], rev = [true] )
     end
 
     rankcount = 1
@@ -629,12 +599,12 @@ function topnames{S<:AbstractString,T<:Real}( name::AbstractArray{S,1}, measure:
     nr = nrow( dfsorted )
 
     if !absolute
-        pool = UTF8String[]
-        refs = fill(zero(DataArrays.DEFAULT_POOLED_REF_TYPE), nr )
+        pool = String[]
+        refs = fill(UInt32(0), nr)
         lastval  = zero( T )
         lastrank = 0
         for r in 1:nr
-            if isna( dfsorted[:measure], r )
+            if ismissing( dfsorted[r, :measure] )
                 continue
             else
                 val = dfsorted[ r, :measure ]
@@ -655,15 +625,17 @@ function topnames{S<:AbstractString,T<:Real}( name::AbstractArray{S,1}, measure:
                 end
             end
         end
-        dfsorted[ :rankstr ] = DataArrays.PooledDataArray(DataArrays.RefArray(refs), pool)
-        rdf = dfsorted[ [:name, :rankstr ] ]
-        jdf = join( df, rdf, on = :name, kind = :left )
+        dfsorted[!, :rankstr] = Union{Missing,String}[ refs[r] == 0 ? missing : pool[refs[r]] for r in 1:nr ]
+        rankdict = Dict{String, Union{String,Missing}}(
+            dfsorted[r, :name] => dfsorted[r, :rankstr] for r in 1:nr
+        )
+        jdf_rankstr = Union{String,Missing}[ get(rankdict, n, missing) for n in name ]
     else
-        rankedflag = fill( zero( Bool ), nr )
+        rankedflag = fill( false, nr )
         lastval  = zero( T )
         lastrank = 0
         for r in 1:nr
-            if isna( dfsorted[:measure], r )
+            if ismissing( dfsorted[r, :measure] )
                 continue
             else
                 val = dfsorted[ r, :measure ]
@@ -682,14 +654,14 @@ function topnames{S<:AbstractString,T<:Real}( name::AbstractArray{S,1}, measure:
                 end
             end
         end
-        dfsorted[ :rankedflag ] = rankedflag
-        dfsorted2 = sort( dfsorted, cols = [ :measure ], rev = [ true ] )
-        rankstr = DataArray(UTF8String,nr)
+        dfsorted[!, :rankedflag] = rankedflag
+        dfsorted2 = sort( dfsorted, [:measure], rev = [true] )
+        rankstr = Union{Missing,String}[ missing for _ in 1:nr ]
         rankcount = 1
         lastval  = zero( T )
         lastrank = 0
         for r in 1:nr
-            if isna( dfsorted2[ :measure ], r )
+            if ismissing( dfsorted2[r, :measure] )
                 continue
             elseif dfsorted2[ r, :rankedflag ]
                 val = dfsorted2[ r, :measure ]
@@ -716,25 +688,18 @@ function topnames{S<:AbstractString,T<:Real}( name::AbstractArray{S,1}, measure:
                 end
             end
         end
-        dfsorted2[ :rankstr ] = rankstr
-        jdf = join( df, dfsorted2[ [:name, :rankstr] ], on = :name, kind=:left )
+        dfsorted2[!, :rankstr] = rankstr
+        rankdict = Dict{String, Union{String,Missing}}(
+            dfsorted2[r, :name] => dfsorted2[r, :rankstr] for r in 1:nrow(dfsorted2)
+        )
+        jdf_rankstr = Union{String,Missing}[ get(rankdict, n, missing) for n in name ]
     end
 
-    # replace NA with "others"
-    ret = DataArrays.PooledDataArray( jdf[ :rankstr ] )
-    push!( ret.pool, others )
-    poollen = length( ret.pool )
-    for i = 1:length( ret.refs )
-        if ret.refs[i] == 0
-            ret.refs[i] = poollen
-        end
-    end
-    ret
+    # replace missing with "others"
+    CategoricalArray( [ ismissing(x) ? others : x for x in jdf_rankstr ] )
 end
 
-import DataFrames.describe
-export describe
-
-function describe{T}( io, dv::Array{T,1} )
-    describe( io, DataArray( dv ) )
+function describe( io::IO, dv::AbstractVector )
+    show( io, DataFrames.describe( DataFrame( x=dv ) ) )
+    println( io )
 end

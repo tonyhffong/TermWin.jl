@@ -19,14 +19,14 @@ POPUPHIDEUNMATCHED  = 4
 POPUPSORTMATCHED    = 8
 POPUPALLOWNEW       = 16
 
-defaultPopupHelpText = utf8("""
+defaultPopupHelpText = """
 arrows : move cursor
 home   : move to top
 end    : move to bottom
 enter  : select
-""")
+"""
 
-defaultPopupQuickHelpText = utf8("""
+defaultPopupQuickHelpText = """
 arrows : move item cursor
 home   : move to top
 end    : move to bottom
@@ -40,10 +40,10 @@ ctrl-r : Toggle insertion/overwrite mode
 
 ctrl-n : move to the next matched item
 ctrl-p : move to the previous matched item
-""")
+"""
 
-type TwPopupData
-    choices::Array{UTF8String,1}
+mutable struct TwPopupData
+    choices::Array{String,1}
     datalist::Array{Any, 1}
     maxchoicelength::Int
     searchbox::Any
@@ -51,10 +51,10 @@ type TwPopupData
     currentLeft::Int
     currentTop::Int
     selectmode::Int
-    helpText::UTF8String
-    TwPopupData( arr::Array{UTF8String,1} ) = new( arr, Any[], maximum( map( z->length(z), arr ) ), nothing, 1, 1, 1, 0, utf8("") )
+    helpText::String
+    TwPopupData( arr::Array{String,1} ) = new( arr, Any[], maximum( map( z->length(z), arr ) ), nothing, 1, 1, 1, 0, "" )
 end
-TwPopupData{ T<:AbstractString}( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8( x ), arr ) )
+TwPopupData( arr::Array{T,1} ) where {T<:AbstractString} = TwPopupData( map( x->String( x ), arr ) )
 
 # the ways to use it:
 # standalone panel
@@ -62,20 +62,20 @@ TwPopupData{ T<:AbstractString}( arr::Array{T, 1 } ) = TwPopupData( map( x->utf8
 # w include title width, if it's shown on the left
 function newTwPopup( scr::TwObj, arr::Array{Symbol,1};
         posy::Any=:center,posx::Any=:center,
-        title = utf8(""), maxwidth = 50, maxheight = 15, minwidth = 20,
+        title = "", maxwidth = 50, maxheight = 15, minwidth = 20,
         quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false )
 
-    return( newTwPopup( scr, map(x->utf8(string(x)),arr),
+    return( newTwPopup( scr, map(x->string(x),arr),
         posy=posy,posx=posx,
         title=title,maxwidth=maxwidth,maxheight=maxheight,minwidth=minwidth,
         quickselect=quickselect,substrsearch=substrsearch,
         hideunmatched=hideunmatched,sortmatched=sortmatched,allownew=allownew ) )
 end
 
-function newTwPopup{T<:AbstractString}( scr::TwObj, arr::Array{T,1};
+function newTwPopup( scr::TwObj, arr::Array{T,1};
         posy::Any=:center,posx::Any=:center,
-        title = utf8(""), maxwidth = 50, maxheight = 15, minwidth = 20,
-        quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false )
+        title = "", maxwidth = 50, maxheight = 15, minwidth = 20,
+        quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false ) where {T<:AbstractString}
     obj = TwObj( TwPopupData(arr), Val{ :Popup } )
     obj.box = true
     obj.title = title
@@ -111,8 +111,8 @@ function newTwPopup{T<:AbstractString}( scr::TwObj, arr::Array{T,1};
 
     link_parent_child( scr, obj, h, w, posy, posx )
 
-    obj.data.searchbox = newTwEntry( obj, UTF8String; width=minwidth, posy=:bottom, posx = 1, box=false )
-    obj.data.searchbox.title = utf8("?")
+    obj.data.searchbox = newTwEntry( obj, String; width=minwidth, posy=:bottom, posx = 1, box=false )
+    obj.data.searchbox.title = "?"
     obj.data.searchbox.hasFocus = false # so it looks dimmer than main cursor
     obj
 end
@@ -135,7 +135,7 @@ function draw( o::TwObj{TwPopupData} )
         box( o.window, 0,0 )
     end
     if !isempty( o.title ) && o.box
-        mvwprintw( o.window, 0, (@compat round(Int, ( o.width - length(o.title) )/2 )), "%s", o.title )
+        mvwprintw( o.window, 0, round( Int, ( o.width - length(o.title) )/2 ), "%s", o.title )
     end
     starty = o.borderSizeV
     viewContentHeight = o.height - o.borderSizeV * 2
@@ -186,12 +186,12 @@ function popup_search_next( o::TwObj{TwPopupData}, step::Int, trivialstop::Bool 
     while true
         if o.data.selectmode & POPUPSUBSTR != 0
             if usedatalist
-                if contains( o.data.datalist[i][1], tmpstr )
+                if occursin( tmpstr, o.data.datalist[i][1] )
                     o.data.currentLine = i
                     return i
                 end
             else
-                if contains( lowercase( o.data.choices[i] ), tmpstr )
+                if occursin( tmpstr, lowercase( o.data.choices[i] ) )
                     o.data.currentLine = i
                     return i
                 end
@@ -236,8 +236,10 @@ function update_popup_score( o::TwObj{TwPopupData} )
                 o.data.datalist = Any[]
                 if o.data.selectmode & POPUPSUBSTR != 0
                     for (i,c) in enumerate( o.data.choices )
-                        if contains( lowercase( c ), lowercase( searchterm ) )
-                            push!( o.data.datalist, Any[ lowercase( c ), c, i, search( lowercase( c ), lowercase( searchterm ) )[1] + length( c ) / needx ] )
+                        if occursin( lowercase( searchterm ), lowercase( c ) )
+                            r = findfirst( lowercase( searchterm ), lowercase( c ) )
+                            startpos = r !== nothing ? first(r) : needx
+                            push!( o.data.datalist, Any[ lowercase( c ), c, i, startpos + length( c ) / needx ] )
                         end
                     end
                 else
@@ -268,9 +270,9 @@ function update_popup_score( o::TwObj{TwPopupData} )
                             normld = ( ld - minld + 1) / (maxld - minld + 1) * (minld + 1 )
                             # finding the search term in the later part of a string should have a small penalty
                             substrpenalty = needx
-                            r  = search( row[1], searchterm )
-                            if length(r) != 0
-                                substrpenalty = r.start
+                            r = findfirst( searchterm, row[1] )
+                            if r !== nothing
+                                substrpenalty = first(r)
                             end
                             row[ 4] = ld + normld * 0.5 + substrpenalty
                         end
@@ -403,9 +405,9 @@ function inject( o::TwObj{TwPopupData}, token )
     elseif token == :KEY_MOUSE
         (mstate,x,y, bs ) = getmouse()
         if mstate == :scroll_up
-            dorefresh = moveby( -(@compat round(Int, viewContentHeight/10 )) )
+            dorefresh = moveby( -(round(Int, viewContentHeight/10 )) )
         elseif mstate == :scroll_down
-            dorefresh = moveby( @compat round(Int, viewContentHeight/10 ) )
+            dorefresh = moveby( round(Int, viewContentHeight/10 ) )
         elseif mstate == :button1_pressed && o.data.trackLine
             (rely, relx) = screen_to_relative( o.window, y, x )
             if 0<=relx<o.width && 0<=rely<o.height

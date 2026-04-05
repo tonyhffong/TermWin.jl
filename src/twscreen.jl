@@ -1,27 +1,25 @@
 # bookkeeping data for a screen
 
-# Screen is unique also in that its instantiation requires a window. It's because often we'd simply
-# supply the rootwin that has already been created.
-function newTwScreen( win::Ptr{Void} )
+# Screen is unique also in that its instantiation requires a plane. It's because often we'd simply
+# supply the rootplane that has already been created.
+function newTwScreen( plane::NC.Plane, maxy::Int, maxx::Int )
     obj = TwObj( TwScreenData(), Val{ :Screen } )
-    begy, begx = getwinbegyx( win )
-    maxy, maxx = getwinmaxyx( win )
+    pos = NC.yx( plane )
 
-    obj.window = win
+    obj.window = plane
     obj.height = maxy
     obj.width = maxx
-    obj.xpos = begx
-    obj.ypos = begy
+    obj.xpos = Int(pos.x)
+    obj.ypos = Int(pos.y)
 
     obj.hasFocus = true
     obj.acceptsFocus = true
     obj.isVisible = true
-    #wbkgdset( win, COLOR_PAIR( 15 ) | @compat UInt( '.'))
     obj
 end
 
 function registerTwObj( scr::TwObj{TwScreenData}, o::TwObj )
-    if o.screen.value != nothing
+    if o.screen.value !== nothing
         if o.screen.value == scr
             return
         end
@@ -38,8 +36,8 @@ function unregisterTwObj( scr::TwObj{TwScreenData}, o::TwObj )
     end
     idx = o.screenIndex
     deleteat!( scr.data.objects, idx )
-    if o.panel != nothing
-        hide_panel( o.panel )
+    if isa( o.window, NC.Plane )
+        hide_panel( o.window )
     end
     for i in idx:length( scr.data.objects )
         scr.data.objects[i].screenIndex = i
@@ -71,7 +69,7 @@ function setTwFocusNext( scr::TwObj{TwScreenData})
             break
         end
     end
-    if result != nothing
+    if result !== nothing
         scr.data.focus = n
     else
         scr.data.focus = 0
@@ -97,7 +95,7 @@ function setTwFocusPrevious( scr::TwObj{TwScreenData} )
             break
         end
     end
-    if result != nothing
+    if result !== nothing
         scr.data.focus = n
     else
         scr.data.focus = 0
@@ -128,7 +126,7 @@ end
 function raiseTwObject( o::TwObj )
     log( "Raise: " * string( o ) )
     scr = o.screen.value
-    if scr != nothing
+    if scr !== nothing
         si = o.screenIndex
         deleteat!( scr.data.objects, si )
         push!( scr.data.objects, o )
@@ -139,17 +137,20 @@ function raiseTwObject( o::TwObj )
         o.hasFocus = true
         scr.data.focus = length( scr.data.objects )
         refresh( o )
-        top_panel( o.panel )
+        if isa( o.window, NC.Plane )
+            # Move to top of z-stack (pass C_NULL means "move to top")
+            NC.move_below( o.window, C_NULL )
+        end
     end
 end
 
 function lowerTwObject( o::TwObj )
     log( "Lower: " * string( o ) )
     scr = o.screen.value
-    if scr != nothing
+    if scr !== nothing
         si = o.screenIndex
         deleteat!( scr.data.objects, si )
-        unshift!( scr.data.objects, o )
+        pushfirst!( scr.data.objects, o )
         for i in 1:length( scr.data.objects )
             scr.data.objects[i].screenIndex = i
             scr.data.objects[i].hasFocus = false
@@ -157,7 +158,10 @@ function lowerTwObject( o::TwObj )
         scr.data.objects[end].hasFocus = true
         scr.data.focus = length( scr.data.objects )
         refresh( o )
-        bottom_panel( o.panel )
+        if isa( o.window, NC.Plane )
+            # Move to bottom of z-stack (pass C_NULL means "move to bottom")
+            NC.move_above( o.window, C_NULL )
+        end
     end
 end
 
@@ -172,12 +176,7 @@ Blocking call. it doesn't use inject directly, because
 This is some UGLY code. To be streamlined...
 =#
 function activateTwObj( scr::TwObj{TwScreenData}, tokens::Any=nothing )
-    # consume one token, this also makes sure the readtoken function is jitted
-    #=
-    if tokens == nothing
-        readtoken( scr.window )
-    end
-    =#
+    global nc_context
     refresh(scr) # clear any potential wait message
     focusObj = nothing
     focusIdx = scr.data.focus
@@ -198,7 +197,7 @@ function activateTwObj( scr::TwObj{TwScreenData}, tokens::Any=nothing )
             if st== :exit_ok
                 retvalue = scr.value
             end
-            if focusObj != nothing
+            if focusObj !== nothing
                 unregisterTwObj( scr, focusObj )
                 # find the next focusObj, if not found, just return
                 # otherwise, make it the new focus and continue
@@ -214,11 +213,11 @@ function activateTwObj( scr::TwObj{TwScreenData}, tokens::Any=nothing )
                     end
                 end
             end
-            if focusObj == nothing
+            if focusObj === nothing
                 return :really_exit
             end
         elseif st == :pass
-            if focusObj != nothing
+            if focusObj !== nothing
                 i = length( scr.data.objects )
                 while( st == :pass && i >= 1 )
                     o = scr.data.objects[i]
@@ -234,11 +233,10 @@ function activateTwObj( scr::TwObj{TwScreenData}, tokens::Any=nothing )
         end
     end
 
-    if tokens == nothing
+    if tokens === nothing
         while true
-            update_panels()
-            doupdate()
-            token = readtoken( scr.window )
+            NC.render(nc_context)
+            token = readtoken( nc_context )
             status = inject( scr, token )
 
             for o in scr.data.objects
@@ -255,9 +253,8 @@ function activateTwObj( scr::TwObj{TwScreenData}, tokens::Any=nothing )
         end
     else
         for token in tokens
-            update_panels()
-            doupdate()
-            token = readtoken( scr.window )
+            NC.render(nc_context)
+            token = readtoken( nc_context )
             status = inject( scr, token )
             if handleStatus( status, token ) == :really_exit
                 return retvalue
@@ -283,8 +280,7 @@ function inject( scr::TwObj{TwScreenData}, token )
             h = helptext( scr.data.objects[ scr.data.focus ] )
             if h != ""
                 helper = newTwViewer( rootTwScreen, h, posy= :center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
-                activateTwObj( helper )
-                unregisterTwObj( rootTwScreen, helper )
+                raiseTwObject( helper )
                 return :got_it
             end
         elseif token == :tab
@@ -332,14 +328,16 @@ function draw( scr::TwObj{TwScreenData} )
     for (i,o) in enumerate( scr.data.objects )
         o.hasFocus = (i == focused)
         if o.isVisible
-            if panel_hidden( o.panel )
-                show_panel( o.panel )
+            if isa( o.window, NC.Plane ) && panel_hidden( o.window )
+                show_panel( o.window )
             end
-            top_panel( o.panel )
+            if isa( o.window, NC.Plane )
+                top_panel( o.window )
+            end
             draw( o )
         else
-            if !panel_hidden( o.panel )
-                hide_panel( o.panel )
+            if isa( o.window, NC.Plane ) && !panel_hidden( o.window )
+                hide_panel( o.window )
             end
         end
     end
@@ -363,18 +361,17 @@ function refresh( scr::TwObj{TwScreenData} )
     scr.data.focus = focused
     for (i,o) in enumerate( scr.data.objects )
         o.hasFocus = (i == focused)
-        if o.panel == nothing
-            throw( string( o ) * " has unset panel. Check its constructor." )
-        end
         if o.isVisible
-            if panel_hidden( o.panel )
-                show_panel( o.panel )
+            if isa( o.window, NC.Plane ) && panel_hidden( o.window )
+                show_panel( o.window )
             end
-            top_panel( o.panel )
+            if isa( o.window, NC.Plane )
+                top_panel( o.window )
+            end
             draw( o )
         else
-            if !panel_hidden( o.panel )
-                hide_panel( o.panel )
+            if isa( o.window, NC.Plane ) && !panel_hidden( o.window )
+                hide_panel( o.window )
             end
         end
     end

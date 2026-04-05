@@ -7,13 +7,7 @@
 # The functions are automatically discovered as long as they are either defined in
 # TermWin, or exported to Main.
 
-if VERSION < v"0.4.0-dev+2275"
-    immutable Val{T}
-    end
-    export Val
-end
-
-type TwWindow
+mutable struct TwWindow
     parent::WeakRef # to another TwObj, or nothing
     yloc::Int # 0-based
     xloc::Int
@@ -21,11 +15,11 @@ type TwWindow
     width::Int
 end
 
-type TwObj{T,S}
+mutable struct TwObj{T,S}
     screen::WeakRef # the parent screen
     screenIndex::Int
-    window::Union{ Void, Ptr{Void}, TwWindow }
-    panel::Union{ Void, Ptr{Void} } # when window is a TwWindow, this is nothing
+    window::Union{Nothing, NC.Plane, TwWindow}
+    # panel field removed: Notcurses planes have built-in z-ordering
     height::Int
     width::Int
     xpos::Int
@@ -39,69 +33,73 @@ type TwObj{T,S}
     isVisible::Bool
     data::T
     value::Any # the logical "content" that this object contains (return value if editable)
-    title::UTF8String
-    listeners::Dict{ Symbol, Array } # event=>array of registered listeners. each listener is of the type (o, ev)->Void
-    function TwObj( data::T )
+    title::String
+    listeners::Dict{Symbol, Array} # event=>array of registered listeners. each listener is of the type (o, ev)->Nothing
+    session_id::Int # which session created this widget
+    function TwObj{T,S}( data::T ) where {T,S}
         log( "TwObj datatype=" * string( T ) * " TwObjSubtype="*string(S) )
-        x = new( WeakRef(), 0,
-            nothing,
+        x = new{T,S}( WeakRef(), 0,
             nothing,
             0, 0, 0, 0,
             false, 0, 0,
-            true, true, false, true, data, nothing, utf8(""), Dict{Symbol, Array{Function,1} }() )
-        finalizer( x, y->begin
-            global rootwin
-            if y.panel != nothing
-                del_panel( y.panel )
-                y.panel = nothing
-            end
-            if typeof( y.window ) <: Ptr && y.window != rootwin
-                delwin( y.window )
+            true, true, false, true, data, nothing, "", Dict{Symbol, Array{Function,1}}(),
+            current_session_id )
+        finalizer( y->begin
+            global rootplane, nc_context, current_session_id
+            # Only destroy the plane when the active session is the same one that
+            # created this widget.  If a different session is active (or none),
+            # NC.stop() has already freed every plane from the old session, so
+            # calling NC.destroy here would be a double-free / use-after-free.
+            if nc_context !== nothing && y.session_id == current_session_id &&
+                    isa(y.window, NC.Plane) && y.window != rootplane
+                NC.destroy( y.window )
                 y.window = nothing
             end
-            if y.screen.value != nothing
+            if y.screen.value !== nothing
                 unregisterTwObj( y.screen.value, y )
                 y.screen = WeakRef()
             end
             y.listeners = Dict{Symbol,Array{Function,1}}()
-        end )
+        end, x )
         x
     end
 end
 
 # bookkeeping data for a screen
-type TwScreenData
-    objects::Array{TwObj, 1 }
+mutable struct TwScreenData
+    objects::Vector{TwObj}
     focus::Int
     TwScreenData() = new( TwObj[], 0 )
 end
 
-type TwListData
+mutable struct TwListData
     horizontal::Bool
-    widgets::Array{TwObj,1} # this is static.
+    widgets::Vector{TwObj} # this is static.
     focus::Int # which of the widgets has the focus
     canvasheight::Int
     canvaswidth::Int
-    pad::Union{ Void, Ptr{Void} } # nothing, or Ptr{Void} to the WINDOW from calling newpad()
+    pad::Union{Nothing, NC.Plane} # nothing, or Notcurses Plane for the canvas
     canvaslocx::Int # 0-based, view's location on canvas
     canvaslocy::Int # 0-based
     showLineInfo::Bool
     navigationmode::Bool
-    bottomText::UTF8String
+    bottomText::String
+    session_id::Int
     function TwListData()
-        ret = new( false, TwObj[], 0, 0, 0, nothing, 0, 0, false, false, utf8("") )
-        finalizer( ret, y->begin
-            if y.pad != nothing
-                delwin( y.pad )
+        ret = new( false, TwObj[], 0, 0, 0, nothing, 0, 0, false, false, "", current_session_id )
+        finalizer( y->begin
+            global nc_context, current_session_id
+            if nc_context !== nothing && y.session_id == current_session_id && y.pad !== nothing
+                NC.destroy( y.pad )
             end
-        end)
+        end, ret )
         ret
     end
 end
 
-typealias TwScreen TwObj{TwScreenData}
+const TwScreen = TwObj{TwScreenData}
 
-function TwObj{T,S}( d::T, ::Type{Val{S}} ) 
+function TwObj( d::T, ::Type{Val{S}} ) where {T,S}
     return( TwObj{T,S}(d) )
 end
 import Base.show
@@ -127,4 +125,4 @@ function Base.show( io::IO, o::TwObj )
 end
 
 draw( p::TwObj ) = error( string( p ) * " draw is undefined.")
-objtype{T,S}( _::TwObj{T,S} ) = S
+objtype( _::TwObj{T,S} ) where {T,S} = S

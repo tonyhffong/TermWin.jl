@@ -1,4 +1,4 @@
-type FormatHints
+mutable struct FormatHints
     width         :: Int  # column width, not the format width
     scale         :: Real
     precision     :: Int
@@ -9,21 +9,21 @@ type FormatHints
     hidezero      :: Bool
     alternative   :: Bool
     mixedfraction :: Bool
-    suffix        :: UTF8String
+    suffix        :: String
     autoscale     :: Symbol
-    conversion    :: ASCIIString
+    conversion    :: String
 end
 
-function FormatHints{T<:Integer}( ::Type{T} )
+function FormatHints( ::Type{T} ) where {T<:Integer}
     FormatHints( 8, 1, 0, true, false, false, true, true, false, false, "", :none, "d" )
 end
-function FormatHints{T<:Unsigned}( ::Type{T} )
+function FormatHints( ::Type{T} ) where {T<:Unsigned}
     FormatHints( 8, 1, 0, true, false, false, true, true, false, false, "", :none, "x" )
 end
-function FormatHints{T<:AbstractFloat}( ::Type{T} )
+function FormatHints( ::Type{T} ) where {T<:AbstractFloat}
     FormatHints( 10, 1.0, 2, true, false, false, true, true, false, false, "", :none, "f" )
 end
-function FormatHints{T<:Rational}( ::Type{T} )
+function FormatHints( ::Type{T} ) where {T<:Rational}
     FormatHints( 12, 1, 0, false, false, false, true, true, false, true, "", :none, "s" )
 end
 function FormatHints( ::Type{Date} )
@@ -38,7 +38,7 @@ function FormatHints( ::Type{} )
     FormatHints( 14, 1, 0, false, false, false, true, true, false, false, "", :none, "s" )
 end
 
-function applyformat{T<:Number}( v::T, fmt::FormatHints )
+function applyformat( v::T, fmt::FormatHints ) where {T<:Number}
     if fmt.hidezero && v == 0
         ""
     else
@@ -60,13 +60,12 @@ function applyformat( v::Union{Date,DateTime}, fmt::FormatHints )
     Dates.format( v, fmt.conversion )
 end
 
-function applyformat{T<:AbstractString}( v::T, fmt::FormatHints )
-    @lintpragma( "Ignore unused fmt" )
+function applyformat( v::T, fmt::FormatHints ) where {T<:AbstractString}
     return v
 end
 
 function applyformat( v::AbstractArray, fmt::FormatHints )
-    strs = UTF8String[]
+    strs = String[]
     for s in v
         push!( strs, applyformat( s, fmt ) )
     end
@@ -74,6 +73,5 @@ function applyformat( v::AbstractArray, fmt::FormatHints )
 end
 
 function applyformat( v, fmt::FormatHints )
-    @lintpragma( "Ignore unused fmt" )
     return string( v )
 end

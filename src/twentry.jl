@@ -1,6 +1,6 @@
 # hand-crafted numeric and string input field
 
-defaultEntryStringHelpText = utf8("""
+defaultEntryStringHelpText = """
 <-, -> : move cursor
 ctrl-a : move cursor to start
 ctrl-e : move cursor to end
@@ -8,9 +8,9 @@ ctrl-k : empty entry
 ctrl-r : Toggle insertion/overwrite mode
 
 Edges are highlighted if more beyond boundary
-""")
+"""
 
-defaultEntryNumberHelpText = utf8("""
+defaultEntryNumberHelpText = """
 <-, -> : move cursor
 ctrl-a : move cursor to start
 ctrl-e : move cursor to end
@@ -22,9 +22,9 @@ e      : (Floating Point only) exponent. 1e6 for 1,000,000.0
 ctrl-r : Toggle insertion/overwrite mode
 Shft-up: If configured, increase value by a tick-size
 Shft-dn: If configured, decrease value by a tick-size
-""")
+"""
 
-defaultEntryDateHelpText = utf8("""
+defaultEntryDateHelpText = """
 Format : YYYY-MM-DD standard, but allows formats such as
          20140101, 1/1/2014, 1Jan2014, 1 January 2014
          2014.01.01
@@ -37,12 +37,12 @@ ctrl-r : Toggle insertion/overwrite mode
 ?      : View calendar
 Shft-up: If configured, increase value by a tick-size
 Shft-dn: If configured, decrease value by a tick-size
-""")
-type TwEntryData
+"""
+mutable struct TwEntryData
     valueType::DataType
     showHelp::Bool
-    helpText::UTF8String
-    inputText::UTF8String
+    helpText::String
+    inputText::String
     cursorPos::Int # where is the next char going to be
     fieldLeftPos::Int # what is the position of the first char on the field
     tickSize::Any
@@ -53,9 +53,9 @@ type TwEntryData
     precision::Int
     commas::Bool
     stripzeros::Bool
-    conversion::ASCIIString
+    conversion::String
     function TwEntryData( dt::DataType )
-        o = new( dt, false, utf8(""), utf8(""), 1, 1, 0, true, false, false, false,
+        o = new( dt, false, "", "", 1, 1, 0, true, false, false, false,
            -1, true, true, "" )
         if dt <: AbstractString
             o.helpText = defaultEntryStringHelpText
@@ -88,7 +88,7 @@ end
 # y and x is relative to parentwin
 function newTwEntry( parent::TwObj, dt::DataType;
     width::Real=30,posy::Any=:staggered,posx::Any=:staggered,
-    box=true, showHelp=true, titleLeft=true, title = utf8(""),
+    box=true, showHelp=true, titleLeft=true, title = "",
     precision=-1, stripzeros= (precision == -1), conversion="" )
 
     data = TwEntryData( dt )
@@ -115,10 +115,10 @@ end
 function getFieldDimension( o::TwObj )
     if o.data.titleLeft && !isempty( o.title )
         fieldcount = o.width - length(o.title) - o.borderSizeH* 2
-        remainspacecount = fieldcount - strwidth( o.data.inputText )
+        remainspacecount = fieldcount - textwidth( o.data.inputText )
     else
-        fieldcount = o.width - ( o.box?2: 0 )
-        remainspacecount = fieldcount - strwidth( o.data.inputText )
+        fieldcount = o.width - ( o.box ? 2 : 0 )
+        remainspacecount = fieldcount - textwidth( o.data.inputText )
     end
     (fieldcount, remainspacecount)
 end
@@ -129,7 +129,7 @@ function draw( o::TwObj{TwEntryData} )
         box( o.window, 0,0 )
     end
     if !isempty( o.title ) && !o.data.titleLeft && o.box
-        mvwprintw( o.window, 0, (@compat round(Int, ( o.width - length(o.title) )/2 )), "%s", o.title )
+        mvwprintw( o.window, 0, round( Int, ( o.width - length(o.title) )/2 ), "%s", o.title )
     end
     starty = o.borderSizeV
     startx = o.borderSizeH
@@ -159,7 +159,7 @@ function draw( o::TwObj{TwEntryData} )
         if remainspacecount <= 0
             rcursPos = min( fieldcount, max(1, o.data.cursorPos - o.data.fieldLeftPos+1 ) )
             outstr = substr_by_width( o.data.inputText, o.data.fieldLeftPos-1, fieldcount )
-            strw = strwidth( outstr )
+            strw = textwidth( outstr )
             if strw < fieldcount
                 outstr *= repeat(" ", fieldcount - strw )
             end
@@ -205,7 +205,7 @@ function draw( o::TwObj{TwEntryData} )
             mvwprintw( o.window, starty, startx, "%s", string(c) )
             wattroff( o.window, firstflag | A_BOLD )
         end
-        if o.data.fieldLeftPos + fieldcount <= strwidth(o.data.inputText)
+        if o.data.fieldLeftPos + fieldcount <= textwidth(o.data.inputText)
             c = substr_by_width( outstr, fieldcount-1, 1 )
             wattron( o.window, lastflag | A_BOLD )
             mvwprintw( o.window, starty, startx+fieldcount-1, "%s", string(c) )
@@ -221,7 +221,7 @@ function inject( o::TwObj{TwEntryData}, token )
 
     insertchar = ( c ) -> begin
         o.data.inputText = insertstring( o.data.inputText, c, o.data.cursorPos, o.data.overwriteMode )
-        o.data.cursorPos += strwidth( c )
+        o.data.cursorPos += textwidth( c )
     end
 
     checkcursor = ()-> begin
@@ -249,7 +249,7 @@ function inject( o::TwObj{TwEntryData}, token )
     elseif token == :shift_up && o.data.valueType <: Real && o.data.tickSize != 0
         (fieldcount, remainspacecount ) = getFieldDimension( o )
         (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
-        if v != nothing
+        if v !== nothing
             v += o.data.tickSize
             o.value = v
             o.data.inputText = myNumFormat( o.value, o.data, fieldcount )
@@ -260,7 +260,7 @@ function inject( o::TwObj{TwEntryData}, token )
     elseif token == :shift_down && o.data.valueType <: Real && o.data.tickSize != 0
         (fieldcount, remainspacecount ) = getFieldDimension( o )
         (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
-        if v != nothing
+        if v !== nothing
             if o.data.valueType <: Unsigned && v < o.data.tickSize
                 v = convert( o.data.valueType, 0 )
             else
@@ -335,7 +335,7 @@ function inject( o::TwObj{TwEntryData}, token )
     elseif token == "m"  && o.data.valueType <: Real && o.data.valueType != Bool # add 000
         (fieldcount, remainspacecount ) = getFieldDimension( o )
         (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
-        if v!=nothing
+        if v !== nothing
             o.value = v * 1000
             o.data.inputText = myNumFormat( o.value, o.data, fieldcount )
             checkcursor()
@@ -362,7 +362,7 @@ function inject( o::TwObj{TwEntryData}, token )
         global rootTwScreen
         (fieldcount, remainspacecount ) = getFieldDimension( o )
         (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
-        if v == nothing
+        if v === nothing
             v = today()
         end
         w = newTwCalendar( rootTwScreen, v; posy=:center, posx=:center )
@@ -376,7 +376,7 @@ function inject( o::TwObj{TwEntryData}, token )
     elseif token == "," && o.data.valueType <: Date
         (fieldcount, remainspacecount ) = getFieldDimension( o )
         (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
-        if v != nothing
+        if v !== nothing
             o.data.inputText = s
             checkcursor()
             o.data.incomplete = false
@@ -386,32 +386,31 @@ function inject( o::TwObj{TwEntryData}, token )
             beep()
         end
     elseif typeof( token ) <: AbstractString && o.data.valueType <: Number && o.data.valueType != Bool &&
-        ( isdigit( token ) || token == "," ||
+	    ( isdigit( token[1] ) || token == "," ||
           o.data.valueType <: AbstractFloat && in( token, [ ".", "e", "+", "-" ] ) ||
           o.data.valueType <: Rational && in( token, [ ".", "+", "-" ] ) ||
           o.data.valueType <: Signed && in( token, ["+", "-"] ) )
 
         if token == "e" # it may or may not be ok, just allow it if there is no e in the string
-            if contains( o.data.inputText, "e" ) # disallowed, do nothing
+            if occursin( "e", o.data.inputText ) # disallowed, do nothing
                 return :got_it
             else
                 insertchar( "e" )
                 dorefresh = true
             end
         elseif token == "-" || token == "+" # only allowed at the beginning and just after an "e"
-            epos = findfirst( o.data.inputText, 'e' )
-            if o.data.cursorPos == 1 && ( findfirst( o.data.inputText, '-' ) == 1 ||
-                findfirst( o.data.inputText, '+' ) == 1 ) ||
-                o.data.cursorPos != 1 &&  ( epos == 0 || o.data.cursorPos != epos+1 )
+            epos = findfirst( isequal('e'), o.data.inputText )
+            if o.data.cursorPos == 1 && ( startswith( o.data.inputText, "-" ) ||
+                startswith( o.data.inputText, "+" ) ) ||
+                o.data.cursorPos != 1 && ( epos === nothing || o.data.cursorPos != epos+1 )
                 return :got_it
             else
                 insertchar( token )
                 dorefresh = true
             end
         elseif token == "." # add a decimal point, or if one exists, jump right to it
-            epos = findfirst( o.data.inputText, 'e' )
-            dpos = findfirst( o.data.inputText, '.' )
-            if dpos != 0
+            dpos = findfirst( isequal('.'), o.data.inputText )
+            if dpos !== nothing
                 o.data.cursorPos=dpos+1
                 dorefresh = true
             else
@@ -421,7 +420,7 @@ function inject( o::TwObj{TwEntryData}, token )
         elseif token == "," # try to add commas to all
             (fieldcount, remainspacecount ) = getFieldDimension( o )
             (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
-            if v != nothing
+            if v !== nothing
                 o.data.inputText = s
                 checkcursor()
                 o.data.incomplete = false
@@ -434,14 +433,14 @@ function inject( o::TwObj{TwEntryData}, token )
             insertchar( token )
             dorefresh = true
         end
-    elseif typeof( token ) <: AbstractString && o.data.valueType <: AbstractString && isprint( token )
+    elseif typeof( token ) <: AbstractString && o.data.valueType <: AbstractString #&& isprint( token )
         insertchar( token )
         checkcursor()
         dorefresh = true
     elseif token == :enter || token == Symbol( "return" )
         (fieldcount, remainspacecount ) = getFieldDimension( o )
         (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
-        if v != nothing
+        if v !== nothing
             o.value = v
             o.data.inputText = s
             checkcursor()
@@ -454,7 +453,7 @@ function inject( o::TwObj{TwEntryData}, token )
     elseif token == :focus_off
         (fieldcount, remainspacecount ) = getFieldDimension( o )
         (v,s) = evalNFormat( o.data, o.data.inputText, fieldcount )
-        if v != nothing
+        if v !== nothing
             o.value = v
             o.data.inputText = s
             o.data.incomplete = false
@@ -480,14 +479,12 @@ function myNumFormat( v, data::TwEntryData, fieldcount::Int )
         commas=data.commas, stripzeros=data.stripzeros,
         conversion=data.conversion )
     if length(s) > fieldcount
-        s = replace( s, ",", "", length(s)-fieldcount )
+        s = replace( s, "," => "", count=length(s)-fieldcount )
     end
     s
 end
 
 function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
-    @lintpragma( "Ignore unstable type variable v")
-    @lintpragma( "Ignore unstable type variable iv")
     dt = data.valueType
     if dt <: AbstractString
         return( s, s )
@@ -502,31 +499,33 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
         return v, s
     elseif dt <: AbstractFloat
         v = nothing
-        stmp = replace( s, ",", "" )
+        stmp = replace( s, "," => "" )
         try
             if length(stmp)==0
                 v = 0.0
             else
                 v = parse( dt, stmp )
             end
+        catch
         end
-        if v != nothing
+        if v !== nothing
             v = convert(dt, v)
             return (v, myNumFormat( v, data, fieldcount ) )
         end
     elseif dt <: Rational
         v = nothing
-        stmp = replace( s, ",", "" )
-        dpos = findfirst( stmp, '.' )
-        if dpos == 0
+        stmp = replace( s, "," => "" )
+        dpos = findfirst( isequal('.'), stmp )
+        if dpos === nothing
             try
                 if length(stmp) == 0
                     v= 0
                 else
                     v = parse( dt.types[1], stmp )
                 end
+            catch
             end
-            if v != nothing
+            if v !== nothing
                 v = convert( dt, v)
                 return (v, myNumFormat( v, data, fieldcount ) )
             end
@@ -545,30 +544,32 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
                     tail = stmp[dpos+1:end]
                     fv = parse( dt.types[2], tail ) // ( 10 ^ length(tail) )
                 end
+            catch
             end
-            if iv != nothing && fv != nothing
-                v = iv + (sign(iv) > 0? fv : -fv )
+            if iv !== nothing && fv !== nothing
+                v = iv + (sign(iv) > 0 ? fv : -fv )
                 return (v, myNumFormat( v, data, fieldcount ) )
             end
         end
     elseif dt <: Integer # assume int
         v = nothing
-        stmp = replace( s, ",", "" )
+        stmp = replace( s, "," => "" )
         try
             if length(stmp)==0
                 v = 0
             else
                 v = parse( dt, stmp )
             end
+        catch
         end
-        if v != nothing
+        if v !== nothing
             v = convert( dt, v)
             return (v, myNumFormat( v, data, fieldcount ) )
         end
     elseif dt <: Date
         v = nothing
         s = strip( s )
-        res = Compat.@Dict( r"^[0-9]{2}[a-z]{3}[0-9]{4}$"i => "dduuuyyyy",
+        res = Dict( r"^[0-9]{2}[a-z]{3}[0-9]{4}$"i => "dduuuyyyy",
                 r"^[0-9][a-z]{3}[0-9]{4}$"i => "duuuyyyy",
                 r"^[0-9]{2}[a-z]{3}[0-9]{2}$"i => "dduuuyy",
                 r"^[0-9][a-z]{3}[0-9]{2}$"i => "duuuyy",
@@ -587,27 +588,28 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
         fmt = "yyyy-mm-dd"
         for (r,f) in res
             m = match( r, s )
-            if m != nothing
+            if m !== nothing
                 try
                     v = Date( s, f )
+                catch
                 end
-                if v != nothing
+                if v !== nothing
                     fmt = f
-                    if !contains( fmt, "yyyy" ) && contains( fmt, "yy" ) && year(v) < 100
+                    if !occursin( "yyyy", fmt ) && occursin( "yy", fmt ) && year(v) < 100
                         smally = year(v)
                         thisy = year(today())
-                        cent = @compat trunc( Int, floor( thisy, -2 ) )
+                        cent = 100 * div( thisy, 100 )
                         if abs(cent+smally - thisy)<=50
                             v = v + Year( cent )
                         else
                             v = v + Year( cent - 100 )
                         end
-                        fmt = replace( fmt, "yy", "yyyy" )
+                        fmt = replace( fmt, "yy" => "yyyy" )
                     end
-                    if !contains( fmt, "y" ) && year(v) < 100 # get to the nearest half year
+                    if !occursin( "y", fmt ) && year(v) < 100 # get to the nearest half year
                         smally = year(v)
                         thisy = year(today())
-                        if (@compat Int( v + Year( thisy - smally + 1) - today() )) < 182
+                        if Dates.value( v + Year( thisy - smally + 1) - today() ) < 182
                             v = v + Year( thisy - smally + 1)
                         else
                             v = v + Year( thisy - smally )
@@ -621,7 +623,7 @@ function evalNFormat( data::TwEntryData, s::AbstractString, fieldcount::Int )
                 end
             end
         end
-        if v != nothing
+        if v !== nothing
             return (v,Dates.format(v,fmt))
         end
     end
@@ -630,7 +632,7 @@ end
 
 function helptext( o::TwObj{TwEntryData} )
     if !o.data.showHelp
-        return utf8("")
+        return ""
     end
     o.data.helpText
 end

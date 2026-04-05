@@ -8,7 +8,7 @@ Home       : jump to the start
 End        : jump to the end
 """
 
-type TwViewerData
+mutable struct TwViewerData
     messages::Array
     msglen::Int
     msgwidth::Int
@@ -16,12 +16,12 @@ type TwViewerData
     currentLine::Int
     currentLeft::Int
     showLineInfo::Bool # e.g.1/100 1.0% at top right corner
-    bottomText::UTF8String
+    bottomText::String
     trackLine::Bool
     showHelp::Bool
-    helpText::UTF8String
+    helpText::String
     tabWidth::Int
-    TwViewerData() = new( UTF8String[], 0, 0, 1, 1, 1, true, "", false, true, defaultViewerHelpText, 4 )
+    TwViewerData() = new( String[], 0, 0, 1, 1, 1, true, "", false, true, defaultViewerHelpText, 4 )
 end
 
 # the ways to use it:
@@ -40,14 +40,14 @@ function newTwViewer( scr::TwScreen; height::Real=0.5,width::Real=0.8,posy::Any=
     obj.data.bottomText = bottomText
     obj.data.trackLine = trackLine
     link_parent_child( scr, obj, height,width,posy,posx )
-    obj.data.viewContentHeight = obj.height - ( box? obj.borderSizeV *2 : 1 )
     obj
 end
 
 function newTwViewer( scr::TwObj, msgs::Array;
+        height::Real=0, width::Real=0,
         posy::Any=:staggered,posx::Any=:staggered,
         box=true, showLineInfo=true, bottomText = "", showHelp=true, tabWidth = 4, trackLine = false, title="" )
-    newmsgs = map( z->escape_string( replace( z, "\t", repeat( " ", tabWidth ) ) ), msgs )
+    newmsgs = map( z->escape_string( replace( z, "\t" => repeat( " ", tabWidth ) ) ), msgs )
     obj = TwObj( TwViewerData(), Val{ :Viewer } )
     obj.title = title
     setTwViewerMsgs( obj, newmsgs )
@@ -60,14 +60,20 @@ function newTwViewer( scr::TwObj, msgs::Array;
     obj.data.bottomText = bottomText
     obj.data.trackLine = trackLine
 
-    h = obj.data.msglen + obj.borderSizeV * 2 + (!box && !isempty( obj.data.bottomText )? 1 : 0 )
-    w = max( 25, obj.data.msgwidth + obj.borderSizeH * 2, length(title)+6 )
+    # If caller specified explicit size, honour it; otherwise auto-size from content.
+    h = height != 0 ? height : obj.data.msglen + obj.borderSizeV * 2 + (!box && !isempty( obj.data.bottomText ) ? 1 : 0 )
+    w = width  != 0 ? width  : max( 25, obj.data.msgwidth + obj.borderSizeH * 2, length(title)+6 )
 
     link_parent_child( scr, obj, h,w,posy,posx )
     obj
 end
 
-function newTwViewer{T<:AbstractString}( scr::TwScreen, msg::T; kwargs... )
+function newTwViewer( scr::TwScreen, msg::T; kwargs... ) where {T<:AbstractString}
+    newTwViewer( scr, split(msg,"\n"); kwargs... )
+end
+
+# Allow a generic TwObj parent (e.g. TwList container) with a string message.
+function newTwViewer( scr::TwObj, msg::T; kwargs... ) where {T<:AbstractString}
     newTwViewer( scr, split(msg,"\n"); kwargs... )
 end
 
@@ -97,7 +103,7 @@ function draw( o::TwObj{TwViewerData} )
         box( o.window, 0,0 )
     end
     if !isempty( o.title )
-        mvwprintw( o.window, 0, (@compat round(Int, ( o.width - length(o.title) )/2 )), "%s", o.title )
+        mvwprintw( o.window, 0, round( Int, ( o.width - length(o.title) )/2 ), "%s", o.title )
     end
     if o.data.showLineInfo
         if o.data.msglen <= o.height - 2 * o.borderSizeV
@@ -122,16 +128,16 @@ function draw( o::TwObj{TwViewerData} )
             s = s[o.data.currentLeft:end]
         end
         if o.data.trackLine && r == o.data.currentLine
-            wattron( o.window, A_BOLD | COLOR_PAIR( o.hasFocus? 15 : 30 ) )
+            wattron( o.window, A_BOLD | COLOR_PAIR( o.hasFocus ? 15 : 30 ) )
             s *= repeat( " ", max(0,viewContentWidth - length(s) ) )
         end
         mvwprintw( o.window, r - o.data.currentTop + viewStartRow, o.borderSizeH, "%s", s )
         if o.data.trackLine && r == o.data.currentLine
-            wattroff( o.window, A_BOLD | COLOR_PAIR( o.hasFocus? 15 : 30 ) )
+            wattroff( o.window, A_BOLD | COLOR_PAIR( o.hasFocus ? 15 : 30 ) )
         end
     end
     if length( o.data.bottomText ) != 0
-        mvwprintw( o.window, o.height-1, (@compat round(Int, (o.width - length(o.data.bottomText))/2 )), "%s", o.data.bottomText )
+        mvwprintw( o.window, o.height-1, round( Int, (o.width - length(o.data.bottomText))/2 ), "%s", o.data.bottomText )
     end
 end
 
@@ -184,9 +190,9 @@ function inject( o::TwObj{TwViewerData}, token )
     elseif token == :KEY_MOUSE
         (mstate,x,y, bs ) = getmouse()
         if mstate == :scroll_up
-            dorefresh = moveby( -(@compat round(Int, viewContentHeight/10 )) )
+            dorefresh = moveby( -(round(Int, viewContentHeight/10 )) )
         elseif mstate == :scroll_down
-            dorefresh = moveby( @compat round(Int, viewContentHeight/10 ) )
+            dorefresh = moveby( round(Int, viewContentHeight/10 ) )
         elseif mstate == :button1_pressed && o.data.trackLine
             (rely,relx) = screen_to_relative( o.window, y, x )
             if 0<=relx<o.width && 0<=rely<o.height
@@ -221,7 +227,7 @@ function inject( o::TwObj{TwViewerData}, token )
         dorefresh = true
     elseif token == "L" # move half-way toward the end
         if o.data.trackLine
-            target = min( (@compat round(Int, ceil((o.data.currentLine + o.data.msglen)/2))), o.data.msglen )
+            target = min( round(Int, ceil((o.data.currentLine + o.data.msglen)/2)), o.data.msglen )
             if target != o.data.currentLine
                 o.data.currentLine = target
                 checkTop()
@@ -230,7 +236,7 @@ function inject( o::TwObj{TwViewerData}, token )
                 beep()
             end
         else
-            target = min( (@compat round(Int,ceil((o.data.currentTop + o.data.msglen - o.height+2)/2))), o.data.msglen - o.height + 2 )
+            target = min( round(Int,ceil((o.data.currentTop + o.data.msglen - o.height+2)/2)), o.data.msglen - o.height + 2 )
             if target != o.data.currentTop
                 o.data.currentTop = target
                 dorefresh = true
@@ -240,7 +246,7 @@ function inject( o::TwObj{TwViewerData}, token )
         end
     elseif token == "l" # move half-way toward the beginning
         if o.data.trackLine
-            target = max( (@compat round(Int,floor( o.data.currentLine /2))), 1)
+            target = max( round(Int,floor( o.data.currentLine /2)), 1)
             if target != o.data.currentLine
                 o.data.currentLine = target
                 checkTop()
@@ -249,7 +255,7 @@ function inject( o::TwObj{TwViewerData}, token )
                 beep()
             end
         else
-            target = max( (@compat round(Int, floor( o.data.currentTop /2))), 1)
+            target = max( round(Int, floor( o.data.currentTop /2)), 1)
             if target != o.data.currentTop
                 o.data.currentTop = target
                 dorefresh = true
@@ -281,4 +287,3 @@ function setTwViewerMsgs( o::TwObj{TwViewerData}, msgs::Array )
     o.data.msglen = length(msgs)
     o.data.msgwidth = maximum( map( x->length(x), msgs ) )
 end
-

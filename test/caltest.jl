@@ -9,11 +9,3 @@ activateTwObj( rootTwScreen )
 ret = v.value
 TermWin.endsession()
 println( "You entered ", string( ret ) )
-
-v = nothing
-TermWin.initsession()
-v = newTwCalendar( rootTwScreen, today(), posy=:random, posx=:random, ncalStyle=false )
-activateTwObj( rootTwScreen )
-ret = v.value
-TermWin.endsession()
-println( "You entered ", string( ret ) )

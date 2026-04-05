@@ -1,0 +1,26 @@
+name = "TermWin"
+uuid = "ddbe2de8-fbff-40aa-a5ae-e0ef0f1059f5"
+version = "0.1.0"
+authors = ["tonyhffong <tonyhffong@users.noreply.github.com> and contributors"]
+
+[deps]
+CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Format = "1fa38f19-a742-5d3f-a2b9-30dd87b9d5f8"
+Notcurses = "0745143a-842b-4fd2-a9b7-9e0948c68818"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+
+[compat]
+Dates = "1.11.0"
+Notcurses = "0.2.1"
+Printf = "1.11.0"
+Statistics = "1.11.1"
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

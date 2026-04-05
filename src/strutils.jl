@@ -1,8 +1,8 @@
 function repr_symbol( s::Symbol )
-    v = utf8(string(s))
+    v = string(s)
     if length(v) == 0
         v = ":\"\""
-    elseif match( r"^[a-zA-Z_][0-9a-zA-Z_]*$", v ) != nothing
+    elseif match( r"^[a-zA-Z_][0-9a-zA-Z_]*$", v ) !== nothing
         v = ":" * v
     else
         v = "sym\""*escape_string(v)*"\""
@@ -10,53 +10,48 @@ function repr_symbol( s::Symbol )
     v
 end
 
-function delete_char_before( s::ASCIIString, p::Int )
-    return (s[1:p-2] * s[p:end], max(p-1,1) )
-end
-
-#delete a code_point before the p "width" position
-function delete_char_before( s::UTF8String, p::Int )
-    local totalskip::Int = 0
-    local lastj::Int = 0
-    local lastcw::Int = 0
+function delete_char_before( s::String, p::Int )
     if p == 1
         return (s,p)
     end
-    for (j,c) in enumerate( s )
-        cw = charwidth( c )
+    local totalskip::Int = 0
+    local last_byte_idx::Int = 0  # byte index of last character seen
+    local lastcw::Int = 0
+    idx = firstindex(s)
+    for c in s
+        cw = textwidth(string(c))
         if totalskip + cw < p
             totalskip += cw
-            lastj = j
+            last_byte_idx = idx
             lastcw = cw
+            idx = nextind(s, idx)
             continue
         else
-            if lastj <= 1
-                return (s[chr2ind(s,j):end], p-lastcw)
+            # Delete the character at last_byte_idx
+            if last_byte_idx < firstindex(s)
+                return (s[idx:end], p-lastcw)
+            elseif last_byte_idx == firstindex(s)
+                return (s[idx:end], p-lastcw)
             else
-                return (s[1:chr2ind(s,lastj-1)] * s[chr2ind(s,j):end], p-lastcw)
+                return (s[1:prevind(s,last_byte_idx)] * s[idx:end], p-lastcw)
             end
         end
     end
-    if lastj == 0
+    if last_byte_idx == 0
         return (s,p)
     end
-    if lastj == 1
+    # Delete the last character in the string
+    if last_byte_idx == firstindex(s)
         return ("", p-lastcw)
     end
-    return (s[1:chr2ind(s,lastj-1)], p-lastcw)
+    return (s[1:prevind(s,last_byte_idx)], p-lastcw)
 end
 
-function delete_char_at( s::ASCIIString, p::Int )
-    return s[1:p-1] * s[p+1:end]
-end
-
-# delete at least 1 code point, could be more if there
-# are trailing zero-width codepoints.
-function delete_char_at( s::UTF8String, p::Int )
+function delete_char_at( s::String, p::Int )
     local totalskip::Int = 0
     local lastj::Int = 0
     for (j,c) in enumerate( s )
-        cw = charwidth( c )
+        cw = textwidth(string(c))
         if totalskip + cw < p
             totalskip += cw
             lastj = j
@@ -65,7 +60,7 @@ function delete_char_at( s::UTF8String, p::Int )
             if lastj == 0
                 return substr_by_width( s, p, -1 )
             else
-                return s[1:chr2ind(s,lastj)] * substr_by_width( s, p, -1 )
+                return s[1:prevind(s,nextind(s,0,j))] * substr_by_width( s, p, -1 )
             end
         end
     end
@@ -75,23 +70,25 @@ end
 # TODO: test this thoroughly!!
 # Insert a (short) string at the "p" position
 # p is interpreted as the width position
-function insertstring{T<:AbstractString}( s::UTF8String, ch::T, p::Int, overwrite::Bool )
+function insertstring( s::String, ch::T, p::Int, overwrite::Bool ) where {T<:AbstractString}
     wskip = p-1
     local totalskip::Int = 0
-    chwidth = strwidth( ch )
+    chwidth = textwidth( ch )
     if chwidth == 0 && p == 1
         return s
     end
-    for (j,c) in enumerate( s )
-        cw = charwidth( c )
+    idx = firstindex(s)
+    for c in s
+        cw = textwidth(string(c))
         if totalskip + cw <= wskip
             totalskip += cw
+            idx = nextind(s, idx)
             continue
         else
-            if j == 1
+            if idx == firstindex(s)
                 out = ch
             else
-                out = s[1:chr2ind(s,j-1)] * ch
+                out = s[1:prevind(s,idx)] * ch
             end
             if overwrite
                 out *= substr_by_width( s, wskip+chwidth, -1 )
@@ -108,20 +105,20 @@ end
 # greedy-skip: all trailing 0 width chars will be skipped
 # greedy-include: all trailing 0-width chars will be included
 # if w is -1, it would take all the rest of the string
-function substr_by_width{T<:AbstractString}( s::T, wskip::Int, w::Int )
+function substr_by_width( s::T, wskip::Int, w::Int ) where {T<:AbstractString}
     local totalskip::Int = 0
     local totalwidth::Int = 0
     local startidx::Int = -1
     local endidx::Int = 0
     for (j,c) in enumerate( s )
-        cw = charwidth( c )
+        cw = textwidth(string(c))
         if startidx == -1
             if totalskip + cw <= wskip
                 totalskip += cw
                 continue
             else
                 if w == -1 # just take until the end
-                    return s[chr2ind(s,j):end]
+                    return s[nextind(s,0,j):end]
                 end
                 startidx = j
                 endidx = j
@@ -149,24 +146,24 @@ function substr_by_width{T<:AbstractString}( s::T, wskip::Int, w::Int )
         startidx = 1
     end
     if w == -1
-        return s[chr2ind(s,startidx):end]
+        return s[nextind(s,0,startidx):end]
     end
     if endidx < startidx
         return convert( T, "" )
     end
-    return s[chr2ind(s,startidx):chr2ind(s,endidx)]
+    return s[nextind(s,0,startidx):nextind(s,0,endidx)]
 end
 
-function ensure_length{T<:AbstractString}( s::T, w::Int, pad::Bool = true )
-    t = replace( s, "\n", "\\n" )
-    t = replace( t, "\t", " " )
+function ensure_length( s::T, w::Int, pad::Bool = true ) where {T<:AbstractString}
+    t = replace( s, "\n" => "\\n" )
+    t = replace( t, "\t" => " " )
     if w <= 0
         return ""
     end
-    len = strwidth( t )
+    len = textwidth( t )
     if w ==1
         if len > 1
-            return string( @compat Char( 0x2026 ) )
+            return string( Char( 0x2026 ) )
         elseif len==1
             return t
         else
@@ -185,19 +182,19 @@ function ensure_length{T<:AbstractString}( s::T, w::Int, pad::Bool = true )
             return t
         end
     else # ellipsis
-        return substr_by_width( t, 0, w-1 ) * string( @compat Char( 0x2026 ) )
+        return substr_by_width( t, 0, w-1 ) * string( Char( 0x2026 ) )
     end
 end
 
-function wordwrap{T<:AbstractString}( x::T, width::Int )
+function wordwrap( x::T, width::Int ) where {T<:AbstractString}
     spaceleft = width
-    lines = UTF8String[]
+    lines = String[]
     currline = convert( T,"" )
-    words = @compat split( x, " ", keep=true ) # don't keep empty words
+    words = split( x, " ", keepempty=true )
     for w in words
-        wlen = strwidth(w)
+        wlen = textwidth(w)
         if wlen>width && spaceleft == width
-            push!( lines, substr_by_width( w, 0, width-1 ) * string( @compat Char( 0x2026 ) ) )
+            push!( lines, substr_by_width( w, 0, width-1 ) * string( Char( 0x2026 ) ) )
         elseif wlen+1 > spaceleft
             push!( lines, currline )
             currline = w * " "
@@ -225,8 +222,8 @@ function levenstein_distance( s1, s2 )
         return length(s1)
     end
 
-    v0 = [0:length(s2)]
-    v1 = Array( Int, length(s2)+1)
+    v0 = collect(0:length(s2))
+    v1 = Vector{Int}(undef, length(s2)+1)
     for (i,c1) in enumerate(s1)
         v1[1] = i
         for (j,c2) in enumerate( s2 )
@@ -241,7 +238,7 @@ function levenstein_distance( s1, s2 )
     return v1[end]
 end
 
-function longest_common_prefix( s1::UTF8String, s2::UTF8String )
+function longest_common_prefix( s1::String, s2::String )
     m = min( length( s1 ), length( s2 ) )
     lcpidx = 0
     for i in 1:m

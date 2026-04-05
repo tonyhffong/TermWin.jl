@@ -5,8 +5,6 @@
 # to reflect their locations in the main pad.
 # This is bad!
 
-using Lazy
-
 function newTwList( scr::TwObj;
         height::Real = 25, width::Real = 80,
         posy::Any = :center, posx::Any = :center,
@@ -14,7 +12,7 @@ function newTwList( scr::TwObj;
         canvaswidth = 128,
         box=true,
         horizontal=false,
-        title=utf8(""),
+        title="",
         showLineInfo=true)
     obj = TwObj( TwListData(), Val{:List } )
     obj.box = box
@@ -35,7 +33,7 @@ end
 
 # move a fully formed widget into this list. need more bookkeeping
 function push_widget!( o::TwObj{TwListData}, w::TwObj )
-    global rootwin
+    global rootplane
     # change the widget's window to reflect its location on the canvas
     begx = 0
     begy = 0
@@ -51,13 +49,13 @@ function push_widget!( o::TwObj{TwListData}, w::TwObj )
 
     # This widget must have been previously registered to screen
     unregisterTwObj( o.screen.value, w )
-    if typeof( w.window ) <: Ptr && w.window != rootwin
+    if isa( w.window, NC.Plane ) && w.window != rootplane
         delwin( w.window ) # so we don't leak memory
     end
 
     # by the time a list is being added, its contents must be fully populated
     if objtype( w ) == :List
-        if typeof( w.data.pad ) <: Ptr && w.data.pad != o.data.pad # the list has its own pad, get rid of it.
+        if isa( w.data.pad, NC.Plane ) && w.data.pad != o.data.pad # the list has its own pad, get rid of it.
             delwin( w.data.pad )
         end
         update_list_canvas( w )
@@ -74,29 +72,39 @@ end
 function update_list_canvas( o::TwObj{TwListData} )
     ws = o.data.widgets
     if isempty( ws )
-        # TODO: reconsider this
-        o.data.canvasheight = 80
-        o.data.canvaswidth = 128
+        # Use the list's own viewport size as the baseline canvas so that
+        # fractional heights/widths on child widgets resolve correctly.
+        o.data.canvasheight = o.height > 0 ? o.height : 80
+        o.data.canvaswidth  = o.width  > 0 ? o.width  : 128
     else
-        # TODO: is this necessary?
         for w in o.data.widgets
             if objtype( w ) == :List
                 update_list_canvas(w)
             end
         end
         if o.data.horizontal
-            o.data.canvasheight = maximum( map( _->objtype(_)==:List? _.data.canvasheight : _.height, ws ) )
-            o.data.canvaswidth = sum( map( _->objtype(_)==:List? _.data.canvaswidth : _.width, ws ) )
+            computed_h = maximum( map( x->objtype(x)==:List ? x.data.canvasheight : x.height, ws ) )
+            computed_w = sum(     map( x->objtype(x)==:List ? x.data.canvaswidth  : x.width,  ws ) )
         else
-            o.data.canvasheight = sum( map( _->objtype(_)==:List? _.data.canvasheight: _.height, ws ) )
-            o.data.canvaswidth = maximum( map( _->objtype(_)==:List? _.data.canvaswidth : _.width, ws ) )
+            computed_h = sum(     map( x->objtype(x)==:List ? x.data.canvasheight : x.height, ws ) )
+            computed_w = maximum( map( x->objtype(x)==:List ? x.data.canvaswidth  : x.width,  ws ) )
         end
-        if !(typeof( o.window ) <: Ptr)
-            o.height = o.data.canvasheight + (o.box?2:0)
-            o.width = o.data.canvaswidth + (o.box?2:0)
+        if isa( o.window, NC.Plane )
+            # Root-level list: prevent canvas from shrinking below the viewport
+            # so that late-added widgets sized as fractions of the viewport are
+            # not capped by a shrunken canvas from earlier widgets.
+            o.data.canvasheight = max( computed_h, o.height )
+            o.data.canvaswidth  = max( computed_w, o.width  )
+        else
+            # Nested list (TwWindow or not yet attached): canvas = content size,
+            # and the list's own height/width grows to match.
+            o.data.canvasheight = computed_h
+            o.data.canvaswidth  = computed_w
+            o.height = o.data.canvasheight + (o.box ? 2 : 0)
+            o.width  = o.data.canvaswidth  + (o.box ? 2 : 0)
         end
     end
-    if o.data.pad != nothing
+    if o.data.pad !== nothing
         delwin( o.data.pad )
         o.data.pad = newpad( o.data.canvasheight, o.data.canvaswidth )
     end
@@ -105,8 +113,33 @@ end
 function draw( o::TwObj{TwListData} )
     werase( o.window ) # this is important, or attributes on the pad may be lost
 
-    if typeof( o.window ) <: Ptr
+    if isa( o.window, NC.Plane )
         set_default_focus( o )
+    end
+
+    for w in o.data.widgets
+        # TODO: no need to draw widget outside visible range? or just draw everything?
+        if w.isVisible
+            draw( w )
+        end
+    end
+
+    # Push the pad to the visible window if this is the root list.
+    # ncplane_mergedown operates on absolute screen-position overlap, so we
+    # temporarily move the pad to align its (canvaslocy, canvaslocx) origin
+    # with the window's content area before merging, then move it back.
+    if isa( o.window, NC.Plane )
+        borderSizeH = o.box ? 1 : 0
+        borderSizeV = o.box ? 1 : 0
+        winpos = NC.yx( o.window )
+        NC.move_yx( o.data.pad,
+            Int(winpos.y) + borderSizeV - o.data.canvaslocy,
+            Int(winpos.x) + borderSizeH - o.data.canvaslocx )
+        NC.mergedown_simple( o.data.pad, o.window )
+        NC.move_yx( o.data.pad, -10000, -10000 )
+
+        # Draw box and info AFTER the merge so border cells are never
+        # overwritten by pad content (pad may overlap border rows when scrolled).
         viewContentHeight = o.height - 2*o.borderSizeV
         viewContentWidth  = o.width - 2*o.borderSizeH
         if o.box
@@ -143,27 +176,6 @@ function draw( o::TwObj{TwListData} )
             end
         end
     end
-
-    for w in o.data.widgets
-        # TODO: no need to draw widget outside visible range? or just draw everything?
-        if w.isVisible
-            draw( w )
-        end
-    end
-    # handle pushing the canvas to the screen if it is the root list
-    if typeof( o.window ) <: Ptr
-        #TODO: how much of the canvas are we showing?
-        borderSizeH = o.box ? 1 : 0
-        borderSizeV = o.box ? 1 : 0
-        contentheight = o.height - borderSizeV*2
-        contentwidth  = o.width  - borderSizeH*2
-        canvasheight = o.data.canvasheight
-        canvaswidth  = o.data.canvaswidth
-        copywin( o.data.pad, o.window, o.data.canvaslocy, o.data.canvaslocx,
-            borderSizeV, borderSizeH,
-            min( contentheight, canvasheight - o.data.canvaslocy),
-            min( contentwidth , canvaswidth  - o.data.canvaslocx) )
-    end
 end
 
 function lowest_widget( o::TwObj{ TwListData } )
@@ -199,7 +211,7 @@ function ensure_visible_on_canvas( o::TwObj )
     log( @sprintf( "  init local y,x: %d %d", y, x ) )
     win = o.window
     par = win.parent.value
-    while( !(typeof( win.parent.value.window) <: Ptr) )
+    while( !isa( win.parent.value.window, NC.Plane ) )
         y += win.parent.value.window.yloc
         x += win.parent.value.window.xloc
         par = win.parent.value
@@ -208,8 +220,8 @@ function ensure_visible_on_canvas( o::TwObj )
     par = win.parent.value
     log( @sprintf( "  actual coord y,x: %d %d", y, x ) )
     @assert objtype( par ) == :List
-    contentwidth = par.width - (par.box?2:0)
-    contentheight = par.height - (par.box?2:0)
+    contentwidth = par.width - (par.box ? 2 : 0)
+    contentheight = par.height - (par.box ? 2 : 0)
     log( @sprintf( "  canvas size     : %d %d", par.data.canvasheight, par.data.canvaswidth ) )
     log( @sprintf( "  window geom     : %d %d", contentheight, contentwidth ) )
     log( @sprintf( "  canvas wind.orig: %d %d", par.data.canvaslocy, par.data.canvaslocx) )
@@ -238,7 +250,7 @@ end
 function inject( o::TwObj{TwListData}, token::Any )
     retcode = :pass
     dorefresh = false
-    isrootlist = typeof( o.window ) <: Ptr
+    isrootlist = isa( o.window, NC.Plane )
     focus = o.data.focus
     if focus == 0
         return :pass
@@ -348,7 +360,7 @@ function inject( o::TwObj{TwListData}, token::Any )
                 mindist = dist
             end
         end
-        if candidate != nothing
+        if candidate !== nothing
             deep_unfocus( w )
             deep_focus( candidate )
             dorefresh = true
@@ -412,7 +424,7 @@ function inject( o::TwObj{TwListData}, token::Any )
                         mindist = dist
                     end
                 end
-                if candidate != nothing
+                if candidate !== nothing
                     w = lowest_widget( o )
                     deep_unfocus( w )
                     deep_focus( candidate )
@@ -460,7 +472,7 @@ function inject( o::TwObj{TwListData}, token::Any )
                     mindist = dist
                 end
             end
-            if candidate != nothing
+            if candidate !== nothing
                 w = lowest_widget( o )
                 deep_unfocus( w )
                 deep_focus( candidate )
@@ -470,9 +482,7 @@ function inject( o::TwObj{TwListData}, token::Any )
         retcode = :got_it
     elseif token == :F1 && isrootlist
         helper = newTwViewer( o.screen.value, helptext( o ), posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
-        activateTwObj( helper )
-        unregisterTwObj( o.screen.value, helper )
-        dorefresh = true
+        raiseTwObject( helper )
         retcode = :got_it
     end
 
@@ -484,7 +494,7 @@ end
 
 function deep_unfocus( w::TwObj )
     tmpw = w
-    while typeof( tmpw ) <: TwObj{ TwListData }
+    while isa( tmpw, TwObj{TwListData} )
         focus = tmpw.data.focus
         tmpw2 = tmpw.data.widgets[focus]
         tmpw.data.focus = 0
@@ -499,11 +509,15 @@ function deep_unfocus( w::TwObj )
         inject( tmpw, :focus_off )
     end
     tmpw = w
-    @oncethen while( !( typeof( tmpw.window ) <: Ptr ) )
+    # do-while: execute once, then continue while condition holds
+    while true
         par = tmpw.window.parent.value
         par.data.focus = 0
         par.hasFocus = false
         tmpw = par
+        if isa( tmpw.window, NC.Plane )
+            break
+        end
     end
 end
 
@@ -517,7 +531,7 @@ function set_default_focus( w::TwObj{TwListData}, rev=false )
 
         subw = w.data.widgets[w.data.focus]
         subw.hasFocus = true
-        if typeof( subw ) <: TwObj{TwListData}
+        if isa( subw, TwObj{TwListData} )
             set_default_focus( subw, rev )
         else
             ensure_visible_on_canvas( subw )
@@ -534,7 +548,8 @@ function deep_focus( w::TwObj, rev=false )
         ensure_visible_on_canvas( w )
     end
     tmpw = w
-    @oncethen while( !( typeof( tmpw.window ) <: Ptr ) )
+    # do-while: execute once, then continue while condition holds
+    while true
         par = tmpw.window.parent.value
         for (i,c) in enumerate( par.data.widgets )
             if c == tmpw
@@ -546,6 +561,9 @@ function deep_focus( w::TwObj, rev=false )
         end
         @assert par.data.focus != 0
         @assert par.hasFocus
+        if isa( tmpw.window, NC.Plane )
+            break
+        end
     end
 end
 
@@ -566,7 +584,7 @@ function geometric_filter( o::TwObj{TwListData}, distfunc::Function,
     end
 end
 
-function updown_arrow_distance( to::(@compat Tuple{Int,Int,Int,Int}), from::(@compat Tuple{Int,Int,Int,Int}), sgn::Int )
+function updown_arrow_distance( to::Tuple{Int,Int,Int,Int}, from::Tuple{Int,Int,Int,Int}, sgn::Int )
     tocentx = to[2] + to[4] >> 1
     tocenty = to[1] + to[3] >> 1
 
@@ -587,7 +605,7 @@ function updown_arrow_distance( to::(@compat Tuple{Int,Int,Int,Int}), from::(@co
     return ret
 end
 
-function leftright_arrow_distance( to::(@compat Tuple{Int,Int,Int,Int}), from::(@compat Tuple{Int,Int,Int,Int}),sgn::Int )
+function leftright_arrow_distance( to::Tuple{Int,Int,Int,Int}, from::Tuple{Int,Int,Int,Int},sgn::Int )
     tocentx = to[2] + to[4] >> 1
     tocenty = to[1] + to[3] >> 1
 
@@ -610,7 +628,7 @@ end
 
 # used for mouse click
 # inside the area it returns zero, otherwise it's manhattan distance to the boundary
-function point_from_area( y::Int, x::Int, from::(@compat Tuple{Int,Int,Int,Int}) )
+function point_from_area( y::Int, x::Int, from::Tuple{Int,Int,Int,Int} )
     xdist = 0
     if x < from[2]
         xdist += from[2]-x
@@ -630,19 +648,19 @@ end
 
 function helptext( o::TwObj{TwListData} )
     focus = o.data.focus
-    isrootlist = typeof( o.window ) <: Ptr
+    isrootlist = isa( o.window, NC.Plane )
     if focus == 0
-        return utf8("")
+        return ""
     end
     s = helptext( o.data.widgets[ focus ] )
     if isrootlist
-h = utf8("""
+        h = """
 ctrl-F4 : toggle navigation mode
 mouse-click: activate nearest widget
 ctrl-arrows: directional focus movements
   (normal arrows work too if not consumed by the current widget)
 tab/shift-tab: cycle through all widgets
-""")
+"""
         if s == "" # just the navigation text
             s = h
         else # merge the help text into a single window

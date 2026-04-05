@@ -13,10 +13,6 @@ function link_parent_child( p::TwObj{TwScreenData}, c::TwObj, height::Real, widt
 end
 
 function link_parent_child( p::TwObj{TwListData}, c::TwObj, height::Real, width::Real, posy::Any, posx::Any )
-    @lintpragma( "Ignore unused height")
-    @lintpragma( "Ignore unused width")
-    @lintpragma( "Ignore unused posy")
-    @lintpragma( "Ignore unused posx")
     update_list_canvas( p )
     begx = 0
     begy = 0
@@ -30,12 +26,12 @@ function link_parent_child( p::TwObj{TwListData}, c::TwObj, height::Real, width:
         end
     end
 
-    @assert c.screen.value == nothing
-    @assert c.window == nothing
+    @assert c.screen.value === nothing
+    @assert c.window === nothing
 
     # by the time a list is being added, its contents must be fully populated
     if objtype( c ) == :List
-        @assert c.data.pad == nothing
+        @assert c.data.pad === nothing
         update_list_canvas( c )
         height = c.data.canvasheight
         width = c.data.canvaswidth
@@ -57,27 +53,42 @@ function link_parent_child( p::TwObj, c::TwObj, height::Real, width::Real, posy:
 end
 
 function configure_newwinpanel!( obj::TwObj )
-    obj.window = newwin( obj.height,obj.width,obj.ypos,obj.xpos )
-    obj.panel = new_panel( obj.window )
-    cbreak()
-    noecho()
-    keypad( obj.window, true )
-    nodelay( obj.window, true )
-    wtimeout( obj.window, 100 )
-    curs_set( 0 )
+    global rootplane
+    obj.window = NC.Plane(NC.LibNotcurses.ncplane_create(rootplane.ptr,
+        NC.PlaneOptions(y=obj.ypos, x=obj.xpos, rows=obj.height, cols=obj.width)))
+    # Set an explicit opaque background on the base cell.
+    # A new plane's default base cell has channels=0: alpha=OPAQUE but color="terminal
+    # default".  Notcurses emits no color escape for "default", so the terminal's own
+    # background shows through any cell werase() resets — visually transparent.
+    # Using explicit black (bit-30 RGB flag set, R=G=B=0) forces Notcurses to emit a
+    # real color escape, blocking whatever is underneath.
+    NC.LibNotcurses.ncplane_set_base(obj.window.ptr, " ", UInt16(0),
+        make_channel_pair(COLOR_WHITE, COLOR_BLACK))
+    log( "configure_newwinpanel!: created plane at y=" * string(obj.ypos) * " x=" * string(obj.xpos) *
+         " h=" * string(obj.height) * " w=" * string(obj.width) )
 end
 
 function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
         relative::Bool=false, # if true, o.xpos = parent.x + x
         parent = o.screen.value )
     global widgetStaggerPosx, widgetStaggerPosy
-    if typeof( parent ) <: TwScreen
+    if isa( parent, TwScreen )
         parentwin = parent.window
-        ( parbegy, parbegx ) = getwinbegyx( parentwin )
-        ( parmaxy, parmaxx ) = getwinmaxyx( parentwin )
+        if isa( parentwin, NC.Plane )
+            pos = NC.yx( parentwin )
+            parbegy = Int(pos.y)
+            parbegx = Int(pos.x)
+            d = NC.dim_yx( parentwin )
+            parmaxy = Int(d[1])
+            parmaxx = Int(d[2])
+        else
+            parbegy = 0; parbegx = 0
+            parmaxy = parent.height
+            parmaxx = parent.width
+        end
     else
         tmppar = parent
-        while( typeof( tmppar.window) <: TwWindow )
+        while( isa( tmppar.window, TwWindow ) )
             tmppar = tmppar.window.parent.value
         end
         if objtype( tmppar ) == :List
@@ -92,8 +103,8 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
     end
     if typeof( h ) <: Integer
         o.height = min( h, parmaxy )
-    elseif typeof( h ) <: AbstractFloat&& 0.0 < h <= 1.0
-        o.height = (@compat round(Int, parmaxy * h ))
+    elseif typeof( h ) <: AbstractFloat && 0.0 < h <= 1.0
+        o.height = round(Int, parmaxy * h )
         if o.height == 0
             throw( "height is too small")
         end
@@ -103,8 +114,8 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
 
     if typeof( w ) <: Integer
         o.width = min( w, parmaxx )
-    elseif typeof( w ) <: AbstractFloat&& 0.0 < w <= 1.0
-        o.width = (@compat round(Int, parmaxx * w ))
+    elseif typeof( w ) <: AbstractFloat && 0.0 < w <= 1.0
+        o.width = round(Int, parmaxx * w )
         if o.width == 0
             throw( "width is too small")
         end
@@ -114,7 +125,13 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
 
     if relative
         if typeof( x ) <: Integer && typeof( y ) <: Integer
-            (begy, begx) = getwinbegyx( o.window )
+            if isa( o.window, NC.Plane )
+                pos = NC.yx( o.window )
+                begx = Int(pos.x)
+                begy = Int(pos.y)
+            else
+                begx = 0; begy = 0
+            end
             xpos = x+begx
             ypos = y+begy
         else
@@ -134,17 +151,17 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
     elseif x == :right
         xpos = parbegx + gapx
     elseif x == :center
-        xpos = @compat round(Int, parbegx + gapx / 2 )
+        xpos = round(Int, parbegx + gapx / 2 )
     elseif x == :random
-        xpos = @compat round(Int, parbegx + gapx * rand() )
+        xpos = round(Int, parbegx + gapx * rand() )
     elseif x == :staggered
         if widgetStaggerPosx > gapx
             widgetStaggerPosx = 0
         end
         xpos = parbegx + widgetStaggerPosx
         widgetStaggerPosx += 4
-    elseif typeof( x ) <: AbstractFloat&& 0.0 <= x <= 1.0
-        xpos = @compat round(Int, parbegx + gapx * x )
+    elseif typeof( x ) <: AbstractFloat && 0.0 <= x <= 1.0
+        xpos = round(Int, parbegx + gapx * x )
     end
     xpos = max( min( xpos, lastx ), parbegx )
 
@@ -153,57 +170,38 @@ function alignxy!( o::TwObj, h::Real, w::Real, x::Any, y::Any;
     elseif y == :bottom
         ypos = parbegy + gapy
     elseif y == :center
-        ypos = @compat round(Int, parbegy + gapy / 2 )
+        ypos = round(Int, parbegy + gapy / 2 )
     elseif y == :random
-        ypos = @compat round(Int, parbegy + gapy * rand() )
+        ypos = round(Int, parbegy + gapy * rand() )
     elseif y == :staggered
         if widgetStaggerPosy > gapy
             widgetStaggerPosy = 0
         end
         ypos = parbegy + widgetStaggerPosy
         widgetStaggerPosy += 2
-    elseif typeof( y ) <: AbstractFloat&& 0.0 <= y <= 1.0
-        ypos = @compat round(Int, parbegy + gapy * y )
+    elseif typeof( y ) <: AbstractFloat && 0.0 <= y <= 1.0
+        ypos = round(Int, parbegy + gapy * y )
     end
     ypos = max( min( ypos, lasty ), parbegy )
     o.xpos = xpos
     o.ypos = ypos
 end
 
-#=
-function unsetFocus( o::TwObj )
-    curs_set( 0 )
-    obj.hasfocus = false
-    unfocus(obj)
-end
-
-function setFocus( o::TwObj )
-    obj.hasfocus = true
-    focus(obj)
-    curs_set(1)
-end
-
-function switchFocus( newobj, oldobj )
-    if oldobj != newobj
-        unsetFocus( oldobj )
-        setFocus( newobj )
-    end
-end
-=#
-
 # a general blocking API to make a widget a dialogue
 function activateTwObj( o::TwObj, tokens::Any=nothing )
-    maxy, maxx = getwinmaxyx( o.window )
+    global nc_context
+    d = NC.dim_yx( o.window )
+    maxy = Int(d[1])
+    maxx = Int(d[2])
     werase( o.window )
     mvwprintw( o.window, maxy>>1, maxx>>1, "%s", "..." )
-    wrefresh( o.window )
+    NC.render(nc_context)
 
     draw(o)
-    if tokens == nothing #just wait for input
+    if tokens === nothing #just wait for input
         while true
-            update_panels()
-            doupdate()
-            token = readtoken( o.window )
+            NC.render(nc_context)
+            token = readtoken( nc_context )
             status = inject( o, token ) # note that it could be :nochar
             if status == :exit_ok
                 return o.value
@@ -213,8 +211,7 @@ function activateTwObj( o::TwObj, tokens::Any=nothing )
         end
     else
         for token in tokens
-            update_panels()
-            doupdate()
+            NC.render(nc_context)
             status = inject( o, token )
             if status == :exit_ok
                 return o.value
@@ -239,7 +236,13 @@ end
 erase( o::TwObj ) = werase( o.window )
 
 function move( o::TwObj, x, y, relative::Bool, refresh::Bool=false )
-    begy, begx = getwinbegyx( o.window )
+    if isa( o.window, NC.Plane )
+        pos = NC.yx( o.window )
+        begx = Int(pos.x)
+        begy = Int(pos.y)
+    else
+        begx = 0; begy = 0
+    end
     alignxy!( o, o.height, o.width, x, y, relative=relative )
 
     xdiff = o.xpos - begx
@@ -248,8 +251,10 @@ function move( o::TwObj, x, y, relative::Bool, refresh::Bool=false )
     if xdiff == 0 && ydiff == 0
         return
     end
-    move_panel( o.panel, o.ypos, o.xpos )
-    touchwin( o.screen.value )
+    NC.move_yx( o.window, o.ypos, o.xpos )
+    if isa( o.screen.value, TwScreen ) && isa( o.screen.value.window, NC.Plane )
+        # touch the screen
+    end
     if refresh
         draw(o)
     end
@@ -263,4 +268,4 @@ end
 
 refresh( o::TwObj ) = (erase(o);draw(o))
 
-helptext( _::TwObj ) = utf8("")
+helptext( _::TwObj ) = ""

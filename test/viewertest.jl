@@ -1,4 +1,5 @@
 using TermWin
+using Pkg
 
-s = open( readall, joinpath( Pkg.dir( "TermWin" ), "src", "TermWin.jl" ) )
+s = Base.read( joinpath( Pkg.dir( "TermWin" ), "src", "TermWin.jl" ), String )
 tshow( s )

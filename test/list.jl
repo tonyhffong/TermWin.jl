@@ -1,9 +1,6 @@
 using TermWin
-if VERSION < v"0.4-"
-    using Dates
-else
-    using Base.Dates
-end
+using Printf
+using Dates
 
 #TermWin.logstart()
 TermWin.initsession()
@@ -18,7 +15,7 @@ end
 
 v2 = newTwList( v; height=25,width=80)
 for i = 1:7
-    a = newTwEntry( v2, UTF8String; width=30, title=@sprintf("string %2d",i), box=true)
+    a = newTwEntry( v2, String; width=30, title=@sprintf("string %2d",i), box=true)
     a.data.inputText = "abcdefghijk"
     a.value = "abcdefghijk"
 end
