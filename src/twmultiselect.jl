@@ -46,7 +46,8 @@ function newTwMultiSelect( scr::TwObj, arr::Array{T,1};
         posy::Any = :center,posx::Any = :center,
         selected = String[],
         title = "", maxwidth = 50, maxheight = 20, minwidth = 25,
-        orderable = false, substrsearch=false ) where {T<:AbstractString}
+        orderable = false, substrsearch=false,
+        key::Union{Nothing,Symbol}=nothing ) where {T<:AbstractString}
     obj = TwObj( TwMultiSelectData( arr, String[ string(x) for x in selected ] ), Val{ :MultiSelect } )
     obj.box = true
     obj.title = title
@@ -69,6 +70,7 @@ function newTwMultiSelect( scr::TwObj, arr::Array{T,1};
     w = 4 + max( min( max( length( title ), obj.data.maxchoicelength ), maxwidth ), minwidth )
 
     link_parent_child( scr, obj, h,w, posy, posx )
+    obj.formkey = key
 
     obj.data.searchbox = newTwEntry( obj, String, width=minwidth, posy=:bottom, posx=1, box=false )
     obj.data.searchbox.title = "?"

@@ -8,14 +8,16 @@ TermWin.initsession()
 v = newTwList( rootTwScreen; height=25, width=80, posy = :random, posx = :random, box=true, horizontal=true )
 v1 = newTwList( v; height=25,width=80)
 for i = 1:12
-    a = newTwEntry( v1, Float64; width=30, title=@sprintf("float %2d", i), box=true)
+    keystr = @sprintf( "float_%2d", i )
+    a = newTwEntry( v1, Float64; width=30, title=keystr, box=true)
     a.data.inputText = "0"
     a.value = 0
 end
 
 v2 = newTwList( v; height=25,width=80)
 for i = 1:7
-    a = newTwEntry( v2, String; width=30, title=@sprintf("string %2d",i), box=true)
+    keystr = @sprintf( "string_%2d", i )
+    a = newTwEntry( v2, String; width=30, title=keystr, box=true)
     a.data.inputText = "abcdefghijk"
     a.value = "abcdefghijk"
 end

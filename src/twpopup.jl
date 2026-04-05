@@ -63,19 +63,21 @@ TwPopupData( arr::Array{T,1} ) where {T<:AbstractString} = TwPopupData( map( x->
 function newTwPopup( scr::TwObj, arr::Array{Symbol,1};
         posy::Any=:center,posx::Any=:center,
         title = "", maxwidth = 50, maxheight = 15, minwidth = 20,
-        quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false )
+        quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false,
+        key::Union{Nothing,Symbol}=nothing )
 
     return( newTwPopup( scr, map(x->string(x),arr),
         posy=posy,posx=posx,
         title=title,maxwidth=maxwidth,maxheight=maxheight,minwidth=minwidth,
         quickselect=quickselect,substrsearch=substrsearch,
-        hideunmatched=hideunmatched,sortmatched=sortmatched,allownew=allownew ) )
+        hideunmatched=hideunmatched,sortmatched=sortmatched,allownew=allownew,key=key ) )
 end
 
 function newTwPopup( scr::TwObj, arr::Array{T,1};
         posy::Any=:center,posx::Any=:center,
         title = "", maxwidth = 50, maxheight = 15, minwidth = 20,
-        quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false ) where {T<:AbstractString}
+        quickselect = false, substrsearch=false, hideunmatched=false, sortmatched=false, allownew=false,
+        key::Union{Nothing,Symbol}=nothing ) where {T<:AbstractString}
     obj = TwObj( TwPopupData(arr), Val{ :Popup } )
     obj.box = true
     obj.title = title
@@ -110,6 +112,7 @@ function newTwPopup( scr::TwObj, arr::Array{T,1};
     w = 2 + max( min( max( length( title ), obj.data.maxchoicelength ), maxwidth ), minwidth )
 
     link_parent_child( scr, obj, h, w, posy, posx )
+    obj.formkey = key
 
     obj.data.searchbox = newTwEntry( obj, String; width=minwidth, posy=:bottom, posx = 1, box=false )
     obj.data.searchbox.title = "?"

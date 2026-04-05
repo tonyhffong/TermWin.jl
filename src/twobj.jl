@@ -40,6 +40,14 @@ function link_parent_child( p::TwObj{TwListData}, c::TwObj, height::Real, width:
     update_list_canvas(p)
     alignxy!( c, height,width,begx,begy, parent= p )
     c.hasFocus = false
+    # Strip borders so child widgets render edge-to-edge inside the composed layout.
+    old_bsv = c.borderSizeV
+    old_bsh = c.borderSizeH
+    c.box = false
+    c.borderSizeV = 0
+    c.borderSizeH = 0
+    c.height -= 2 * old_bsv
+    c.width  -= 2 * old_bsh
     c.window = TwWindow( WeakRef( p ), c.ypos, c.xpos, c.height, c.width )
     log( "List-"*string(objtype(c))*": x=" * string(c.xpos) * " y=" * string(c.ypos) )
     log( " orig begxy: x="*string(begx) * " y=" * string(begy) )

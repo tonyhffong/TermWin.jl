@@ -1,267 +1,491 @@
-# TermWin
+# TermWin.jl
 
-[![TermWin](http://pkg.julialang.org/badges/TermWin_release.svg)](http://pkg.julialang.org/?pkg=TermWin&ver=0.3)
-[![Build Status](https://travis-ci.org/tonyhffong/TermWin.jl.svg?branch=master)](https://travis-ci.org/tonyhffong/TermWin.jl)
+A terminal UI toolkit for Julia built on [Notcurses](https://github.com/dankamongmen/notcurses).
+Explore data structures interactively, collect user input, and compose multi-panel layouts — all in the terminal.
 
-## Introduction
+Requires a 256-colour terminal. `xterm-256color` or iTerm2 on macOS are recommended.
 
-TermWin.jl is a tool to help navigate tree-like data structure such as `Expr`, `Dict`, `Array`, `Module`, and
-`DataFrame`
-It uses a ncurses-based user interface.
-It also contains a backend framework for composing ncurses user interfaces.
+---
 
-It requires color support, `xterm-256color` strongly encouraged.
+## Installation
 
-Most viewers have help text via the `F1` key.
+Install the Julia package and the native Notcurses library.
 
-The advantages of using TermWin compared to other established GUI framework are that
-* Efficiency. We try to emphasize keyboard shortcuts so users can be highly productive after
-  investing a bit of time. Also, as an open source julia module, it is quite easy to get close to
-  the data and to be cleverer about using the information only when we need them (such as dataframe aggregations).
-* Aesthetically flexible. Everything on screen is a utf8 code point, so it is easy to get something
-  working, and then improve by using fancier code points. With
-  unicode-capable & color terminals being quite common these days, the visual can be excellent.
-* old-school-cool
+**macOS (Homebrew)**
+```
+brew install notcurses
+```
 
-For most users, the main function is `tshow`, which accepts almost anything, and should give you
-a fairly usable interactive representation.
+**Linux (apt)**
+```
+apt install libnotcurses-dev
+```
 
-### Expr
+Then in Julia:
+```julia
+] add TermWin
+```
+
+**iTerm2 note**: Disable *Preferences → Profiles → Terminal → Modern parser for CSI codes*.
+Map F1–F4 in *Preferences → Profiles → Keys → Key Bindings* to hex sequences
+`0x1b 0x4f 0x50` through `0x1b 0x4f 0x53` so they are not swallowed by the terminal emulator.
+
+---
+
+## Quick start
+
+### 1 — Explore anything with `tshow`
+
+`tshow` accepts almost any Julia value and renders an interactive viewer:
+
 ```julia
 using TermWin
-ex = :( f(x) = x*x + 2x + 1 )
-tshow(ex)
+
+tshow(42)                          # tree viewer
+tshow(:( f(x) = x^2 + 1 ))        # expression tree
+tshow(TermWin)                     # module browser
+tshow(sort!)                       # method table
+tshow(DataFrame(a=1:3, b=["x","y","z"]))   # DataFrame table
 ```
+
+Press **F1** inside any viewer for a full keyboard reference. Press **Esc** to exit.
+
+### 2 — Collect a value from the user
+
+```julia
+using TermWin
+
+TermWin.initsession()
+w = newTwEntry(rootTwScreen, Float64; title="Enter a number: ", width=25)
+activateTwObj(rootTwScreen)
+TermWin.endsession()
+
+println("You entered: ", w.value)
+```
+
+### 3 — Compose a multi-field data-entry form
+
+```julia
+using TermWin
+
+TermWin.initsession()
+
+result = @twlayout :vertical (form=true, title="New User") begin
+    entry(String; key=:username, title="Username", width=28)
+    entry(Int;    key=:age,      title="Age",      width=10)
+    popup(["Engineering","Sales","HR"]; key=:dept, title="Department")
+    multiselect(["read","write","exec"]; key=:perms, title="Permissions")
+end
+
+activateTwObj(rootTwScreen)
+TermWin.endsession()
+
+# result.value is a Dict{Symbol,Any} on submit, or nothing on Esc
+if result.value !== nothing
+    for (k, v) in result.value
+        println("  :$k => $v")
+    end
+end
+```
+
+---
+
+## Basic input widgets
+
+All widgets follow the same lifecycle:
+
+```julia
+TermWin.initsession()
+w = newTwXxx(rootTwScreen, ...; kwargs...)
+activateTwObj(rootTwScreen)   # blocks until user presses Enter or Esc
+TermWin.endsession()
+value = w.value               # nothing if user pressed Esc
+```
+
+### Text and numeric entry — `newTwEntry`
+
+Supports any Julia `DataType`: `String`, `Int`, `Float64`, `Rational`, `Date`, `Bool`, etc.
+Input is validated and converted to the requested type before being stored in `w.value`.
+
+```julia
+TermWin.initsession()
+w = newTwEntry(rootTwScreen, String; title="Name: ", width=30)
+activateTwObj(rootTwScreen)
+TermWin.endsession()
+println(w.value)   # String or nothing
+```
+
+Key options: `title`, `width`, `precision` (for floats), `titleLeft` (label on left vs top).
+
+### Single selection — `newTwPopup`
+
+```julia
+TermWin.initsession()
+w = newTwPopup(rootTwScreen, ["Alice","Bob","Carol"]; title="Pick one")
+activateTwObj(rootTwScreen)
+TermWin.endsession()
+println(w.value)   # String or nothing
+```
+
+Key options: `title`, `maxheight`, `maxwidth`, `substrsearch` (live filter as you type),
+`quickselect` (press a letter to jump), `allownew` (allow free-text entry not in the list).
+
+### Multi-selection — `newTwMultiSelect`
+
+```julia
+TermWin.initsession()
+w = newTwMultiSelect(rootTwScreen, ["read","write","exec"]; title="Permissions")
+activateTwObj(rootTwScreen)
+TermWin.endsession()
+println(w.value)   # Array{String,1} or nothing
+```
+
+Key options: `selected` (pre-selected items), `orderable` (drag to reorder),
+`substrsearch` (live filter).
+
+### Date picker — `newTwCalendar`
+
+```julia
+using Dates
+TermWin.initsession()
+w = newTwCalendar(rootTwScreen, today())
+activateTwObj(rootTwScreen)
+TermWin.endsession()
+println(w.value)   # Date or nothing
+```
+
+### Scrollable text viewer — `newTwViewer`
+
+```julia
+TermWin.initsession()
+lines = ["Line $i: " * repeat("x", i) for i in 1:200]
+newTwViewer(rootTwScreen, lines; title="Log output", height=0.8, width=0.9)
+activateTwObj(rootTwScreen)
+TermWin.endsession()
+```
+
+---
+
+## Composable layouts
+
+Arrange multiple widgets side-by-side or stacked without writing sizing logic by hand.
+Children have their borders automatically stripped and rendered edge-to-edge inside
+the layout canvas.
+
+### `@twlayout` macro
+
+```julia
+@twlayout :vertical (title="Results") begin
+    viewer(summary_text;  height=0.3, title="Summary")
+    dftable(results_df;   height=0.7, title="Data")
+end
+```
+
+Short names available inside `@twlayout`:
+
+| Short name    | Constructor        |
+|:--------------|:-------------------|
+| `viewer`      | `newTwViewer`      |
+| `dftable`     | `newTwDfTable`     |
+| `entry`       | `newTwEntry`       |
+| `popup`       | `newTwPopup`       |
+| `multiselect` | `newTwMultiSelect` |
+| `tree`        | `newTwTree`        |
+| `calendar`    | `newTwCalendar`    |
+
+Any other expression is passed through unchanged, so you can nest `vstack`/`hstack`
+calls inside the block.
+
+### `vstack` / `hstack`
+
+Equivalent function-based builders for nesting:
+
+```julia
+vstack(; title="Dashboard") do outer
+    newTwViewer(outer, header_text; height=4, title="Info")
+    hstack(outer; height=0.9) do inner
+        newTwDfTable(inner, left_df;  width=0.5, title="Left")
+        newTwDfTable(inner, right_df; width=0.5, title="Right")
+    end
+end
+```
+
+`height` and `width` accept either an integer (rows/columns) or a float in `(0,1]`
+(fraction of the parent's size).
+
+---
+
+## Data-entry forms
+
+Add `form=true` to any layout to collect a `Dict{Symbol,Any}` from the user.
+
+```julia
+TermWin.initsession()
+
+form = @twlayout :vertical (form=true, title="Settings", height=0.6, width=0.5) begin
+    entry(String; key=:host,    title="Host",    width=35)
+    entry(Int;    key=:port,    title="Port",    width=10)
+    popup(["dev","staging","prod"]; key=:env, title="Environment")
+end
+
+activateTwObj(rootTwScreen)
+TermWin.endsession()
+
+config = form.value   # Dict(:host=>..., :port=>..., :env=>...) or nothing
+```
+
+Widgets without `key=` render normally and receive focus but are excluded from the dict.
+
+`vstack` and `hstack` accept `form=true` the same way. Keyed widgets inside nested
+`hstack`/`vstack` blocks are collected automatically.
+
+**Form key bindings:**
+
+| Key | Action |
+|:----|:-------|
+| Enter | Validate current field and advance focus to next |
+| Tab / Shift-Tab | Move focus forward / backward |
+| F10 | Submit — returns `Dict{Symbol,Any}` |
+| Esc | Cancel — returns `nothing` |
+| F1 | In-widget help |
+
+---
+
+## Data exploration with `tshow`
+
+`tshow` is the main entry point for interactive exploration. It wraps `initsession`,
+widget construction, and `endsession` automatically and returns the widget, whose
+`.value` and internal state you can inspect after the call.
+
+```julia
+using TermWin
+tshow(any_julia_value)
+```
+
+### Expressions and code
+
+```julia
+tshow(:( f(x) = x*x + 2x + 1 ))
+```
+
 ![expression](https://cloud.githubusercontent.com/assets/7191122/5458271/62ae80c0-8583-11e4-8ebb-a996d0d63f5e.png)
 
-### Module
+### Modules
 
-An excellent example of looking at modules is to see the `TermWin` module itself:
 ```julia
-using TermWin
-tshow( TermWin ) # to see what functionalities it implements
+tshow(TermWin)        # browse exported names
+tshow(Base)
 ```
 
-### Functions and Methods
-To show `Function` and `Method`,
+### Functions and methods
+
 ```julia
-using TermWin
-tshow( deleteat! ) # searchable, pivotable methods table
-tshow( methods( deleteat! ) ) # ditto
-tshow( methodswith( Set ) )
+tshow(sort!)                     # searchable, sortable methods table
+tshow(methods(sort!))            # same
+tshow(methodswith(AbstractArray))
 ```
 
 ### DataFrames
 
-To show a dataframe, this is the minimum:
 ```julia
-using TermWin
-df = DataFrame( a = [1,2], b = ["c", "d"] )
-tshow( df )
+using DataFrames
+df = DataFrame(name=["Alice","Bob"], score=[85, 92])
+tshow(df)
 ```
 
-TermWin supports a wide range of configurations in showing dataframes. Here is a rather elaborate example:
-```julia
-using TermWin
-using RDatasets
-using Compat
+For larger DataFrames, `tshow` supports grouping, aggregation, and dynamic pivots:
 
-df = dataset( "Ecdat", "Caschool" )
-tshow( df;
-    colorder = [ :EnrlTot, :Teachers, :Computer, :TestScr, :CompStu, "*" ],
-    pivots = [ :County, :top5districts, :District ],
+```julia
+tshow(df;
+    colorder  = [:score, :name, "*"],
+    pivots    = [:department, :region],
     initdepth = 2,
-    aggrHints = @compat(Dict{Any,Any}(
-        :TestScr => :( mean( :_, weights(:EnrlTot) ) ),
-        :ExpnStu => :( mean( :_, weights(:EnrlTot) ) ),
-        :CompStu => :( mean( :_, weights(:EnrlTot) ) ),
-        :Str     => :( mean( :_, weights(:EnrlTot) ) )
-        ) ),
-    calcpivots = @compat( Dict{Symbol,Any}(
-        :CountyStrBuckets     => CalcPivot( :(discretize( :Str, [ 14,16,18,20,22,24 ], rank = true, compact = true )), :County ),
-        :CountyTestScrBuckets => CalcPivot( :(discretize( :TestScr, [ 600, 620, 640, 660, 680, 700],
-                                    label = "score", rank = true, compact = false, reverse = true ) ), :County ),
-        :top5districts        => CalcPivot( :(topnames( :District, :TestScr, 5 ) ) )
-        ) ),
-    views = [
-        @compat(Dict{Symbol,Any}( :name => "ByStr",       :pivots => [ :CountyStrBuckets, :County, :District] ) ),
-        @compat(Dict{Symbol,Any}( :name => "ByTestScr",   :pivots => [ :CountyTestScrBuckets, :County, :District] ) ),
-        @compat(Dict{Symbol,Any}( :name => "Top5Schools", :pivots => [ :top5districts, :County ] ) )
-    ],
-    )
+    sortorder = [(:score, :desc)],
+    aggrHints = Dict{Any,Any}(
+        :score => :( mean(:_) ),
+    ),
+)
 ```
 
-which will generate this output:
-
+More elaborate example:
 ![caschool](https://cloud.githubusercontent.com/assets/7191122/5457618/8f136f72-857e-11e4-8a27-5c4666f0386b.png)
 
-Here the "top5district" pivot (after County) is a "calculated pivot". It is not static.
-It is generated based on the path of the tree nodes, so
-as the user moves this pivot further up or down the pivot chain, the
-ranking would be adjusted to the context/subdataframe
-correctly. Another example of calculated pivot is discretization on aggregated values "CountyTestScrBuckets",
-which can be found on the view selector ('v' keyboard shortcut) in the same example.
-You can also change the pivot ordering without restarting the view using the 'p' shortcut.
+**`tshow` keyword arguments** (most widgets):
 
-Also, note that aggregation `aggrHints` is done via an expression that will be lifted into a compiled function. The
-argument column `:_` is always replaced with the column name at compilation.
-Other required columns for the aggregation function (such as weights in this case) must be explicitly
-named. The convention of using colons to denote columns follows 
-[DataFramesMeta.jl](https://github.com/JuliaStats/DataFramesMeta.jl)
+| Argument | Type | Description |
+|:---------|:-----|:------------|
+| `title` | `String` | Window title |
+| `height` | `Int` or `Float64` | Rows, or fraction `(0,1]` of screen |
+| `width` | `Int` or `Float64` | Columns, or fraction `(0,1]` of screen |
+| `posx` | `Int` or `Symbol` | Horizontal position: `:center`, `:left`, `:right`, `:staggered`, `:random` |
+| `posy` | `Int` or `Symbol` | Vertical position: `:center`, `:top`, `:bottom`, `:staggered`, `:random` |
 
-The dataframe viewer supports a large range of options:
+`tshow` returns the widget object. Call `tshow(widget)` again to re-display it with
+its previous state (pivot selections, column order, etc.) preserved.
 
-* `pivots`. Array of `Symbol`. They can be a **calcpivot**. (see below)
-* `initdepth`. Default 1. How many levels of pivots are open at initialization.
-* `colorder`. Array of `Symbol`, `Regex` and `"*"` (string). Symbols are treated as actual column name.
-   It is an error to provide a symbol that doesn't exist as a column in the data frame. Regex would
-   be used to to match multiple columns. `"*"` is the rest of the columns not covered yet. It is
-   permissible to put `"*"` in the middle of the array, but it is NOT ok to include two or more `"*"`.
-* `hidecols`. Array of `Symbol` and `Regex`. Columns that match these will be hidden. This overrules
-  `colorder`.
-* `sortorder`. Array of `(Symbol, Symbol)`, the first is the column name, the second is either `:asc` or `:desc`.
-   If only a `Symbol[]` is provided, all are assumed in `:asc` order
-* `title`.
-* `formatHints`. `Dict{Any,FormatHints}`. Keys of `Symbol` type are treated as column names. Keys of `DataType`
-   are backup formats when actual format hints for a name are not provided.
-* `widthHints`. `Dict{Symbol,Int}`. If present, the width will override default in formatHints.
-* `aggrHints`. `Dict{Any,Any}`. Keys of `Symbol` type are treated as column names. Keys of `DataType`
-   are backup aggregation hints when actual aggregation hints for a name are not provided. The values
-   can be strings like `"mean"`, or `"mean(:_, :wtcol)"`, equivalent symbols or expressions
-   e.g. `:( mean(:_, weights( :wtcol ) ) )`, etc. Quoted symbols are interpreted as columns, similar to how
-   `DataFramesMeta` package.
-* `calcpivots`. Dynamic pivotable quantity. This generates a computed column that can be included
-   in the `pivots` above.
-* `headerHints`. Alternative name for the header.
-* `views`. Array of Dictionaries that provide alternative views of the same data. Overrideable keys are
-    * `pivots`, `colorder`, `hidecols`, `sortorder`, `initdepth` with the same meaning as above.
-    * `name`. String. name of the view. If not provided the views would just be `v#1`, `v#2`, and so on...
+---
 
-TermWin provides a few commonly used aggregation functions for table data presentation:
+## DataFrame viewer reference
 
-* `uniqvalue`. If all non-NA values are the same, use that value, otherwise NA. For strings, empty strings
-   are treated as NA (i.e. ignored) as well. This is the default aggregation for string typed columns.
-* `unionall`. If the column's element-type is an array, union them all. This is the default aggregation for
-  array typed columns.
+### Pivot and grouping options
 
-On **CalcPivot**, TermWin provides
-* `discretize`. It needs `:measure` column and a break vector. Similar to `cut`, with the following options
-   * leftequal. Default true, meaning the boundary values are interpreted as `t1 ≤ x < t2`
-   * boundedness. Symbol. Default `:unbounded`.
-       * `:unbounded`. We group all numbers below the first break and above the last break into their
-         respective categories.
-       * `:bounded`. All numbers less than the first break and more than the last break will become `NA`
-       * `:boundedbelow`. All numbers less than the first break will become `NA`
-       * `:boundedabove`. All numbers more than the last break will become `NA`
-   * absolute. Default false. If true, bucketing test would becomes `t1 ≤ |x| < t2`
-   * rank. Default true. Output bucket strings are prefixed with consecutive numbers to make them easier to sort.
-   * ranksep. Default ". ". The string between the rank number and the range description
-   * label. Default is an empty string. If set, it is expected we want to show the long-form range description
-e.g. `t1 ≤ x < t2`
-   * compact. Default is true. Compact range looks terser, like `[1,5)`. Integers range with interval size 1
-     is further compacted to just that number.
-   * reverse. Default is false. If set to true, the higher ranges come first.
-   * prefix, suffix, scale, precision, commas, stripzeros, parens, mixedfraction, autoscale, conversion. These are options from `Formatting.jl`
-   * ngroups. **Default to 4 when breaks are not provided**. Generate breaks based on number of groups.
-* `topnames`. It requires a `:name` column, a `:measure` column and an integer (typically small). Keyward arguments
-  include:
-   * absolute. Default false. If true, large negatives will be included in the top names too. Please note that
-   the sort order will always put negative values below positive ones. See `test/dftests.jl` for more details.
-   * ranksep. Default ". ".
-   * dense = true. Whether it skip numbers when encountering ties.
-   * tol. Tolerance. Default zero. If set positive and absolute is true, measures that are below this
-      tolerance threshold will not be included, no matter what.
-   * others. Default "Others". How data not in the top N will look like.
-   * parens. Default false. If the measure is negative and this is set, parentheses will be added around
-     the name.
+| Option | Type | Description |
+|:-------|:-----|:------------|
+| `pivots` | `Array{Symbol}` | Columns to group by; determines the tree hierarchy |
+| `initdepth` | `Int` | Number of pivot levels open at start (default 1) |
+| `calcpivots` | `Dict{Symbol,CalcPivot}` | Dynamic computed pivot columns (see below) |
 
-## Other usage tips
+### Column display options
 
-`tshow` for most types accepts at a minimum the following keyword arguments:
-* title
-* height. When floating point, it must be within [0.0, 1.0] i.e. relative screen size. When integer, they mean character height.
-* width. ditto
-* posx. When integer, it is the x (horizontal) location. 0 is the left edge. It also supports symbols such as
-    * `:staggered`
-    * `:center`
-    * `:left`
-    * `:right`
-    * `:random`
-* posy. When integer, it is the y (vertical) location. 0 is the top edge.
-    * `:staggered`
-    * `:center`
-    * `:top`
-    * `:bottom`
-    * `:random`
+| Option | Type | Description |
+|:-------|:-----|:------------|
+| `colorder` | `Array` | Symbols, `Regex`, and `"*"` (remaining columns). Controls display order |
+| `hidecols` | `Array` | Symbols and `Regex` — matched columns are hidden (overrides `colorder`) |
+| `sortorder` | `Array` | `(Symbol, :asc/:desc)` pairs |
+| `headerHints` | `Dict{Symbol,String}` | Alternate column header labels |
+| `widthHints` | `Dict{Symbol,Int}` | Override default column widths |
+| `formatHints` | `Dict{Any,FormatHints}` | Numeric/date display format per column or type |
 
-`tshow` returns the widget which can be re-shown. This is especially useful with the dataframe and other
-container viewers, which remember the pivot states, the column order, etc.
+### Aggregation
 
-## Installation
+`aggrHints` accepts a `Dict{Any,Any}` keyed by column name (`Symbol`) or type.
+Values are expressions where `:_` is replaced by the column being aggregated:
 
-As stated on the tin, TermWin requires Notcurse. It is being developed on MacOS/iTerm.
 ```julia
-Pkg.add( "TermWin" )
+aggrHints = Dict{Any,Any}(
+    :score  => :( mean(:_) ),
+    :count  => :( sum(:_) ),
+    :salary => :( mean(:_, weights(:headcount)) ),   # weighted mean
+    String  => :( uniqvalue(:_) ),                   # fallback for all String cols
+)
 ```
 
-If you are using iTerm2 on MacOS, it is known that its `modern parser` for CSI codes are not
-compatible to this package. You should disable it.
+Built-in aggregation helpers: `uniqvalue` (value if all identical, else missing),
+`unionall` (union of array-typed cells).
 
-Also, F1, F2 and F4 may be "eaten" by iTerm2 as it is often translated into escape sequences so it would be simple
-interpreted as an "ESC" and exit the window. In Preferences, Profiles, Keys, Key Bindings, map F1 to the hex codes
-0x1b 0x4f 0x50 and so on.
+### Calculated pivots
 
-### Input Widgets
+`CalcPivot` creates a derived grouping column computed at runtime from the current subtree:
 
-Numeric, text, date input field (See `test/twentry.jl`). Designed to maximize
-entry efficiency and accuracy (See F1 help screen).
-UTF8 input and output are supported with correct cursor movement.
-Most European typesets,
-Han characters, Thai (with compound vowel issues),
-currency symbols, e.g. €, £, are fine..
-
-It supports date type
-
-### Examples:
-
-Getting a value or a string from a user:
 ```julia
+calcpivots = Dict{Symbol,Any}(
+    :score_band => CalcPivot(:(discretize(:score, [60,70,80,90], rank=true)), :region),
+    :top5       => CalcPivot(:(topnames(:name, :score, 5))),
+)
 ```
 
-One out of many selection:
+`discretize(col, breaks; rank, compact, reverse, label, ...)` — bucket a numeric column.
+`topnames(name_col, measure_col, n; others, dense, ...)` — top-N names by measure.
+
+### Multiple views
+
 ```julia
+views = [
+    Dict{Symbol,Any}(:name => "By Score",  :pivots => [:score_band, :region]),
+    Dict{Symbol,Any}(:name => "Top 5",     :pivots => [:top5]),
+]
 ```
 
-Getting a multi-value selection:
+Switch views inside the DataFrame viewer with the **v** key.
+
+---
+
+## Keyboard reference
+
+### Universal
+
+| Key | Action |
+|:----|:-------|
+| F1 | Show widget help |
+| Esc | Exit / cancel |
+| Tab / Shift-Tab | Cycle focus between widgets |
+
+### Layout canvas (inside `@twlayout` / `vstack` / `hstack`)
+
+| Key | Action |
+|:----|:-------|
+| Ctrl-F4 | Toggle navigation mode (scroll the canvas) |
+| Ctrl-arrows | Move focus in a spatial direction |
+| Arrow keys | Focus movement (when not consumed by the focused widget) |
+| Mouse click | Focus the nearest widget |
+
+### Form mode
+
+| Key | Action |
+|:----|:-------|
+| Enter | Validate field and advance to next |
+| F10 | Submit form → `Dict{Symbol,Any}` |
+| Esc | Cancel form → `nothing` |
+
+### DataFrame viewer
+
+| Key | Action |
+|:----|:-------|
+| Arrow keys / PgUp / PgDn | Navigate rows and columns |
+| Enter | Expand / collapse pivot group |
+| p | Edit pivot column order |
+| v | Switch between saved views |
+| s | Sort by current column |
+| / | Search |
+| F1 | Full keyboard reference |
+
+---
+
+## Extending TermWin: custom `tshow_` dispatch
+
+Define `TermWin.tshow_` for your own types so users can call `tshow(your_object)`:
+
 ```julia
+using TermWin, DataFrames
+
+struct ModelResult
+    name::String
+    summary::String
+    data::DataFrame
+end
+
+function TermWin.tshow_(r::ModelResult; kwargs...)
+    @twlayout :vertical (title=r.name) begin
+        viewer(r.summary;  height=5,   title="Summary", showLineInfo=false)
+        dftable(r.data;    height=0.8, title="Data")
+    end
+end
+
+# End users just call:
+tshow(ModelResult("OLS", "R²=0.87", df))
 ```
 
-### General comments on code organization
+`tshow_` must return the widget (the TwList returned by `@twlayout`/`vstack`/`hstack`)
+or a single widget created with a `newTwXxx` constructor.
 
-The key type is `TwObj`. It is the type that renders something.
-TwScreen is just a typealias for TwObj, but it holds special role in
-* directing key stroke traffic
-* hold references to the content widgets and update them in the correct order
+For forms, return the form container and the caller accesses `.value` after `tshow` returns:
 
-Many widgets can be used in both blocking and non-blocking manner, though
-some are more useful in blocking than non-blocking and others vice versa.
-
-To use a widget for blocking use, instantiate that widget (if a container, 
-put them inside too) and call
 ```julia
-return_value = activateTwObj( widget )
+function TermWin.tshow_(::UserConfig; kwargs...)
+    @twlayout :vertical (form=true, title="Configure") begin
+        entry(String; key=:host, title="Host")
+        entry(Int;    key=:port, title="Port")
+    end
+end
+
+widget = tshow(UserConfig())
+config = widget.value   # Dict or nothing
 ```
 
-To use a widget for non-blocking use, you need a container widget that is
-actually blocking and put it inside the container. See the function viewer for
-an example of mixing in a data entry field.
+---
 
-### Focus and keystroke traffic logic
-When a widget has the focus, it has first dip in interpreting any user
-keystroke. Only when the widget gives up (by returning `:pass`), the container
-(usually `TwScreen`) looks for other widgets also in play (when they have
-grabUnusedKeys set to true, e.g. Menu). After all widgets pass, then the
-container would try to interpret it itself. If a widget return :exit_ok, it’s
-instructing the container that it has got what it wanted. The container
-may still choose to switch focus, or exit -- the inject function would need
-to be overriden to tell TermWin what to do.
+## Running the example scripts
+
+The `test/` directory contains standalone demo scripts:
+
+```
+julia --project=. test/entrytest.jl       # numeric entry
+julia --project=. test/popuptest.jl       # single-select popup
+julia --project=. test/multiselect.jl     # multi-select
+julia --project=. test/caltest.jl         # date picker
+julia --project=. test/viewertest.jl      # text viewer
+julia --project=. test/formtest.jl        # composable data-entry form
+julia --project=. test/buildertest.jl     # @twlayout with DataFrame + viewer
+julia --project=. test/dataframe.jl       # DataFrame pivot viewer
+julia --project=. test/list.jl            # manual layout with newTwList
+```

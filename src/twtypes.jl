@@ -34,6 +34,7 @@ mutable struct TwObj{T,S}
     data::T
     value::Any # the logical "content" that this object contains (return value if editable)
     title::String
+    formkey::Union{Nothing,Symbol} # key for form collection; nothing means not a form field
     listeners::Dict{Symbol, Array} # event=>array of registered listeners. each listener is of the type (o, ev)->Nothing
     session_id::Int # which session created this widget
     function TwObj{T,S}( data::T ) where {T,S}
@@ -42,7 +43,7 @@ mutable struct TwObj{T,S}
             nothing,
             0, 0, 0, 0,
             false, 0, 0,
-            true, true, false, true, data, nothing, "", Dict{Symbol, Array{Function,1}}(),
+            true, true, false, true, data, nothing, "", nothing, Dict{Symbol, Array{Function,1}}(),
             current_session_id )
         finalizer( y->begin
             global rootplane, nc_context, current_session_id
@@ -83,10 +84,11 @@ mutable struct TwListData
     canvaslocy::Int # 0-based
     showLineInfo::Bool
     navigationmode::Bool
+    isForm::Bool
     bottomText::String
     session_id::Int
     function TwListData()
-        ret = new( false, TwObj[], 0, 0, 0, nothing, 0, 0, false, false, "", current_session_id )
+        ret = new( false, TwObj[], 0, 0, 0, nothing, 0, 0, false, false, false, "", current_session_id )
         finalizer( y->begin
             global nc_context, current_session_id
             if nc_context !== nothing && y.session_id == current_session_id && y.pad !== nothing

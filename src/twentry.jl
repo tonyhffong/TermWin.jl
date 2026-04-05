@@ -89,7 +89,8 @@ end
 function newTwEntry( parent::TwObj, dt::DataType;
     width::Real=30,posy::Any=:staggered,posx::Any=:staggered,
     box=true, showHelp=true, titleLeft=true, title = "",
-    precision=-1, stripzeros= (precision == -1), conversion="" )
+    precision=-1, stripzeros= (precision == -1), conversion="",
+    key::Union{Nothing,Symbol}=nothing )
 
     data = TwEntryData( dt )
     data.showHelp = showHelp
@@ -104,6 +105,7 @@ function newTwEntry( parent::TwObj, dt::DataType;
 
     obj.box = box
     obj.title = title
+    obj.formkey = key
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 1 : 0
 

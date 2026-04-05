@@ -59,12 +59,14 @@ end
 
 function newTwCalendar( scr::TwScreen, dt::Date;
     posy::Any = :center,posx::Any = :center,
-    ncalStyle=true, box=true, showHelp=true, title = "" )
+    ncalStyle=true, box=true, showHelp=true, title = "",
+    key::Union{Nothing,Symbol}=nothing )
     data = TwCalendarData( dt )
     obj = TwObj( data, Val{:Calendar} )
     registerTwObj( scr, obj )
     obj.box = box
     obj.title = title
+    obj.formkey = key
     obj.borderSizeV= box ? 1 : 0
     obj.borderSizeH= box ? 1 : 0
     obj.data.showHelp = showHelp

@@ -13,7 +13,8 @@ function newTwList( scr::TwObj;
         box=true,
         horizontal=false,
         title="",
-        showLineInfo=true)
+        showLineInfo=true,
+        form=false)
     obj = TwObj( TwListData(), Val{:List } )
     obj.box = box
     obj.title = title
@@ -21,6 +22,7 @@ function newTwList( scr::TwObj;
     obj.borderSizeH= box ? 1 : 0
     obj.data.horizontal = horizontal
     obj.data.showLineInfo = showLineInfo
+    obj.data.isForm = form
     obj.data.canvasheight = canvasheight
     obj.data.canvaswidth = canvaswidth
 
@@ -64,6 +66,14 @@ function push_widget!( o::TwObj{TwListData}, w::TwObj )
         w.data.pad = nothing
     end
 
+    # Strip borders so the widget renders edge-to-edge inside the composed layout.
+    old_bsv = w.borderSizeV
+    old_bsh = w.borderSizeH
+    w.box = false
+    w.borderSizeV = 0
+    w.borderSizeH = 0
+    w.height -= 2 * old_bsv
+    w.width  -= 2 * old_bsh
     w.window = TwWindow( WeakRef( o ), begy, begx, w.height, w.width )
     push!( o.data.widgets, w )
     w.hasFocus = false
@@ -247,6 +257,18 @@ function ensure_visible_on_canvas( o::TwObj )
     log( @sprintf( "  canvas  new orig: %d %d", par.data.canvaslocy, par.data.canvaslocx) )
 end
 
+function collect_form_values( o::TwObj{TwListData} )::Dict{Symbol,Any}
+    result = Dict{Symbol,Any}()
+    for w in o.data.widgets
+        if objtype(w) == :List
+            merge!( result, collect_form_values(w) )
+        elseif w.formkey !== nothing
+            result[w.formkey] = w.value
+        end
+    end
+    result
+end
+
 function inject( o::TwObj{TwListData}, token::Any )
     retcode = :pass
     dorefresh = false
@@ -258,14 +280,6 @@ function inject( o::TwObj{TwListData}, token::Any )
 
     if token == :esc
         return :exit_nothing
-    end
-
-    if !o.data.navigationmode
-        result = inject( o.data.widgets[ focus], token )
-        if result != :pass
-            refresh(o)
-            return result
-        end
     end
 
     function check_accept_focus(w::TwObj,stepsign::Int)
@@ -286,6 +300,32 @@ function inject( o::TwObj{TwListData}, token::Any )
             end
         end
         return false
+    end
+
+    if !o.data.navigationmode
+        result = inject( o.data.widgets[ focus], token )
+        if result == :exit_nothing
+            refresh(o)
+            return :exit_nothing
+        elseif result == :exit_ok && isrootlist && o.data.isForm
+            # Form mode: Enter advances focus to the next field instead of exiting.
+            prevw = o.data.widgets[focus]
+            i = mod1( focus + 1, length(o.data.widgets) )
+            while i != focus
+                w = o.data.widgets[i]
+                if check_accept_focus(w, 1)
+                    deep_unfocus( prevw )
+                    deep_focus( w, false )
+                    break
+                end
+                i = mod1( i + 1, length(o.data.widgets) )
+            end
+            dorefresh = true
+            retcode = :got_it
+        elseif result != :pass
+            refresh(o)
+            return result
+        end
     end
 
     # TODO: what's the behavior of :esc
@@ -480,6 +520,10 @@ function inject( o::TwObj{TwListData}, token::Any )
         end
         dorefresh = true
         retcode = :got_it
+    elseif token == :F10 && isrootlist && o.data.isForm
+        o.value = collect_form_values( o )
+        dorefresh = true
+        retcode = :exit_ok
     elseif token == :F1 && isrootlist
         helper = newTwViewer( o.screen.value, helptext( o ), posy=:center, posx=:center, showHelp=false, showLineInfo=false, bottomText = "Esc to continue" )
         raiseTwObject( helper )
@@ -661,6 +705,9 @@ ctrl-arrows: directional focus movements
   (normal arrows work too if not consumed by the current widget)
 tab/shift-tab: cycle through all widgets
 """
+        if o.data.isForm
+            h *= "F10    : submit form\n"
+        end
         if s == "" # just the navigation text
             s = h
         else # merge the help text into a single window
