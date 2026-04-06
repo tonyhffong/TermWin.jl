@@ -368,7 +368,7 @@ function refresh( scr::TwObj{TwScreenData} )
             if isa( o.window, NC.Plane )
                 top_panel( o.window )
             end
-            draw( o )
+            Base.invokelatest( draw, o )
         else
             if isa( o.window, NC.Plane ) && !panel_hidden( o.window )
                 hide_panel( o.window )

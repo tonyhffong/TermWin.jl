@@ -323,7 +323,7 @@ function tshow( x; kwargs... )
         callcount += 1
         werase( rootplane )
         try
-            widget = tshow_( x; title=title, kwargs... )
+            widget = Base.invokelatest( tshow_, x; title=title, kwargs... )
             if widget !== nothing
                 activateTwObj( rootTwScreen )
             end
@@ -348,7 +348,7 @@ function tshow( x; kwargs... )
         if !found
             widget = nothing
             try
-                widget = tshow_(x; title=title, kwargs... )
+                widget = Base.invokelatest( tshow_, x; title=title, kwargs... )
             catch err
                 bt = catch_backtrace()
                 msg = wordwrap( string(err) * "\n" * string( bt ), 80 )
