@@ -710,3 +710,26 @@ function helptext( o::TwObj{TwTreeData} )
         ""
     end
 end
+
+function clamp_scroll!( o::TwObj{TwTreeData} )
+    updateTreeDimensions( o )
+    vh = o.height - 2 * o.borderSizeV
+    if vh < 1
+        return
+    end
+    if o.data.currentLine < 1
+        o.data.currentLine = 1
+    elseif o.data.currentLine > o.data.datalistlen
+        o.data.currentLine = max(1, o.data.datalistlen)
+    end
+    if o.data.currentTop < 1
+        o.data.currentTop = 1
+    elseif o.data.currentTop > max(1, o.data.datalistlen - vh + 1)
+        o.data.currentTop = max(1, o.data.datalistlen - vh + 1)
+    end
+    if o.data.currentTop > o.data.currentLine
+        o.data.currentTop = o.data.currentLine
+    elseif o.data.currentLine - o.data.currentTop > vh - 1
+        o.data.currentTop = o.data.currentLine - vh + 1
+    end
+end

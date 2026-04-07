@@ -287,3 +287,40 @@ function setTwViewerMsgs( o::TwObj{TwViewerData}, msgs::Array )
     o.data.msglen = length(msgs)
     o.data.msgwidth = maximum( map( x->length(x), msgs ) )
 end
+
+function clamp_scroll!( o::TwObj{TwViewerData} )
+    vh, vw, _ = viewContentDimensions( o )
+    if vh < 1 || vw < 1
+        return
+    end
+    # Keep currentTop in [1, max(1, msglen-vh+1)]
+    if o.data.msglen <= vh
+        o.data.currentTop = 1
+    else
+        maxTop = o.data.msglen - vh + 1
+        if o.data.currentTop > maxTop
+            o.data.currentTop = maxTop
+        end
+        if o.data.currentTop < 1
+            o.data.currentTop = 1
+        end
+    end
+    # Track-line cursor must remain visible.
+    if o.data.trackLine
+        if o.data.currentLine < o.data.currentTop
+            o.data.currentLine = o.data.currentTop
+        elseif o.data.currentLine > o.data.currentTop + vh - 1
+            o.data.currentLine = o.data.currentTop + vh - 1
+        end
+        if o.data.currentLine > o.data.msglen
+            o.data.currentLine = o.data.msglen
+        end
+    end
+    # Keep horizontal scroll in range too.
+    if o.data.currentLeft + vw - 1 > o.data.msgwidth
+        o.data.currentLeft = max( 1, o.data.msgwidth - vw + 1 )
+    end
+    if o.data.currentLeft < 1
+        o.data.currentLeft = 1
+    end
+end

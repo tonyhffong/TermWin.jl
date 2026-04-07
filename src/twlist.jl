@@ -120,6 +120,24 @@ function update_list_canvas( o::TwObj{TwListData} )
     end
 end
 
+function clamp_scroll!( o::TwObj{TwListData} )
+    contentwidth  = o.width  - (o.box ? 2 : 0)
+    contentheight = o.height - (o.box ? 2 : 0)
+    if contentwidth < 1 || contentheight < 1
+        return
+    end
+    if o.data.canvaslocx < 0
+        o.data.canvaslocx = 0
+    elseif o.data.canvaslocx > max(0, o.data.canvaswidth - contentwidth)
+        o.data.canvaslocx = max(0, o.data.canvaswidth - contentwidth)
+    end
+    if o.data.canvaslocy < 0
+        o.data.canvaslocy = 0
+    elseif o.data.canvaslocy > max(0, o.data.canvasheight - contentheight)
+        o.data.canvaslocy = max(0, o.data.canvasheight - contentheight)
+    end
+end
+
 function draw( o::TwObj{TwListData} )
     werase( o.window ) # this is important, or attributes on the pad may be lost
 

@@ -7,6 +7,10 @@ widgetStaggerPosy = 0
 # not yet fully formed.
 function link_parent_child( p::TwObj{TwScreenData}, c::TwObj, height::Real, width::Real, posy::Any, posx::Any )
     registerTwObj( p, c )
+    c.desiredHeight = height
+    c.desiredWidth  = width
+    c.desiredPosy   = posy
+    c.desiredPosx   = posx
     alignxy!( c, height,width,posx,posy, parent= p )
     configure_newwinpanel!( c )
     log( "Screen-"*string(objtype(c))*": x=" * string(c.xpos) * " y=" * string(c.ypos) )
@@ -28,6 +32,15 @@ function link_parent_child( p::TwObj{TwListData}, c::TwObj, height::Real, width:
 
     @assert c.screen.value === nothing
     @assert c.window === nothing
+
+    # Record what the user originally asked for so we can re-resolve on resize.
+    # For nested lists the height/width are overridden by the canvas below; we
+    # still preserve the *user-supplied* values so the canvas can grow with the
+    # parent at relayout time.
+    c.desiredHeight = height
+    c.desiredWidth  = width
+    c.desiredPosy   = posy
+    c.desiredPosx   = posx
 
     # by the time a list is being added, its contents must be fully populated
     if objtype( c ) == :List
@@ -55,6 +68,10 @@ function link_parent_child( p::TwObj{TwListData}, c::TwObj, height::Real, width:
 end
 
 function link_parent_child( p::TwObj, c::TwObj, height::Real, width::Real, posy::Any, posx::Any )
+    c.desiredHeight = height
+    c.desiredWidth  = width
+    c.desiredPosy   = posy
+    c.desiredPosx   = posx
     alignxy!( c, height,width,posx,posy, parent= p )
     c.window = TwWindow( WeakRef( p ), c.ypos, c.xpos, c.height, c.width )
     log( string(objtype(p))*"-"*string(objtype(c))*": x=" * string(c.xpos) * " y=" * string(c.ypos) )
@@ -277,3 +294,126 @@ end
 refresh( o::TwObj ) = (erase(o);draw(o))
 
 helptext( _::TwObj ) = ""
+
+# ===== Resize / re-layout =====
+#
+# relayout!(o) re-resolves a widget's geometry against its current parent and
+# applies the new size and position to the underlying NC.Plane.  It is invoked
+# from the screen-level event loop when a :KEY_RESIZE token arrives, after the
+# screen's own height/width have been updated to the new terminal dimensions.
+#
+# Top-level widgets (own a NC.Plane) are moved+resized in place; if a widget is
+# itself a TwList container, its child widgets are recursively re-laid out
+# against the new canvas via relayout_list_children!.
+#
+# Widgets that are embedded inside a TwList (their window is a TwWindow record)
+# are re-laid out as part of their parent list's pass — calling relayout!
+# directly on them is a no-op.
+
+# Default: per-widget scroll clamping is a no-op.  Widgets with scrolling state
+# (Viewer, Tree, DfTable, List) override this so cursor/top stay in range when
+# the viewport grows or shrinks.
+clamp_scroll!( _::TwObj ) = nothing
+
+function relayout!( o::TwObj )
+    if o.desiredHeight === nothing || o.desiredWidth === nothing
+        # Widget was constructed without going through link_parent_child
+        # (e.g. the root TwScreen itself). Nothing to do.
+        return false
+    end
+
+    if isa( o.window, NC.Plane )
+        scr = o.screen.value
+        if scr === nothing
+            return false
+        end
+
+        # If we are a top-level list, recurse into our children first so that
+        # update_list_canvas sees their new sizes when computing our own canvas.
+        if objtype( o ) == :List
+            # Re-resolve our own outer dimensions against the new screen size,
+            # then push that down to children. update_list_canvas will then
+            # bring the canvas in line with both.
+            alignxy!( o, o.desiredHeight, o.desiredWidth, o.desiredPosx, o.desiredPosy, parent=scr )
+            relayout_list_children!( o )
+            # Final canvas pass after children settle.
+            update_list_canvas( o )
+        else
+            alignxy!( o, o.desiredHeight, o.desiredWidth, o.desiredPosx, o.desiredPosy, parent=scr )
+        end
+
+        # Move the plane *before* resizing.  Notcurses will refuse a resize
+        # that pushes the plane past its parent's edges, so for a shrink we
+        # need the new origin in place first.
+        try
+            NC.move_yx( o.window, o.ypos, o.xpos )
+        catch err
+            log( "relayout! move_yx failed: " * string(err) )
+        end
+        try
+            NC.resize( o.window, 0, 0, 0, 0, 0, 0, o.height, o.width )
+        catch err
+            log( "relayout! resize failed: " * string(err) )
+        end
+
+        # Resize the list pad to match the new canvas, if any.
+        if objtype( o ) == :List && o.data.pad !== nothing
+            delwin( o.data.pad )
+            o.data.pad = newpad( o.data.canvasheight, o.data.canvaswidth )
+        end
+
+        clamp_scroll!( o )
+        return true
+    end
+
+    # Embedded widget: parent list handles us.
+    return false
+end
+
+# Re-resolve every child widget of a TwList against the list's *new* canvas,
+# stacking them in order and updating their TwWindow records.  Mirrors the
+# layout math in link_parent_child(::TwListData, ...) but skips the one-time
+# border-stripping (already done at construction).
+function relayout_list_children!( p::TwObj{TwListData} )
+    # Reset the canvas to the list's new viewport BEFORE walking children, so
+    # that alignxy! (which reads parmaxy = canvasheight when the parent is a
+    # list) resolves their fractional sizes against the new size.  The trailing
+    # update_list_canvas call grows the canvas back if children need more space.
+    if isa( p.window, NC.Plane )
+        p.data.canvasheight = p.height
+        p.data.canvaswidth  = p.width
+    end
+    begx = 0
+    begy = 0
+    for c in p.data.widgets
+        # Recurse into nested lists first so their canvases are up-to-date.
+        if objtype( c ) == :List
+            relayout_list_children!( c )
+            # Nested list dimensions are driven by the canvas, exactly as in
+            # link_parent_child.
+            h = c.data.canvasheight
+            w = c.data.canvaswidth
+        else
+            h = c.desiredHeight !== nothing ? c.desiredHeight : c.height
+            w = c.desiredWidth  !== nothing ? c.desiredWidth  : c.width
+        end
+
+        alignxy!( c, h, w, begx, begy, parent=p )
+
+        if isa( c.window, TwWindow )
+            c.window.yloc   = c.ypos
+            c.window.xloc   = c.xpos
+            c.window.height = c.height
+            c.window.width  = c.width
+        end
+
+        if p.data.horizontal
+            begx += c.width
+        else
+            begy += c.height
+        end
+
+        clamp_scroll!( c )
+    end
+    update_list_canvas( p )
+end

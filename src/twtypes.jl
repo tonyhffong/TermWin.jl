@@ -35,6 +35,14 @@ mutable struct TwObj{T,S}
     value::Any # the logical "content" that this object contains (return value if editable)
     title::String
     formkey::Union{Nothing,Symbol} # key for form collection; nothing means not a form field
+    # Original size/position spec passed to link_parent_child. Preserved so that
+    # the widget can be re-laid out against a new parent size on terminal resize.
+    # `nothing` means the widget was constructed without going through
+    # link_parent_child (e.g. the root TwScreen) and is not auto-relayoutable.
+    desiredHeight::Any
+    desiredWidth::Any
+    desiredPosy::Any
+    desiredPosx::Any
     listeners::Dict{Symbol, Array} # event=>array of registered listeners. each listener is of the type (o, ev)->Nothing
     session_id::Int # which session created this widget
     function TwObj{T,S}( data::T ) where {T,S}
@@ -43,7 +51,9 @@ mutable struct TwObj{T,S}
             nothing,
             0, 0, 0, 0,
             false, 0, 0,
-            true, true, false, true, data, nothing, "", nothing, Dict{Symbol, Array{Function,1}}(),
+            true, true, false, true, data, nothing, "", nothing,
+            nothing, nothing, nothing, nothing,
+            Dict{Symbol, Array{Function,1}}(),
             current_session_id )
         finalizer( y->begin
             global rootplane, nc_context, current_session_id

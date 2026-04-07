@@ -1149,3 +1149,52 @@ function inject( o::TwObj{TwDfTableData}, token )
 end
 
 helptext( o::TwObj{TwDfTableData} ) = o.data.helpText
+
+function clamp_scroll!( o::TwObj{TwDfTableData} )
+    updateTableDimensions( o )
+    vh = o.height - 2 * o.borderSizeV - o.data.headerlines
+    vw = o.width  - 2 * o.borderSizeH - o.data.datatreewidth
+    if vh < 1 || vw < 1
+        return
+    end
+    # Vertical
+    if o.data.datalistlen > 0
+        if o.data.currentLine < 1
+            o.data.currentLine = 1
+        elseif o.data.currentLine > o.data.datalistlen
+            o.data.currentLine = o.data.datalistlen
+        end
+        if o.data.currentTop < 1
+            o.data.currentTop = 1
+        elseif o.data.currentTop > max(1, o.data.datalistlen - vh + 1)
+            o.data.currentTop = max(1, o.data.datalistlen - vh + 1)
+        end
+        if o.data.currentTop > o.data.currentLine
+            o.data.currentTop = o.data.currentLine
+        elseif o.data.currentLine - o.data.currentTop > vh - 1
+            o.data.currentTop = o.data.currentLine - vh + 1
+        end
+    end
+    # Horizontal: ensure currentLeft fits.
+    ncols = length( o.data.colInfo )
+    if ncols > 0
+        if o.data.currentCol < 1
+            o.data.currentCol = 1
+        elseif o.data.currentCol > ncols
+            o.data.currentCol = ncols
+        end
+        widths = map( x->x.format.width, o.data.colInfo )
+        revcumwidths = cumsum( map( x->x+1, reverse( widths ) ) )
+        widthrng = searchsorted( revcumwidths, vw )
+        maxLeft = ncols - widthrng.stop + 1
+        if o.data.currentLeft > maxLeft
+            o.data.currentLeft = max(1, maxLeft)
+        end
+        if o.data.currentLeft < 1
+            o.data.currentLeft = 1
+        end
+        if o.data.currentLeft > o.data.currentCol
+            o.data.currentLeft = o.data.currentCol
+        end
+    end
+end

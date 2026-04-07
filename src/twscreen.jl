@@ -265,9 +265,38 @@ function activateTwObj( scr::TwObj{TwScreenData}, tokens::Any=nothing )
     end
 end
 
+function handle_resize!( scr::TwObj{TwScreenData} )
+    global nc_context
+    if nc_context === nothing
+        return
+    end
+    dims = NC.term_dim_yx( nc_context )
+    maxy = Int(dims.rows)
+    maxx = Int(dims.cols)
+    if maxy == scr.height && maxx == scr.width
+        # No real change — still walk children in case a previous resize was
+        # only partially applied, but skip the expensive refresh.
+        return
+    end
+    scr.height = maxy
+    scr.width  = maxx
+    for o in scr.data.objects
+        try
+            relayout!( o )
+        catch err
+            log( "handle_resize! relayout failed for " * string(o) * ": " * string(err) )
+        end
+    end
+    refresh( scr )
+end
+
 function inject( scr::TwObj{TwScreenData}, token )
     global rootTwScreen
     result = :pass
+    if token == :KEY_RESIZE
+        handle_resize!( scr )
+        return :got_it
+    end
     if token == :KEY_MOUSE
         (mstate, x,y,bs ) = getmouse()
     end
