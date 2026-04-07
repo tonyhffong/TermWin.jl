@@ -272,7 +272,7 @@ function inject( scr::TwObj{TwScreenData}, token )
         (mstate, x,y,bs ) = getmouse()
     end
     if scr.data.focus != 0
-        result = inject( scr.data.objects[ scr.data.focus], token )
+        result = Base.invokelatest( inject, scr.data.objects[ scr.data.focus], token )
         if result != :pass
             return result
         end
@@ -303,7 +303,7 @@ function inject( scr::TwObj{TwScreenData}, token )
                 break
             end
         elseif o.isVisible && !o.hasFocus && o.grabUnusedKey
-            result = inject( scr.data.objects[i], token )
+            result = Base.invokelatest( inject, scr.data.objects[i], token )
             if result != :pass
                 break
             end

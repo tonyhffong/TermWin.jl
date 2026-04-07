@@ -210,7 +210,7 @@ function activateTwObj( o::TwObj, tokens::Any=nothing )
         while true
             NC.render(nc_context)
             token = readtoken( nc_context )
-            status = inject( o, token ) # note that it could be :nochar
+            status = Base.invokelatest( inject, o, token ) # note that it could be :nochar
             if status == :exit_ok
                 return o.value
             elseif status == :exit_nothing # most likely a cancel
@@ -220,7 +220,7 @@ function activateTwObj( o::TwObj, tokens::Any=nothing )
     else
         for token in tokens
             NC.render(nc_context)
-            status = inject( o, token )
+            status = Base.invokelatest( inject, o, token )
             if status == :exit_ok
                 return o.value
             elseif status == :exit_nothing # most likely a cancel
