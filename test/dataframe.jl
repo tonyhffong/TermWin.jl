@@ -1,10 +1,10 @@
 using TermWin
 using RDatasets
-using Statistics
+using StatsBase
 
 #
 df = dataset( "Ecdat", "Caschool" )
-wmean_instruction = :( mean( :_, weights( :EnrlTot ) ) )
+wmean_instruction = :( StatsBase.mean( :_, StatsBase.Weights(:EnrlTot) ) )
 tshow( df;
     colorder = [ :EnrlTot, :Teachers, :Computer, :TestScr, :CompStu, "*" ],
     pivots = [ :County, :top5districts, :District ],

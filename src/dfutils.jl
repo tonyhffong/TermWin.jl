@@ -45,6 +45,12 @@ function replace_col_syms( ex, membernames::Dict )
             membernames[sym] = gensym( string(sym) )
         end
         return membernames[sym]
+    elseif isa( ex, Expr ) && ex.head == :(.)
+        # Member access like `StatsBase.mean` parses as
+        # Expr(:(.), :StatsBase, QuoteNode(:mean)). The QuoteNode here is a
+        # field name, NOT a column reference, so leave the whole expression
+        # alone. Same treatment for deeper chains like `A.B.C`.
+        return ex
     elseif isa( ex, Expr )
         return Expr( ex.head, [ replace_col_syms(a, membernames) for a in ex.args ]... )
     else
@@ -104,13 +110,23 @@ function liftAggrSpecToFunc( c::Symbol, dfa::Union{ Function, Symbol, Expr } )
                 $funname($(funargs...))
             end
         end
-        ret = eval( code )
+        # Eval in Main so that module-qualified names in the user-supplied
+        # expression (e.g. `StatsBase.mean(:_, :wcol)`) resolve against the
+        # user's loaded packages rather than against TermWin's own imports.
+        ret = Core.eval( Main, code )
     end
     DataFrameAggrCache[ (c, dfa) ] = ret
 end
 
 # used by aggregation lifting and calcpivot lifting
 function convertExpression!( ex::Expr, column_ctx::Symbol = Symbol("") )
+    # Do not descend into member-access expressions like `StatsBase.mean`
+    # (Expr(:(.), :StatsBase, QuoteNode(:mean))). Their QuoteNode argument
+    # is a field name, not a column reference, and rewriting it would
+    # confuse `replace_col_syms` into treating `:mean` as a column.
+    if ex.head == :(.)
+        return
+    end
     for i in 1:length( ex.args )
         a = ex.args[i]
         if isa( a, QuoteNode )

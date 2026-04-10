@@ -352,16 +352,20 @@ function ordernode( n::TwDfTableNode )
                         continue
                     end
 
+                    # Use isless, not <: unordered CategoricalValue (produced
+                    # by discretize/topnames) throws on <, but isless falls
+                    # back to pool order — and discretize's zero-padded rank
+                    # prefixes ("1. …", "2. …") keep that order meaningful.
                     if sc[2] == :desc
-                        return y[sc[1]] < x[sc[1]]
+                        return isless( y[sc[1]], x[sc[1]] )
                     else
-                        return x[sc[1]] < y[sc[1]]
+                        return isless( x[sc[1]], y[sc[1]] )
                     end
                 end
                 return false
             end )
         else
-            sort!( n.children, lt = (x,y) -> x.pivotvals[end] < y.pivotvals[end] )
+            sort!( n.children, lt = (x,y) -> isless( x.pivotvals[end], y.pivotvals[end] ) )
         end
         for c in n.children
             if c.isOpen
