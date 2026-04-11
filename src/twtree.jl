@@ -13,6 +13,7 @@ F6         : popup window for value
             n, p       : Move to next/previous matched line
             m          : (Module Only) toggle export-only vs all names
 """
+defaultTreeBottomText = "F1:help <spc><rtn>:toggle F6:popupValue +:expand -:collaps /:search"
 
 modulenames = Dict{Module,Array{Symbol,1}}()
 moduleallnames = Dict{Module,Array{Symbol,1}}()
@@ -77,7 +78,7 @@ function newTwTree(
     box::Bool = true,
     showLineInfo::Bool = true,
     showHelp::Bool = true,
-    bottomText::String = "",
+    bottomText::String = defaultTreeBottomText,
 )
     log("newTwTree 0")
     obj = TwObj(TwTreeData(), Val{:Tree})
@@ -310,7 +311,7 @@ function getvaluebypath(x, path)
         return x
     end
     key = popfirst!(path)
-    if typeof(x) <: Array || isa(x, AbstractDict) || typeof(x) <: Tuple
+    if typeof(x) <: Array || isa(x, AbstractDict) || typeof(x) <: Tuple || typeof( x ) <: Core.SimpleVector
         return getvaluebypath(x[key], path)
     elseif typeof(x) == Function
         mt = methods(x)
