@@ -159,7 +159,7 @@ function tree_data(
         t = string(typx)
         v = x.value === nothing ? "<nothing>" : @sprintf("id:0x%x", object_id(x.value))
         push!(list, (s, t, v, stack, :single, skiplines))
-    elseif typx <: Array || typx <: Tuple
+    elseif typx <: Array || typx <: Tuple || typx <: Core.SimpleVector
         s = string(name)
         len = length(x)
         if typx <: Tuple
