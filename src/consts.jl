@@ -5,25 +5,25 @@
 import Notcurses as NC
 
 # ===== Basic color indices (same values as ncurses) =====
-const COLOR_BLACK   = 0
-const COLOR_RED     = 1
-const COLOR_GREEN   = 2
-const COLOR_YELLOW  = 3
-const COLOR_BLUE    = 4
+const COLOR_BLACK = 0
+const COLOR_RED = 1
+const COLOR_GREEN = 2
+const COLOR_YELLOW = 3
+const COLOR_BLUE = 4
 const COLOR_MAGENTA = 5
-const COLOR_CYAN    = 6
-const COLOR_WHITE   = 7
+const COLOR_CYAN = 6
+const COLOR_WHITE = 7
 
 # ===== RGB values for the 8 basic terminal colors =====
-const BASIC_COLOR_RGB = Dict{Int, Tuple{UInt8,UInt8,UInt8}}(
-    COLOR_BLACK   => (0x00, 0x00, 0x00),
-    COLOR_RED     => (0xcc, 0x00, 0x00),
-    COLOR_GREEN   => (0x00, 0xcc, 0x00),
-    COLOR_YELLOW  => (0xcc, 0xcc, 0x00),
-    COLOR_BLUE    => (0x00, 0x00, 0xcc),
+const BASIC_COLOR_RGB = Dict{Int,Tuple{UInt8,UInt8,UInt8}}(
+    COLOR_BLACK => (0x00, 0x00, 0x00),
+    COLOR_RED => (0xcc, 0x00, 0x00),
+    COLOR_GREEN => (0x00, 0xcc, 0x00),
+    COLOR_YELLOW => (0xcc, 0xcc, 0x00),
+    COLOR_BLUE => (0x00, 0x00, 0xcc),
     COLOR_MAGENTA => (0xcc, 0x00, 0xcc),
-    COLOR_CYAN    => (0x00, 0xcc, 0xcc),
-    COLOR_WHITE   => (0xcc, 0xcc, 0xcc),
+    COLOR_CYAN => (0x00, 0xcc, 0xcc),
+    COLOR_WHITE => (0xcc, 0xcc, 0xcc),
 )
 
 # ===== 256-color palette RGB values (for indices >= 8) =====
@@ -33,8 +33,8 @@ function color_index_to_rgb(idx::Int)
     elseif idx < 16
         # Bright colors
         bright = Dict(
-            8  => (0x80, 0x80, 0x80),  # bright black (gray)
-            9  => (0xff, 0x00, 0x00),
+            8 => (0x80, 0x80, 0x80),  # bright black (gray)
+            9 => (0xff, 0x00, 0x00),
             10 => (0x00, 0xff, 0x00),
             11 => (0xff, 0xff, 0x00),
             12 => (0x00, 0x00, 0xff),
@@ -49,9 +49,11 @@ function color_index_to_rgb(idx::Int)
         r = div(idx, 36)
         g = div(idx % 36, 6)
         b = idx % 6
-        return (UInt8(r == 0 ? 0 : 55 + 40*r),
-                UInt8(g == 0 ? 0 : 55 + 40*g),
-                UInt8(b == 0 ? 0 : 55 + 40*b))
+        return (
+            UInt8(r == 0 ? 0 : 55 + 40*r),
+            UInt8(g == 0 ? 0 : 55 + 40*g),
+            UInt8(b == 0 ? 0 : 55 + 40*b),
+        )
     else
         # Grayscale (indices 232-255)
         v = UInt8(8 + (idx - 232) * 10)
@@ -73,7 +75,7 @@ end
 
 # ===== Color pair table (populated in initsession) =====
 # Maps old COLOR_PAIR(n) numbers -> 64-bit Notcurses channels
-const color_channel_table = Dict{Int, UInt64}()
+const color_channel_table = Dict{Int,UInt64}()
 
 # COLOR_PAIR(n): returns 64-bit channel value for pair n
 function COLOR_PAIR(n::Integer)
@@ -85,27 +87,27 @@ end
 # We define these as UInt32 for backward compat with existing code that ORs them.
 # The adapter layer will decompose combined (style | channels) values.
 
-const NCSTYLE_BOLD      = UInt32(NC.LibNotcurses.NCSTYLE_BOLD)
+const NCSTYLE_BOLD = UInt32(NC.LibNotcurses.NCSTYLE_BOLD)
 const NCSTYLE_UNDERLINE = UInt32(NC.LibNotcurses.NCSTYLE_UNDERLINE)
-const NCSTYLE_ITALIC    = UInt32(NC.LibNotcurses.NCSTYLE_ITALIC)
-const NCSTYLE_STRUCK    = UInt32(NC.LibNotcurses.NCSTYLE_STRUCK)
+const NCSTYLE_ITALIC = UInt32(NC.LibNotcurses.NCSTYLE_ITALIC)
+const NCSTYLE_STRUCK = UInt32(NC.LibNotcurses.NCSTYLE_STRUCK)
 const NCSTYLE_UNDERCURL = UInt32(NC.LibNotcurses.NCSTYLE_UNDERCURL)
 
 # Backward-compatible A_* names
-const A_NORMAL     = UInt32(0)
-const A_BOLD       = NCSTYLE_BOLD
-const A_UNDERLINE  = NCSTYLE_UNDERLINE
-const A_ITALIC     = NCSTYLE_ITALIC
-const A_REVERSE    = UInt32(0x80000000)  # Sentinel: no Notcurses equivalent, handled in adapter
-const A_DIM        = UInt32(0)           # Not supported in Notcurses
-const A_BLINK      = UInt32(0)           # Not supported in Notcurses
-const A_STANDOUT   = NCSTYLE_BOLD        # Map standout to bold
+const A_NORMAL = UInt32(0)
+const A_BOLD = NCSTYLE_BOLD
+const A_UNDERLINE = NCSTYLE_UNDERLINE
+const A_ITALIC = NCSTYLE_ITALIC
+const A_REVERSE = UInt32(0x80000000)  # Sentinel: no Notcurses equivalent, handled in adapter
+const A_DIM = UInt32(0)           # Not supported in Notcurses
+const A_BLINK = UInt32(0)           # Not supported in Notcurses
+const A_STANDOUT = NCSTYLE_BOLD        # Map standout to bold
 const A_ALTCHARSET = UInt32(0)           # Not needed: we use Unicode directly
 
 # Mask to extract style bits (low 16 bits of the combined value)
-const STYLE_MASK   = UInt32(0x0000FFFF)
+const STYLE_MASK = UInt32(0x0000FFFF)
 # Sentinel bit for A_REVERSE
-const REVERSE_BIT  = UInt32(0x80000000)
+const REVERSE_BIT = UInt32(0x80000000)
 
 # ===== Decompose a combined attribute value into (style, channels, reverse) =====
 # Old ncurses code does: wattron(win, COLOR_PAIR(15) | A_BOLD)
@@ -169,7 +171,7 @@ const BUTTON1_PRESSED = UInt32(0x02)
 const REPORT_MOUSE_POSITION = UInt32(0x10000000)
 
 # ===== ACS character map -> Unicode box-drawing =====
-const ACS_MAP = Dict{Char, Char}(
+const ACS_MAP = Dict{Char,Char}(
     'l' => '┌',  # ACS_ULCORNER
     'm' => '└',  # ACS_LLCORNER
     'k' => '┐',  # ACS_URCORNER

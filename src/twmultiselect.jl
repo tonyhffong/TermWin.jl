@@ -1,7 +1,7 @@
 # multi selection widget
 
-SELECTEDORDERABLE    = 1 # whether selected items are orderable, selected always on top
-SELECTSUBSTR         = 2 # search by substring (default by prefix)
+SELECTEDORDERABLE = 1 # whether selected items are orderable, selected always on top
+SELECTSUBSTR = 2 # search by substring (default by prefix)
 
 defaultMultiSelectHelpText = """
 arrows : move cursor
@@ -26,7 +26,7 @@ ctrl-p : move to the previous matched item
 mutable struct TwMultiSelectData
     choices::Array{String,1}
     selected::Array{String,1}
-    datalist::Array{Any, 1}
+    datalist::Array{Any,1}
     maxchoicelength::Int
     searchbox::Any
     currentLine::Int
@@ -34,101 +34,118 @@ mutable struct TwMultiSelectData
     currentTop::Int
     selectmode::Int
     helpText::String
-    TwMultiSelectData( arr::Array{String,1}, selected::Array{String,1} ) = new( arr, selected, Any[], 0, nothing, 1, 1, 1, 0, "" )
+    TwMultiSelectData(arr::Array{String,1}, selected::Array{String,1}) =
+        new(arr, selected, Any[], 0, nothing, 1, 1, 1, 0, "")
 end
-TwMultiSelectData( arr::Array{T,1}, selected::Array{T2,1} ) where {T<:AbstractString, T2<:AbstractString} = TwMultiSelectData( map( x->String( x ), arr ), map( x->String(x), selected ) )
+TwMultiSelectData(
+    arr::Array{T,1},
+    selected::Array{T2,1},
+) where {T<:AbstractString,T2<:AbstractString} =
+    TwMultiSelectData(map(x->String(x), arr), map(x->String(x), selected))
 
 # the ways to use it:
 # standalone panel
 # as a subwin as part of another widget (see next function)
 # w include title width, if it's shown on the left
-function newTwMultiSelect( scr::TwObj, arr::Array{T,1};
-        posy::Any = :center,posx::Any = :center,
-        selected = String[],
-        title = "", maxwidth = 50, maxheight = 20, minwidth = 25,
-        orderable = false, substrsearch=false,
-        key::Union{Nothing,Symbol}=nothing ) where {T<:AbstractString}
-    obj = TwObj( TwMultiSelectData( arr, String[ string(x) for x in selected ] ), Val{ :MultiSelect } )
+function newTwMultiSelect(
+    scr::TwObj,
+    arr::Array{T,1};
+    posy::Any = :center,
+    posx::Any = :center,
+    selected = String[],
+    title = "",
+    maxwidth = 50,
+    maxheight = 20,
+    minwidth = 25,
+    orderable = false,
+    substrsearch = false,
+    key::Union{Nothing,Symbol} = nothing,
+) where {T<:AbstractString}
+    obj = TwObj(
+        TwMultiSelectData(arr, String[string(x) for x in selected]),
+        Val{:MultiSelect},
+    )
     obj.box = true
     obj.title = title
-    obj.borderSizeV= 1
-    obj.borderSizeH= 1
-    if  orderable
+    obj.borderSizeV = 1
+    obj.borderSizeH = 1
+    if orderable
         obj.data.selectmode |= SELECTEDORDERABLE
     end
     if substrsearch
         obj.data.selectmode |= SELECTSUBSTR
     end
-    rebuild_select_datalist( obj )
+    rebuild_select_datalist(obj)
     obj.data.helpText = defaultMultiSelectHelpText
     obj.data.maxchoicelength = 0
     if !isempty(arr)
-        obj.data.maxchoicelength = maximum( map(x->length(x), arr ) )
+        obj.data.maxchoicelength = maximum(map(x->length(x), arr))
     end
 
-    h = 2 + min( length( arr ), maxheight )
-    w = 4 + max( min( max( length( title ), obj.data.maxchoicelength ), maxwidth ), minwidth )
+    h = 2 + min(length(arr), maxheight)
+    w = 4 + max(min(max(length(title), obj.data.maxchoicelength), maxwidth), minwidth)
 
-    link_parent_child( scr, obj, h,w, posy, posx )
+    link_parent_child(scr, obj, h, w, posy, posx)
     obj.formkey = key
 
-    obj.data.searchbox = newTwEntry( obj, String, width=minwidth, posy=:bottom, posx=1, box=false )
+    obj.data.searchbox =
+        newTwEntry(obj, String, width = minwidth, posy = :bottom, posx = 1, box = false)
     obj.data.searchbox.title = "?"
     obj.data.searchbox.hasFocus = false
     obj
 end
 
-function rebuild_select_datalist( o::TwObj{TwMultiSelectData} )
+function rebuild_select_datalist(o::TwObj{TwMultiSelectData})
     o.data.datalist = Any[]
     if o.data.selectmode & SELECTEDORDERABLE != 0
         for s in o.data.selected
-            push!( o.data.datalist, [ s, true ] )
+            push!(o.data.datalist, [s, true])
         end
         for s in o.data.choices
-            if !in( s, o.data.selected )
-                push!( o.data.datalist, [s, false ] )
+            if !in(s, o.data.selected)
+                push!(o.data.datalist, [s, false])
             end
         end
     else
         for s in o.data.choices
-            push!( o.data.datalist, [s, in( s, o.data.selected ) ] )
+            push!(o.data.datalist, [s, in(s, o.data.selected)])
         end
     end
 end
 
-function draw( o::TwObj{TwMultiSelectData} )
-    werase( o.window )
+function draw(o::TwObj{TwMultiSelectData})
+    werase(o.window)
     if o.box
-        box( o.window, 0,0 )
+        box(o.window, 0, 0)
     end
-    if !isempty( o.title ) && o.box
-        mvwprintw( o.window, 0, round( Int, ( o.width - length(o.title) )/2 ), "%s", o.title )
+    if !isempty(o.title) && o.box
+        mvwprintw(o.window, 0, round(Int, (o.width - length(o.title))/2), "%s", o.title)
     end
     starty = o.borderSizeV
     viewContentHeight = o.height - o.borderSizeV * 2
-    viewContentWidth  = o.width - o.borderSizeH * 2
-    n = length( o.data.datalist )
-    for r in o.data.currentTop:min( o.data.currentTop + viewContentHeight-1, n )
+    viewContentWidth = o.width - o.borderSizeH * 2
+    n = length(o.data.datalist)
+    for r = o.data.currentTop:min(o.data.currentTop+viewContentHeight-1, n)
         flag = 0
         if r == o.data.currentLine
-            flag = A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30 )
+            flag = A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30)
         end
         s = o.data.datalist[r][1]
         if o.data.datalist[r][2]
-            s = string( '\U2612' ) * " " * s
+            s = string('\U2612') * " " * s
         else
-            s = string( '\U2610' ) * " " * s
+            s = string('\U2610') * " " * s
         end
-        s = substr_by_width( s, o.data.currentLeft-1, viewContentWidth )
+        s = substr_by_width(s, o.data.currentLeft-1, viewContentWidth)
 
-        wattron( o.window, flag )
-        mvwprintw( o.window, r - o.data.currentTop + starty, o.borderSizeH, "%s", s )
-        wattroff( o.window, flag )
+        wattron(o.window, flag)
+        mvwprintw(o.window, r - o.data.currentTop + starty, o.borderSizeH, "%s", s)
+        wattroff(o.window, flag)
     end
-    draw( o.data.searchbox )
+    draw(o.data.searchbox)
 end
 
-function select_search_next( o::TwObj{TwMultiSelectData}, step::Int, trivialstop::Bool )
+function select_search_next(o::TwObj{TwMultiSelectData}, step::Int, trivialstop::Bool)
     st = o.data.currentLine
     tmpstr = lowercase(o.data.searchbox.data.inputText)
     if length(tmpstr) == 0
@@ -136,23 +153,23 @@ function select_search_next( o::TwObj{TwMultiSelectData}, step::Int, trivialstop
         return 0
     end
 
-    n = length( o.data.datalist )
+    n = length(o.data.datalist)
 
-    local i::Int = trivialstop ? st : mod1( st+step,n )
+    local i::Int = trivialstop ? st : mod1(st+step, n)
     local usesubstr::Bool = o.data.selectmode & SELECTSUBSTR != 0
     while true
         if usesubstr
-            if occursin( tmpstr, lowercase( o.data.datalist[i][1] ) )
+            if occursin(tmpstr, lowercase(o.data.datalist[i][1]))
                 o.data.currentLine = i
                 return i
             end
         else
-            if startswith( lowercase( o.data.datalist[i][1] ), tmpstr )
+            if startswith(lowercase(o.data.datalist[i][1]), tmpstr)
                 o.data.currentLine = i
                 return i
             end
         end
-        i = mod1(i+step,n )
+        i = mod1(i+step, n)
         if i == st
             TermWin.beep()
             return 0
@@ -160,24 +177,25 @@ function select_search_next( o::TwObj{TwMultiSelectData}, step::Int, trivialstop
     end
 end
 
-function inject( o::TwObj{TwMultiSelectData}, token )
+function inject(o::TwObj{TwMultiSelectData}, token)
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
 
     viewContentWidth = o.width - o.borderSizeH * 2
     viewContentHeight = o.height - 2 * o.borderSizeV
 
-    checkTop = () -> begin
-        if o.data.currentTop > o.data.currentLine
-            o.data.currentTop = o.data.currentLine
-        elseif o.data.currentLine - o.data.currentTop > viewContentHeight - 1
-            o.data.currentTop = o.data.currentLine - viewContentHeight + 1
+    checkTop =
+        () -> begin
+            if o.data.currentTop > o.data.currentLine
+                o.data.currentTop = o.data.currentLine
+            elseif o.data.currentLine - o.data.currentTop > viewContentHeight - 1
+                o.data.currentTop = o.data.currentLine - viewContentHeight + 1
+            end
         end
-    end
     moveby = n -> begin
-        sz = length( o.data.datalist )
+        sz = length(o.data.datalist)
 
-        o.data.currentLine = max(1, min( sz, o.data.currentLine + n) )
+        o.data.currentLine = max(1, min(sz, o.data.currentLine + n))
         checkTop()
         return true
     end
@@ -187,14 +205,14 @@ function inject( o::TwObj{TwMultiSelectData}, token )
         if token == " " # no break space
             token = " "
         end
-        result = inject( o.data.searchbox, token )
+        result = inject(o.data.searchbox, token)
 
         if result == :got_it
             if inputText != o.data.searchbox.data.inputText
-                select_search_next( o, 1, true )
+                select_search_next(o, 1, true)
                 checkTop()
             end
-            refresh( o )
+            refresh(o)
             return result
         end
     end
@@ -248,25 +266,25 @@ function inject( o::TwObj{TwMultiSelectData}, token )
             beep()
         end
     elseif token == :pageup
-        dorefresh = moveby( -viewContentHeight )
+        dorefresh = moveby(-viewContentHeight)
     elseif token == :pagedown
-        dorefresh = moveby( viewContentHeight )
+        dorefresh = moveby(viewContentHeight)
     elseif token == :ctrl_n
-        select_search_next( o, 1, false )
+        select_search_next(o, 1, false)
         checkTop()
         dorefresh = true
     elseif token == :ctrl_p
-        select_search_next( o, -1, false )
+        select_search_next(o, -1, false)
         checkTop()
         dorefresh = true
     elseif token == :KEY_MOUSE
-        (mstate,x,y, bs ) = getmouse()
+        (mstate, x, y, bs) = getmouse()
         if mstate == :scroll_up
-            dorefresh = moveby( -(round(Int, viewContentHeight/10 )) )
+            dorefresh = moveby(-(round(Int, viewContentHeight/10)))
         elseif mstate == :scroll_down
-            dorefresh = moveby( round(Int, viewContentHeight/10 ) )
+            dorefresh = moveby(round(Int, viewContentHeight/10))
         elseif mstate == :button1_pressed && o.data.trackLine
-            (rely,relx) = screen_to_relative( o.window, y, x )
+            (rely, relx) = screen_to_relative(o.window, y, x)
             if 0<=relx<o.width && 0<=rely<o.height
                 o.data.currentLine = o.data.currentTop + rely - o.borderSizeH + 1
                 dorefresh = true
@@ -274,7 +292,7 @@ function inject( o::TwObj{TwMultiSelectData}, token )
                 retcode = :pass
             end
         end
-    elseif  token == :home
+    elseif token == :home
         if o.data.currentTop != 1 || o.data.currentLeft != 1 || o.data.currentLine != 1
             o.data.currentTop = 1
             o.data.currentLeft = 1
@@ -283,8 +301,8 @@ function inject( o::TwObj{TwMultiSelectData}, token )
         else
             beep()
         end
-    elseif in( token, Any[ Symbol("end") ] )
-        n = length( o.data.datalist )
+    elseif in(token, Any[Symbol("end")])
+        n = length(o.data.datalist)
         if o.data.currentLine != n
             o.data.currentLine = n
             checkTop()
@@ -293,26 +311,28 @@ function inject( o::TwObj{TwMultiSelectData}, token )
             beep()
         end
     elseif o.data.selectmode & SELECTEDORDERABLE != 0 && token == :shift_up
-        currstatus = o.data.datalist[ o.data.currentLine][2]
+        currstatus = o.data.datalist[o.data.currentLine][2]
         if currstatus && o.data.currentLine > 1
             currstr = o.data.datalist[o.data.currentLine][1]
-            idx = findfirst( isequal(currstr), o.data.selected )
-            o.data.selected[ idx-1], o.data.selected[ idx ] = (o.data.selected[ idx ], o.data.selected[ idx - 1] )
-            o.data.currentLine -=1
-            rebuild_select_datalist( o )
+            idx = findfirst(isequal(currstr), o.data.selected)
+            o.data.selected[idx-1], o.data.selected[idx] =
+                (o.data.selected[idx], o.data.selected[idx-1])
+            o.data.currentLine -= 1
+            rebuild_select_datalist(o)
             checkTop()
             dorefresh = true
         else
             beep()
         end
     elseif o.data.selectmode & SELECTEDORDERABLE != 0 && token == :shift_down
-        currstatus = o.data.datalist[ o.data.currentLine][2]
-        if currstatus && o.data.currentLine < length( o.data.selected )
+        currstatus = o.data.datalist[o.data.currentLine][2]
+        if currstatus && o.data.currentLine < length(o.data.selected)
             currstr = o.data.datalist[o.data.currentLine][1]
-            idx = findfirst( isequal(currstr), o.data.selected )
-            o.data.selected[ idx+1], o.data.selected[ idx ] = (o.data.selected[ idx ], o.data.selected[ idx + 1] )
-            o.data.currentLine +=1
-            rebuild_select_datalist( o )
+            idx = findfirst(isequal(currstr), o.data.selected)
+            o.data.selected[idx+1], o.data.selected[idx] =
+                (o.data.selected[idx], o.data.selected[idx+1])
+            o.data.currentLine += 1
+            rebuild_select_datalist(o)
             checkTop()
             dorefresh = true
         else
@@ -320,25 +340,25 @@ function inject( o::TwObj{TwMultiSelectData}, token )
         end
     elseif token == " "
         currstr = o.data.datalist[o.data.currentLine][1]
-        currstatus = o.data.datalist[ o.data.currentLine][2]
+        currstatus = o.data.datalist[o.data.currentLine][2]
         if !currstatus # we are selecting it
-            push!( o.data.selected, currstr )
+            push!(o.data.selected, currstr)
             if o.data.selectmode & SELECTEDORDERABLE != 0
-                rebuild_select_datalist( o )
+                rebuild_select_datalist(o)
             else
                 o.data.datalist[o.data.currentLine][2] = true
             end
         else # we are de-selecting it
-            idx = findfirst( isequal(currstr), o.data.selected )
-            deleteat!( o.data.selected, idx )
+            idx = findfirst(isequal(currstr), o.data.selected)
+            deleteat!(o.data.selected, idx)
             if o.data.selectmode & SELECTEDORDERABLE != 0
-                rebuild_select_datalist( o )
+                rebuild_select_datalist(o)
             else
                 o.data.datalist[o.data.currentLine][2] = false
             end
         end
         dorefresh = true
-    elseif token == :enter || token == Symbol( "return" )
+    elseif token == :enter || token == Symbol("return")
         o.value = o.data.selected
         retcode = :exit_ok
     else
@@ -352,6 +372,6 @@ function inject( o::TwObj{TwMultiSelectData}, token )
     return retcode
 end
 
-function helptext( o::TwObj{TwMultiSelectData} )
+function helptext(o::TwObj{TwMultiSelectData})
     o.data.helpText
 end

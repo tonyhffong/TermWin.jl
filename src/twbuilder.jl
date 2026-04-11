@@ -43,12 +43,24 @@ vstack(; title="Layout") do outer
 end
 ```
 """
-function vstack(f::Function, parent::TwObj=rootTwScreen;
-                height::Real=1.0, width::Real=1.0,
-                posy::Any=:top, posx::Any=:left, kwargs...)
-    list = newTwList(parent; horizontal=false,
-                     height=height, width=width,
-                     posy=posy, posx=posx, kwargs...)
+function vstack(
+    f::Function,
+    parent::TwObj = rootTwScreen;
+    height::Real = 1.0,
+    width::Real = 1.0,
+    posy::Any = :top,
+    posx::Any = :left,
+    kwargs...,
+)
+    list = newTwList(
+        parent;
+        horizontal = false,
+        height = height,
+        width = width,
+        posy = posy,
+        posx = posx,
+        kwargs...,
+    )
     f(list)
     update_list_canvas(list)    # finalize canvas after all children are sized
     list
@@ -61,12 +73,24 @@ Create a horizontal stacking container. Widgets constructed inside `f` with the
 container as their first argument are stacked left-to-right. See `vstack` for
 further details and examples.
 """
-function hstack(f::Function, parent::TwObj=rootTwScreen;
-                height::Real=1.0, width::Real=1.0,
-                posy::Any=:top, posx::Any=:left, kwargs...)
-    list = newTwList(parent; horizontal=true,
-                     height=height, width=width,
-                     posy=posy, posx=posx, kwargs...)
+function hstack(
+    f::Function,
+    parent::TwObj = rootTwScreen;
+    height::Real = 1.0,
+    width::Real = 1.0,
+    posy::Any = :top,
+    posx::Any = :left,
+    kwargs...,
+)
+    list = newTwList(
+        parent;
+        horizontal = true,
+        height = height,
+        width = width,
+        posy = posy,
+        posx = posx,
+        kwargs...,
+    )
     f(list)
     update_list_canvas(list)
     list
@@ -78,15 +102,15 @@ end
 
 # Short widget names recognised inside a @twlayout body
 const _TW_WIDGET_CTORS = Dict{Symbol,Symbol}(
-    :viewer      => :newTwViewer,
-    :dftable     => :newTwDfTable,
-    :popup       => :newTwPopup,
-    :entry       => :newTwEntry,
-    :tree        => :newTwTree,
+    :viewer => :newTwViewer,
+    :dftable => :newTwDfTable,
+    :popup => :newTwPopup,
+    :entry => :newTwEntry,
+    :tree => :newTwTree,
     :multiselect => :newTwMultiSelect,
-    :calendar    => :newTwCalendar,
-    :spacer      => :newTwSpacer,
-    :label       => :newTwLabel,
+    :calendar => :newTwCalendar,
+    :spacer => :newTwSpacer,
+    :label => :newTwLabel,
 )
 
 # Transform one statement from a @twlayout body.
@@ -102,18 +126,19 @@ function _twlayout_transform(list_sym::Symbol, stmt)
             # Keyword parameters node (:parameters) appears as the second arg in
             # the Julia AST when any keyword args are present: f(; k=v, pos_arg)
             kw_params = nothing
-            pos_start  = 2
+            pos_start = 2
             if length(stmt.args) >= 2 &&
-                    stmt.args[2] isa Expr && stmt.args[2].head == :parameters
+               stmt.args[2] isa Expr &&
+               stmt.args[2].head == :parameters
                 kw_params = stmt.args[2]
-                pos_start  = 3
+                pos_start = 3
             end
 
             # First positional arg after the constructor is the list parent
             push!(new_args, list_sym)
 
             # Remaining positional args — escape them for caller scope
-            for i in pos_start:length(stmt.args)
+            for i = pos_start:length(stmt.args)
                 push!(new_args, esc(stmt.args[i]))
             end
 
@@ -167,16 +192,15 @@ function _twlayout_impl(orientation, opts, body)
 
     # Collect names the user explicitly specified so we don't duplicate defaults
     user_kwarg_names = Set{Symbol}(
-        arg.args[1] for arg in opt_args
-        if arg isa Expr && arg.head in (:(=), :kw)
+        arg.args[1] for arg in opt_args if arg isa Expr && arg.head in (:(=), :kw)
     )
 
     # Build newTwList keyword args: defaults first, then user overrides
     list_kwargs = Expr[Expr(:kw, :horizontal, horizontal)]
     :height ∉ user_kwarg_names && push!(list_kwargs, Expr(:kw, :height, 1.0))
-    :width  ∉ user_kwarg_names && push!(list_kwargs, Expr(:kw, :width,  1.0))
-    :posy   ∉ user_kwarg_names && push!(list_kwargs, Expr(:kw, :posy,   QuoteNode(:top)))
-    :posx   ∉ user_kwarg_names && push!(list_kwargs, Expr(:kw, :posx,   QuoteNode(:left)))
+    :width ∉ user_kwarg_names && push!(list_kwargs, Expr(:kw, :width, 1.0))
+    :posy ∉ user_kwarg_names && push!(list_kwargs, Expr(:kw, :posy, QuoteNode(:top)))
+    :posx ∉ user_kwarg_names && push!(list_kwargs, Expr(:kw, :posx, QuoteNode(:left)))
     for arg in opt_args
         if arg isa Expr && arg.head == :(=)
             push!(list_kwargs, Expr(:kw, arg.args[1], esc(arg.args[2])))
@@ -197,15 +221,12 @@ function _twlayout_impl(orientation, opts, body)
     end
 
     # --- Generate code ---
-    newTwList_ref        = GlobalRef(_TWBUILDER_MODULE, :newTwList)
-    rootTwScreen_ref     = GlobalRef(_TWBUILDER_MODULE, :rootTwScreen)
-    update_canvas_ref    = GlobalRef(_TWBUILDER_MODULE, :update_list_canvas)
+    newTwList_ref = GlobalRef(_TWBUILDER_MODULE, :newTwList)
+    rootTwScreen_ref = GlobalRef(_TWBUILDER_MODULE, :rootTwScreen)
+    update_canvas_ref = GlobalRef(_TWBUILDER_MODULE, :update_list_canvas)
 
     return quote
-        local $list_sym = $newTwList_ref(
-            $rootTwScreen_ref;
-            $(list_kwargs...)
-        )
+        local $list_sym = $newTwList_ref($rootTwScreen_ref; $(list_kwargs...))
         $(transformed...)
         $update_canvas_ref($list_sym)
         $list_sym

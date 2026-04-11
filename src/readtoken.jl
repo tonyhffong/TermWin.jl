@@ -3,38 +3,38 @@
 # for backward compatibility with widget inject() methods.
 
 # Map Notcurses Key enums to TermWin symbol tokens
-const NC_KEY_TO_SYMBOL = Dict{NC.Key.T, Symbol}(
-    NC.Key.UP        => :up,
-    NC.Key.DOWN      => :down,
-    NC.Key.LEFT      => :left,
-    NC.Key.RIGHT     => :right,
-    NC.Key.HOME      => :home,
-    NC.Key.END       => Symbol("end"),
-    NC.Key.PGUP      => :pageup,
-    NC.Key.PGDOWN    => :pagedown,
-    NC.Key.INS       => :insert,
-    NC.Key.DEL       => :delete,
+const NC_KEY_TO_SYMBOL = Dict{NC.Key.T,Symbol}(
+    NC.Key.UP => :up,
+    NC.Key.DOWN => :down,
+    NC.Key.LEFT => :left,
+    NC.Key.RIGHT => :right,
+    NC.Key.HOME => :home,
+    NC.Key.END => Symbol("end"),
+    NC.Key.PGUP => :pageup,
+    NC.Key.PGDOWN => :pagedown,
+    NC.Key.INS => :insert,
+    NC.Key.DEL => :delete,
     NC.Key.BACKSPACE => :backspace,
-    NC.Key.ENTER     => :enter,
-    NC.Key.TAB       => :tab,
-    NC.Key.ESC       => :esc,
-    NC.Key.F01       => :F1,
-    NC.Key.F02       => :F2,
-    NC.Key.F03       => :F3,
-    NC.Key.F04       => :F4,
-    NC.Key.F05       => :F5,
-    NC.Key.F06       => :F6,
-    NC.Key.F07       => :F7,
-    NC.Key.F08       => :F8,
-    NC.Key.F09       => :F9,
-    NC.Key.F10       => :F10,
-    NC.Key.F11       => :F11,
-    NC.Key.F12       => :F12,
-    NC.Key.RESIZE    => :KEY_RESIZE,
+    NC.Key.ENTER => :enter,
+    NC.Key.TAB => :tab,
+    NC.Key.ESC => :esc,
+    NC.Key.F01 => :F1,
+    NC.Key.F02 => :F2,
+    NC.Key.F03 => :F3,
+    NC.Key.F04 => :F4,
+    NC.Key.F05 => :F5,
+    NC.Key.F06 => :F6,
+    NC.Key.F07 => :F7,
+    NC.Key.F08 => :F8,
+    NC.Key.F09 => :F9,
+    NC.Key.F10 => :F10,
+    NC.Key.F11 => :F11,
+    NC.Key.F12 => :F12,
+    NC.Key.RESIZE => :KEY_RESIZE,
 )
 
 # returns either a string or a symbol
-function readtoken( nc::NC.NotcursesObject )
+function readtoken(nc::NC.NotcursesObject)
     result = NC.get_nblock(nc)
 
     if result === nothing
@@ -73,8 +73,8 @@ function readtoken( nc::NC.NotcursesObject )
 
         # Apply modifiers
         has_shift = ni.shift
-        has_ctrl  = ni.ctrl
-        has_alt   = ni.alt
+        has_ctrl = ni.ctrl
+        has_alt = ni.alt
 
         if has_ctrl && has_shift
             return Symbol("ctrlshift_" * string(base_sym))
@@ -82,9 +82,10 @@ function readtoken( nc::NC.NotcursesObject )
             return Symbol("ctrl_" * string(base_sym))
         elseif has_shift
             # shift + function keys
-            if base_sym in (:F1,:F2,:F3,:F4,:F5,:F6,:F7,:F8,:F9,:F10,:F11,:F12)
+            if base_sym in (:F1, :F2, :F3, :F4, :F5, :F6, :F7, :F8, :F9, :F10, :F11, :F12)
                 return Symbol("shift_" * string(base_sym))
-            elseif base_sym in (:up,:down,:left,:right,:home,Symbol("end"),:pageup,:pagedown)
+            elseif base_sym in
+                   (:up, :down, :left, :right, :home, Symbol("end"), :pageup, :pagedown)
                 return Symbol("shift_" * string(base_sym))
             elseif base_sym == :tab
                 return :shift_tab
@@ -181,7 +182,7 @@ function readtoken( nc::NC.NotcursesObject )
 end
 
 # Backward-compatible overload: readtoken on a Plane just uses nc_context
-function readtoken( win::NC.Plane )
+function readtoken(win::NC.Plane)
     global nc_context
-    readtoken( nc_context )
+    readtoken(nc_context)
 end

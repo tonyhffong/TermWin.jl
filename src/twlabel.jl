@@ -17,19 +17,23 @@ an integer means rows/columns; a float in `(0,1]` means a fraction of the parent
 In a vertical layout pass `height=N` (default 1).
 In a horizontal layout pass `width=N, height=1.0`.
 """
-function newTwSpacer( parent::TwObj;
-        height::Real=1, width::Real=1.0,
-        posy::Any=:top, posx::Any=:left )
-    obj = TwObj( TwSpacerData(), Val{:Spacer} )
+function newTwSpacer(
+    parent::TwObj;
+    height::Real = 1,
+    width::Real = 1.0,
+    posy::Any = :top,
+    posx::Any = :left,
+)
+    obj = TwObj(TwSpacerData(), Val{:Spacer})
     obj.acceptsFocus = false
-    obj.box          = false
-    obj.borderSizeV  = 0
-    obj.borderSizeH  = 0
-    link_parent_child( parent, obj, height, width, posy, posx )
+    obj.box = false
+    obj.borderSizeV = 0
+    obj.borderSizeH = 0
+    link_parent_child(parent, obj, height, width, posy, posx)
     obj
 end
 
-draw( o::TwObj{TwSpacerData} ) = werase( o.window )
+draw(o::TwObj{TwSpacerData}) = werase(o.window)
 
 # ── TwLabel ─────────────────────────────────────────────────────────────────
 
@@ -50,43 +54,48 @@ Insert a static text line into a `vstack`/`hstack`/`@twlayout` layout.
                `── text ─────────────` filling the full widget width.
                When `text` is empty, renders a bare horizontal rule.
 """
-function newTwLabel( parent::TwObj, text::String="";
-        height::Real=1, width::Real=1.0,
-        style::Symbol=:plain,
-        posy::Any=:top, posx::Any=:left )
-    obj = TwObj( TwLabelData( text, style ), Val{:Label} )
+function newTwLabel(
+    parent::TwObj,
+    text::String = "";
+    height::Real = 1,
+    width::Real = 1.0,
+    style::Symbol = :plain,
+    posy::Any = :top,
+    posx::Any = :left,
+)
+    obj = TwObj(TwLabelData(text, style), Val{:Label})
     obj.acceptsFocus = false
-    obj.box          = false
-    obj.borderSizeV  = 0
-    obj.borderSizeH  = 0
-    link_parent_child( parent, obj, height, width, posy, posx )
+    obj.box = false
+    obj.borderSizeV = 0
+    obj.borderSizeH = 0
+    link_parent_child(parent, obj, height, width, posy, posx)
     obj
 end
 
-function draw( o::TwObj{TwLabelData} )
-    werase( o.window )
-    text  = o.data.text
+function draw(o::TwObj{TwLabelData})
+    werase(o.window)
+    text = o.data.text
     style = o.data.style
-    w     = o.width
+    w = o.width
 
     if style == :plain
-        mvwprintw( o.window, 0, 0, "%s", text )
+        mvwprintw(o.window, 0, 0, "%s", text)
 
     elseif style == :header
-        wattron( o.window, COLOR_PAIR(3) | A_BOLD )
-        mvwprintw( o.window, 0, 0, "%s", text )
-        wattroff( o.window, COLOR_PAIR(3) | A_BOLD )
+        wattron(o.window, COLOR_PAIR(3) | A_BOLD)
+        mvwprintw(o.window, 0, 0, "%s", text)
+        wattroff(o.window, COLOR_PAIR(3) | A_BOLD)
 
     elseif style == :divider
-        if isempty( text )
-            line = repeat( "─", w )
+        if isempty(text)
+            line = repeat("─", w)
         else
-            prefix    = "── " * text * " "
-            remaining = max( 0, w - textwidth( prefix ) )
-            line      = prefix * repeat( "─", remaining )
+            prefix = "── " * text * " "
+            remaining = max(0, w - textwidth(prefix))
+            line = prefix * repeat("─", remaining)
         end
-        wattron( o.window, COLOR_PAIR(13) )
-        mvwprintw( o.window, 0, 0, "%s", line )
-        wattroff( o.window, COLOR_PAIR(13) )
+        wattron(o.window, COLOR_PAIR(13))
+        mvwprintw(o.window, 0, 0, "%s", line)
+        wattroff(o.window, COLOR_PAIR(13))
     end
 end
