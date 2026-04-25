@@ -73,15 +73,6 @@ function make_channel_pair(fg_idx::Int, bg_idx::Int)
     return (fc << 32) | bc
 end
 
-# ===== Color pair table (populated in initsession) =====
-# Maps old COLOR_PAIR(n) numbers -> 64-bit Notcurses channels
-const color_channel_table = Dict{Int,UInt64}()
-
-# COLOR_PAIR(n): returns 64-bit channel value for pair n
-function COLOR_PAIR(n::Integer)
-    get(color_channel_table, Int(n), UInt64(0))
-end
-
 # ===== Style/attribute constants =====
 # In Notcurses, styles are UInt16 (not UInt32 like ncurses attributes).
 # We define these as UInt32 for backward compat with existing code that ORs them.
@@ -109,15 +100,12 @@ const STYLE_MASK = UInt32(0x0000FFFF)
 # Sentinel bit for A_REVERSE
 const REVERSE_BIT = UInt32(0x80000000)
 
-# ===== Decompose a combined attribute value into (style, channels, reverse) =====
-# Old ncurses code does: wattron(win, COLOR_PAIR(15) | A_BOLD)
-# COLOR_PAIR(15) returns a UInt64 channel, but it gets mixed with UInt32 style bits.
-# We need a scheme: when attrs is UInt64, the high bits are channels.
-# When attrs is UInt32, it may contain style bits + REVERSE sentinel.
+# ===== Decompose a combined integer attribute into (style, channels, reverse) =====
+# Used for legacy code paths that pass plain integers to wattron/wattroff.
 
 function decompose_attrs(attrs)
     if attrs isa UInt64 && attrs > typemax(UInt32)
-        # Pure channel value (from COLOR_PAIR), no style bits
+        # Pure channel value, no style bits
         return (UInt16(0), attrs, false)
     end
     a = UInt32(attrs & 0xFFFFFFFF)
@@ -126,9 +114,8 @@ function decompose_attrs(attrs)
     return (style, UInt64(0), reverse)
 end
 
-# When OR-ing COLOR_PAIR(n) | A_BOLD, we need the result to carry both.
-# We encode style bits in the upper 32 bits of a UInt64, channels in the lower 32...
-# Actually, simpler: we use a struct.
+# ===== TwAttr: composite attribute carrying style + channels + reverse =====
+# This avoids the lossy plain-integer OR that corrupts channel bits with style bits.
 struct TwAttr
     style::UInt16
     channels::UInt64
@@ -164,6 +151,18 @@ end
 Base.:|(a::TwAttr, b::TwAttr) = make_attr(a, b)
 Base.:|(a::TwAttr, b::Integer) = make_attr(a, b)
 Base.:|(a::Integer, b::TwAttr) = make_attr(a, b)
+
+# ===== Color pair table (populated in initsession) =====
+# Maps old COLOR_PAIR(n) numbers -> 64-bit Notcurses channels
+const color_channel_table = Dict{Int,UInt64}()
+
+# COLOR_PAIR(n): returns a TwAttr with the channel pair set.
+# Returning TwAttr ensures that bitwise-OR with style constants
+# (A_BOLD, A_UNDERLINE, A_REVERSE) dispatches through make_attr,
+# which properly separates style bits from channel data.
+function COLOR_PAIR(n::Integer)
+    TwAttr(UInt16(0), get(color_channel_table, Int(n), UInt64(0)), false)
+end
 
 # ===== Mouse constants (kept for interface compatibility) =====
 # These are not used directly with Notcurses but kept for existing code references

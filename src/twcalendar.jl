@@ -117,6 +117,8 @@ function draw(o::TwObj{TwCalendarData})
     starty = o.borderSizeV
     startx = o.borderSizeH
     yearstr = string(year(o.data.date)) * "  [" * string(o.data.holidayCal) * "]"
+    yearflags = year(o.data.date) == year(today()) ? A_BOLD | A_UNDERLINE : 0
+    wattron(o.window, yearflags)
     mvwprintw(
         o.window,
         starty,
@@ -124,6 +126,7 @@ function draw(o::TwObj{TwCalendarData})
         "%s",
         yearstr,
     )
+    wattroff(o.window, yearflags)
     starty += 1
     # figure out the start month
     nummonths = o.data.geometry[1] * o.data.geometry[2]
@@ -151,7 +154,10 @@ function draw(o::TwObj{TwCalendarData})
         end
         for j = 1:o.data.geometry[2]
             # print the month header
+            mthflags = (mth == month(today()) && year(o.data.date) == year(today())) ? A_BOLD | A_UNDERLINE : 0
+            wattron(o.window, mthflags)
             mvwprintw(o.window, starty, startx + 6, "%s", monthabbr(mth))
+            wattroff(o.window, mthflags)
             mst = Date(year(o.data.date), mth, 1)
             men = Date(year(o.data.date), mth, daysinmonth(year(o.data.date), mth))
             dt = mst
