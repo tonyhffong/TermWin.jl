@@ -25,7 +25,7 @@ typefields[DataType] = [:name, :super, :abstract, :mutable, :parameters]
 typefields[Type] = [:name, :module, :primary]
 
 treeTypeMaxWidth = 30
-treeValueMaxWidth = 40
+treeValueMaxWidth = 400
 
 mutable struct TwTreeData
     openstatemap::Dict{Any,Bool}
@@ -148,11 +148,10 @@ function tree_data(
             v = @sprintf("0x%x", x)
         elseif typx == Symbol
             v = repr_symbol(x)
-            v = ensure_length(v, treeValueMaxWidth, false)
         elseif typx <: AbstractString
-            v = ensure_length(escape_string(x), treeValueMaxWidth, false)
+            v = escape_string(x)
         else
-            v = ensure_length(string(x), treeValueMaxWidth, false)
+            v = string(x)
         end
         push!(list, (s, t, v, stack, :single, skiplines))
     elseif typx == WeakRef
@@ -235,7 +234,7 @@ function tree_data(
     elseif typx == Module && !isempty(stack) # don't want to recursively descend
         s = string(name)
         t = string(typx)
-        v = ensure_length(string(x), treeValueMaxWidth, false)
+        v = string(x)
         push!(list, (s, t, v, stack, :single, skiplines))
     else
         log("  " * string(typx))
@@ -275,7 +274,7 @@ function tree_data(
         s = string(name)
         expandhint = isempty(ns) ? :single : (isexp ? :open : :close)
         t = string(typx)
-        v = ensure_length(string(x), treeValueMaxWidth, false)
+        v = string(x)
         len = length(ns)
         push!(list, (s, t, v, stack, expandhint, skiplines))
         if isexp && !isempty(ns)
@@ -335,7 +334,7 @@ function updateTreeDimensions(o::TwObj)
     o.data.datatypewidth =
         min(treeTypeMaxWidth, max(15, maximum(map(x->length(x[2]), o.data.datalist))))
     o.data.datavaluewidth =
-        min(treeValueMaxWidth, maximum(map(x->length(x[3]), o.data.datalist)))
+        maximum(map(x->length(x[3]), o.data.datalist))
     nothing
 end
 
