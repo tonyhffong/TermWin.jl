@@ -223,9 +223,10 @@ function tshow_(x::WeakRef; kwargs...)
 end
 
 function tshow_(x::T; kwargs...) where {T<:AbstractString}
-    # if the string is a directory path, open the file browser
-    if isdir(x)
-        return newTwFileBrowser(rootTwScreen, string(x); kwargs...)
+    # "path:/some/dir" prefix opens the file browser
+    s = string(x)
+    if startswith(s, "path:") && isdir(s[6:end])
+        return newTwFileBrowser(rootTwScreen, s[6:end]; title = s[6:end])
     end
     pos = :center
     if length(x) > 100

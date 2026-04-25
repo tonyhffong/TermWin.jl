@@ -474,7 +474,7 @@ function draw(o::TwObj{TwFileBrowserData})
         # preview title in top border
         if o.box && o.data.previewPath != ""
             ptitle = " " * basename(o.data.previewPath) * " "
-            ptitle = ensure_length(ptitle, rightW, false)
+            ptitle = ensure_length(ptitle, rightW - 2, false)
             mvwprintw(o.window, 0, previewX + 1, "%s", ptitle)
         end
 
@@ -513,6 +513,25 @@ function draw(o::TwObj{TwFileBrowserData})
                 txt = repeat(" ", rightW)
             end
             mvwprintw(o.window, i, previewX, "%s", txt)
+        end
+
+        # preview line info in top border (right-aligned)
+        if o.box && !isempty(lines)
+            totalLines = length(lines)
+            if totalLines <= viewContentHeight
+                pmsg = "ALL"
+            else
+                pmsg = @sprintf(
+                    "%d/%d %5.1f%%",
+                    o.data.previewTop,
+                    totalLines,
+                    o.data.previewTop / totalLines * 100
+                )
+            end
+            ppos = o.width - o.borderSizeH - length(pmsg)
+            if ppos > previewX
+                mvwprintw(o.window, 0, ppos, "%s", pmsg)
+            end
         end
     end
 
@@ -785,8 +804,17 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             fullpath = o.data.datalist[o.data.currentLine][8]
             is_dir = o.data.datalist[o.data.currentLine][9]
             if !is_dir && isfile(fullpath)
-                content = load_preview(fullpath)
-                text = join(content, "\n")
+                sz = filesize(fullpath)
+                if sz == 0
+                    text = "(empty file)"
+                else
+                    bytes = read(fullpath, min(sz, 256_000))
+                    if any(==(0x00), bytes)
+                        text = "(binary file, " * human_readable_size(Int64(sz)) * ")"
+                    else
+                        text = String(bytes)
+                    end
+                end
                 tshow(text, title = basename(fullpath))
                 dorefresh = true
             else
@@ -834,6 +862,28 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             maxTop = max(1, length(o.data.previewCache[curpath]) - viewContentHeight + 1)
             if o.data.previewTop < maxTop
                 o.data.previewTop += 1
+                dorefresh = true
+            else
+                beep()
+            end
+        else
+            beep()
+        end
+    elseif token == :ctrl_pageup
+        # page up in preview pane
+        if o.data.previewTop > 1
+            o.data.previewTop = max(1, o.data.previewTop - viewContentHeight)
+            dorefresh = true
+        else
+            beep()
+        end
+    elseif token == :ctrl_pagedown
+        # page down in preview pane
+        curpath = o.data.datalistlen > 0 ? o.data.datalist[o.data.currentLine][8] : ""
+        if curpath != "" && haskey(o.data.previewCache, curpath)
+            maxTop = max(1, length(o.data.previewCache[curpath]) - viewContentHeight + 1)
+            if o.data.previewTop < maxTop
+                o.data.previewTop = min(maxTop, o.data.previewTop + viewContentHeight)
                 dorefresh = true
             else
                 beep()
