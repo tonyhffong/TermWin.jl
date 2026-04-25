@@ -225,8 +225,9 @@ end
 
 function tshow_(x::T; kwargs...) where {T<:AbstractString}
     # "path:/some/dir" prefix opens the file browser
+    # we put a cap in the length of the possible path. isdir will throw anyway if the string is malformed / too long
     s = string(x)
-    if startswith(s, "path:") && isdir(s[6:end])
+    if nodeswith(s, "path:") && length(s) < 400 && isdir(s[6:end])
         return newTwFileBrowser(rootTwScreen, s[6:end]; title = s[6:end])
     end
     pos = :center

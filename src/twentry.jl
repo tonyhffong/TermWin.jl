@@ -264,26 +264,31 @@ function inject(o::TwObj{TwEntryData}, token)
 
     if token == :esc
         retcode = :exit_nothing
-    elseif token == :shift_up && o.data.valueType <: Real && o.data.tickSize != 0
+    elseif token == :shift_up && ( o.data.valueType <: Real || o.data.valueType <: Date ) && o.data.tickSize != 0
         (fieldcount, remainspacecount) = getFieldDimension(o)
         (v, s) = evalNFormat(o.data, o.data.inputText, fieldcount)
         if v !== nothing
-            v += o.data.tickSize
+	    if o.data.valueType <: Date  
+	    	v = v +Day(1)
+	    else
+                v += o.data.tickSize
+	    end
             o.value = v
             o.data.inputText = myNumFormat(o.value, o.data, fieldcount)
             checkcursor()
             o.data.incomplete = false
             dorefresh = true
         end
-    elseif token == :shift_down && o.data.valueType <: Real && o.data.tickSize != 0
+    elseif token == :shift_down && ( o.data.valueType <: Real || o.data.valueType <: Date ) && o.data.tickSize != 0
         (fieldcount, remainspacecount) = getFieldDimension(o)
         (v, s) = evalNFormat(o.data, o.data.inputText, fieldcount)
         if v !== nothing
-            if o.data.valueType <: Unsigned && v < o.data.tickSize
-                v = convert(o.data.valueType, 0)
+	    if o.data.valueType <: Date
+	        v = v - Day(1)
             else
-                v -= o.data.tickSize
-            end
+	        v -= o.data.tickSize
+	    end
+	    o.value = v
             o.data.inputText = myNumFormat(o.value, o.data, fieldcount)
             checkcursor()
             o.data.incomplete = false
@@ -499,15 +504,19 @@ function inject(o::TwObj{TwEntryData}, token)
 end
 
 function myNumFormat(v, data::TwEntryData, fieldcount::Int)
-    s = format(
-        v,
-        precision = data.precision,
-        commas = data.commas,
-        stripzeros = data.stripzeros,
-        conversion = data.conversion,
-    )
-    if length(s) > fieldcount
-        s = replace(s, "," => "", count = length(s)-fieldcount)
+    if typeof(v) <: Date
+	    s = Dates.format( v, "yyyy-mm-dd" )
+    else
+        s = format(
+            v,
+            precision = data.precision,
+            commas = data.commas,
+            stripzeros = data.stripzeros,
+            conversion = data.conversion,
+        )
+        if length(s) > fieldcount
+            s = replace(s, "," => "", count = length(s)-fieldcount)
+        end
     end
     s
 end

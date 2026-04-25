@@ -2,6 +2,23 @@
 # Returns the same symbol tokens as the old ncurses readtoken
 # for backward compatibility with widget inject() methods.
 
+# US-layout shift map for punctuation/digit keys.
+# Used when the terminal (kitty keyboard protocol) reports the base key
+# (unshifted codepoint) together with ni.shift=true, rather than the
+# already-shifted character.  Applying this map is safe even when the
+# terminal already sends the shifted character: those codepoints are not
+# present as keys in this map, so get(..., c) returns them unchanged.
+const SHIFT_CHAR_MAP = Dict{Char,Char}(
+    '`'  => '~',
+    '1'  => '!', '2' => '@', '3' => '#', '4' => '$', '5' => '%',
+    '6'  => '^', '7' => '&', '8' => '*', '9' => '(', '0' => ')',
+    '-'  => '_', '=' => '+',
+    '['  => '{', ']' => '}', '\\' => '|',
+    ';'  => ':',
+    '\'' => '"',
+    ','  => '<', '.' => '>', '/' => '?',
+)
+
 # Map Notcurses Key enums to TermWin symbol tokens
 const NC_KEY_TO_SYMBOL = Dict{NC.Key.T,Symbol}(
     NC.Key.UP => :up,
@@ -198,9 +215,23 @@ function readtoken(nc::NC.NotcursesObject)
             end
         end
 
+        # Normalise the character using the shift map if the terminal reported
+        # the base (unshifted) key together with the shift modifier.
+        # For letters, uppercase them; for punctuation, look up SHIFT_CHAR_MAP.
+        # This is a no-op when the terminal already delivers the shifted char.
+        effective_c = if has_shift && !has_ctrl
+            if c >= 'a' && c <= 'z'
+                uppercase(c)
+            else
+                get(SHIFT_CHAR_MAP, c, c)
+            end
+        else
+            c
+        end
+
         # Alt + printable character (no ctrl)
         if has_alt
-            base_str = isletter(c) ? string(lowercase(c)) : string(c)
+            base_str = isletter(effective_c) ? string(lowercase(effective_c)) : string(effective_c)
             if has_shift
                 return Symbol("altshift_" * base_str)
             else
@@ -209,7 +240,7 @@ function readtoken(nc::NC.NotcursesObject)
         end
 
         # Regular printable character: return as String
-        return string(c)
+        return string(effective_c)
     end
 
     return :nochar

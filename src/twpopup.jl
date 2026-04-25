@@ -309,14 +309,14 @@ function update_popup_score(o::TwObj{TwPopupData})
                             minld = abs(l1 - l2)
                             maxld = max(l1, l2)
                             # ld closer to the theoretical minimum should be deemed almost as good as a full match
-                            normld = (ld - minld + 1) / (maxld - minld + 1) * (minld + 1)
+			    normld = (ld - minld + 1) / (maxld - ld + 0.001 ) * l2
                             # finding the search term in the later part of a string should have a small penalty
                             substrpenalty = needx
                             r = findfirst(searchterm, row[1])
                             if r !== nothing
                                 substrpenalty = first(r)
                             end
-                            row[4] = ld + normld * 0.5 + substrpenalty
+                            row[4] = ld + normld * 2 + substrpenalty * 0.1
                         end
                         # prefix-based
                     else
