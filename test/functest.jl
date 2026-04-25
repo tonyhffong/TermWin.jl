@@ -2,5 +2,5 @@ using TermWin
 
 TermWin.logstart()
 tshow( deleteat! )
-tshow( methodswith( Set ) )
+tshow( methods( Set ) )
 

@@ -570,6 +570,7 @@ function draw(o::TwObj{TwDfTableData})
         end
         if o.data.currentCol == col
             wattroff(o.window, A_REVERSE)
+	    wattron(o.window, COLOR_PAIR(3))
         end
         if !islastcol
             for i = 1:o.data.headerlines
