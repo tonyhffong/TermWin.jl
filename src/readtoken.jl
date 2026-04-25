@@ -2,23 +2,6 @@
 # Returns the same symbol tokens as the old ncurses readtoken
 # for backward compatibility with widget inject() methods.
 
-# US-layout shift map for punctuation/digit keys.
-# Used when the terminal (kitty keyboard protocol) reports the base key
-# (unshifted codepoint) together with ni.shift=true, rather than the
-# already-shifted character.  Applying this map is safe even when the
-# terminal already sends the shifted character: those codepoints are not
-# present as keys in this map, so get(..., c) returns them unchanged.
-const SHIFT_CHAR_MAP = Dict{Char,Char}(
-    '`'  => '~',
-    '1'  => '!', '2' => '@', '3' => '#', '4' => '$', '5' => '%',
-    '6'  => '^', '7' => '&', '8' => '*', '9' => '(', '0' => ')',
-    '-'  => '_', '=' => '+',
-    '['  => '{', ']' => '}', '\\' => '|',
-    ';'  => ':',
-    '\'' => '"',
-    ','  => '<', '.' => '>', '/' => '?',
-)
-
 # Map Notcurses Key enums to TermWin symbol tokens
 const NC_KEY_TO_SYMBOL = Dict{NC.Key.T,Symbol}(
     NC.Key.UP => :up,
@@ -215,18 +198,20 @@ function readtoken(nc::NC.NotcursesObject)
             end
         end
 
-        # Normalise the character using the shift map if the terminal reported
-        # the base (unshifted) key together with the shift modifier.
-        # For letters, uppercase them; for punctuation, look up SHIFT_CHAR_MAP.
-        # This is a no-op when the terminal already delivers the shifted char.
-        effective_c = if has_shift && !has_ctrl
-            if c >= 'a' && c <= 'z'
-                uppercase(c)
+        # Resolve the effective character using ncinput.eff_text, which
+        # Notcurses populates with the OS-layout-correct codepoint(s).
+        # This handles all keyboard layouts correctly (AZERTY, QWERTZ, etc.)
+        # without any hardcoded mapping.  eff_text[1] is the first (and
+        # usually only) codepoint; it is 0 when the key has no text output
+        # (e.g., bare modifier keys).
+        # We skip eff_text when ctrl is set because ctrl sequences need to
+        # match on the base letter, not the produced text.
+        effective_c = let et = ni.eff_text[1]
+            if !has_ctrl && et >= 0x20 && et != 0x7f
+                Char(et)
             else
-                get(SHIFT_CHAR_MAP, c, c)
+                c
             end
-        else
-            c
         end
 
         # Alt + printable character (no ctrl)
