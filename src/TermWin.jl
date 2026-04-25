@@ -6,6 +6,7 @@ using DataFrames
 using CategoricalArrays
 using Statistics
 using Printf
+using BusinessDays
 import Notcurses as NC
 
 debugloghandle = nothing

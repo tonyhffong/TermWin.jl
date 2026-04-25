@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "13eef546cbf7d406de9460a79bdb53a00863c565"
+project_hash = "45c60636c477279ad8634c63fab444cf47d0c9eb"
 
 [[deps.Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -11,6 +11,12 @@ version = "1.11.0"
 [[deps.Base64]]
 uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 version = "1.11.0"
+
+[[deps.BusinessDays]]
+deps = ["Dates"]
+git-tree-sha1 = "8aa115a089d939c262ec48eee4245468e712044a"
+uuid = "4f18b42c-503e-5345-9536-bb0f25fc7038"
+version = "0.9.25"
 
 [[deps.Bzip2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -438,7 +444,7 @@ uuid = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 version = "1.12.1"
 
 [[deps.TermWin]]
-deps = ["CategoricalArrays", "DataFrames", "Dates", "Format", "Notcurses", "Printf", "Statistics"]
+deps = ["BusinessDays", "CategoricalArrays", "DataFrames", "Dates", "Format", "Notcurses", "Printf", "Statistics"]
 path = "."
 uuid = "ddbe2de8-fbff-40aa-a5ae-e0ef0f1059f5"
 version = "0.1.0"

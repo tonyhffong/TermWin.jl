@@ -13,7 +13,26 @@ w,W    : add/subtract a week
 m,M    : add/subtract a month
 q,Q    : add/subtract a quarter
 y,Y    : add/subtract a year
+Alt-C  : change holiday calendar
+(non-business days shown in red)
 """
+
+const HOLIDAY_CALENDAR_NAMES = [
+    "AustraliaASX",
+    "BRSettlement",
+    "BrazilExchange",
+    "CanadaSettlement",
+    "CanadaTSX",
+    "Germany",
+    "NullHolidayCalendar",
+    "TARGET",
+    "UKSettlement",
+    "USGovernmentBond",
+    "USNYSE",
+    "USSettlement",
+    "WeekendsOnly",
+]
+
 mutable struct TwCalendarData
     showHelp::Bool
     helpText::String
@@ -21,7 +40,8 @@ mutable struct TwCalendarData
     cursorweekofmonth::Int # cached "nth week" in the current month containing date, 1-based
     geometry::Tuple{Int,Int} # rows x cols in months
     ncalStyle::Bool
-    TwCalendarData(dt::Date) = new(true, defaultCalendarHelpText, dt, 1, (1, 1), false)
+    holidayCal::Symbol
+    TwCalendarData(dt::Date) = new(true, defaultCalendarHelpText, dt, 1, (1, 1), false, :USSettlement)
 end
 
 function monthDimension(ncalStyle::Bool)
@@ -96,12 +116,13 @@ function draw(o::TwObj{TwCalendarData})
     end
     starty = o.borderSizeV
     startx = o.borderSizeH
+    yearstr = string(year(o.data.date)) * "  [" * string(o.data.holidayCal) * "]"
     mvwprintw(
         o.window,
         starty,
-        round(Int, (o.width - 4)/2),
+        max(startx, round(Int, (o.width - length(yearstr))/2)),
         "%s",
-        string(year(o.data.date)),
+        yearstr,
     )
     starty += 1
     # figure out the start month
@@ -139,12 +160,15 @@ function draw(o::TwObj{TwCalendarData})
                 wcol = 0
                 while dt <= men
                     flags = 0
-                    if dt == o.data.date
+                    is_cursor = dt == o.data.date
+                    if is_cursor
                         flags = COLOR_PAIR(o.hasFocus ? 15 : 30)
                         o.data.cursorweekofmonth = wcol + 1
+                    elseif !isbday(o.data.holidayCal, dt)
+                        flags = COLOR_PAIR(1)  # red for non-business days
                     end
                     if dt == today()
-                        flags = flags | A_BOLD
+                        flags = flags | A_BOLD | A_UNDERLINE
                     end
                     wattron(o.window, flags)
                     if wcol == 0
@@ -180,12 +204,15 @@ function draw(o::TwObj{TwCalendarData})
                 end
                 while dt <= men
                     flags = 0
-                    if dt == o.data.date
+                    is_cursor = dt == o.data.date
+                    if is_cursor
                         flags = COLOR_PAIR(o.hasFocus ? 15 : 30)
                         o.data.cursorweekofmonth = wrow + 1
+                    elseif !isbday(o.data.holidayCal, dt)
+                        flags = COLOR_PAIR(1)  # red for non-business days
                     end
                     if dt == today()
-                        flags = flags | A_BOLD
+                        flags = flags | A_BOLD | A_UNDERLINE
                     end
                     wattron(o.window, flags)
                     mvwprintw(
@@ -369,6 +396,22 @@ function inject(o::TwObj{TwCalendarData}, token)
         dorefresh = true
     elseif token == "Q"
         o.data.date = o.data.date - Month(3)
+        dorefresh = true
+    elseif token == :alt_c
+        helper = newTwPopup(
+            o.screen.value,
+            HOLIDAY_CALENDAR_NAMES;
+            title = "Holiday Calendar",
+            posy = :center,
+            posx = :center,
+            substrsearch = true,
+            hideunmatched = true,
+        )
+        sel = activateTwObj(helper)
+        unregisterTwObj(o.screen.value, helper)
+        if sel !== nothing
+            o.data.holidayCal = Symbol(sel)
+        end
         dorefresh = true
     elseif token == :enter || token == Symbol("return")
         o.value = o.data.date
