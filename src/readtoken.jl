@@ -71,15 +71,23 @@ function readtoken(nc::NC.NotcursesObject)
             return :nochar  # Unknown special key
         end
 
-        # Apply modifiers
+        # Apply modifiers — check most-specific combos first
         has_shift = ni.shift
         has_ctrl = ni.ctrl
         has_alt = ni.alt
 
-        if has_ctrl && has_shift
+        if has_ctrl && has_shift && has_alt
+            return Symbol("ctrlshiftalt_" * string(base_sym))
+        elseif has_ctrl && has_alt
+            return Symbol("ctrlalt_" * string(base_sym))
+        elseif has_ctrl && has_shift
             return Symbol("ctrlshift_" * string(base_sym))
+        elseif has_alt && has_shift
+            return Symbol("altshift_" * string(base_sym))
         elseif has_ctrl
             return Symbol("ctrl_" * string(base_sym))
+        elseif has_alt
+            return Symbol("alt_" * string(base_sym))
         elseif has_shift
             # shift + function keys
             if base_sym in (:F1, :F2, :F3, :F4, :F5, :F6, :F7, :F8, :F9, :F10, :F11, :F12)
@@ -92,10 +100,6 @@ function readtoken(nc::NC.NotcursesObject)
             else
                 return base_sym
             end
-        elseif has_alt && has_shift
-            return Symbol("altshift_" * string(base_sym))
-        elseif has_alt
-            return Symbol("alt_" * string(base_sym))
         else
             return base_sym
         end
@@ -104,62 +108,39 @@ function readtoken(nc::NC.NotcursesObject)
     # Printable character
     if key isa Char
         c = key
-        # Handle ctrl+letter combinations
-        if ni.ctrl
-            code = UInt32(c)
-            if code == UInt32('a') || code == 0x01
-                return :ctrl_a
-            elseif code == UInt32('b') || code == 0x02
-                return :ctrl_b
-            elseif code == UInt32('c') || code == 0x03
-                return :ctrl_c
-            elseif code == UInt32('d') || code == 0x04
-                return :ctrl_d
-            elseif code == UInt32('e') || code == 0x05
-                return :ctrl_e
-            elseif code == UInt32('f') || code == 0x06
-                return :ctrl_f
-            elseif code == UInt32('g') || code == 0x07
-                return :ctrl_g
-            elseif code == UInt32('h') || code == 0x08
-                return :ctrl_h
-            elseif code == UInt32('k') || code == 0x0b
-                return :ctrl_k
-            elseif code == UInt32('l') || code == 0x0c
-                return :ctrl_l
-            elseif code == UInt32('n') || code == 0x0e
-                return :ctrl_n
-            elseif code == UInt32('o') || code == 0x0f
-                return :ctrl_o
-            elseif code == UInt32('p') || code == 0x10
-                return :ctrl_p
-            elseif code == UInt32('q') || code == 0x11
-                return :ctrl_q
-            elseif code == UInt32('r') || code == 0x12
-                return :ctrl_r
-            elseif code == UInt32('s') || code == 0x13
-                return :ctrl_s
-            elseif code == UInt32('t') || code == 0x14
-                return :ctrl_t
-            elseif code == UInt32('u') || code == 0x15
-                return :ctrl_u
-            elseif code == UInt32('v') || code == 0x16
-                return :ctrl_v
-            elseif code == UInt32('w') || code == 0x17
-                return :ctrl_w
-            elseif code == UInt32('x') || code == 0x18
-                return :ctrl_x
-            elseif code == UInt32('y') || code == 0x19
-                return :ctrl_y
-            elseif code == UInt32('z') || code == 0x1a
-                return :ctrl_z
+        code = UInt32(c)
+        has_ctrl = ni.ctrl
+        has_shift = ni.shift
+        has_alt = ni.alt
+
+        # Handle ctrl flag + letter (lowercase, uppercase, or raw control code)
+        if has_ctrl
+            local base_letter::Union{Char,Nothing} = nothing
+            if code >= UInt32('a') && code <= UInt32('z')
+                base_letter = c
+            elseif code >= UInt32('A') && code <= UInt32('Z')
+                base_letter = lowercase(c)
+            elseif code >= 0x01 && code <= 0x1a
+                base_letter = Char(code + UInt32('a') - 1)
+            end
+            if base_letter !== nothing
+                prefix = if has_shift && has_alt
+                    "ctrlshiftalt_"
+                elseif has_alt
+                    "ctrlalt_"
+                elseif has_shift
+                    "ctrlshift_"
+                else
+                    "ctrl_"
+                end
+                return Symbol(prefix * string(base_letter))
             end
         end
 
-        # Raw control characters (without ctrl flag set)
-        code = UInt32(c)
+        # Raw control characters (terminals that don't set ni.ctrl flag)
+        # Check before alt handler so raw codes aren't misinterpreted
         if code == 0x09
-            return :tab
+            return has_shift ? :shift_tab : :tab
         elseif code == 0x0a
             return :enter
         elseif code == 0x0d
@@ -168,10 +149,24 @@ function readtoken(nc::NC.NotcursesObject)
             return :esc
         elseif code == 0x7f
             return :backspace
-        elseif code < 0x20 && code != 0x09 && code != 0x0a && code != 0x0d
-            # Other control characters
+        elseif code < 0x20
+            # Raw control code from terminal that doesn't set ni.ctrl
             letter = Char(code + UInt32('a') - 1)
-            return Symbol("ctrl_" * string(letter))
+            if has_alt
+                return Symbol("ctrlalt_" * string(letter))
+            else
+                return Symbol("ctrl_" * string(letter))
+            end
+        end
+
+        # Alt + printable character (no ctrl)
+        if has_alt
+            base_str = isletter(c) ? string(lowercase(c)) : string(c)
+            if has_shift
+                return Symbol("altshift_" * base_str)
+            else
+                return Symbol("alt_" * base_str)
+            end
         end
 
         # Regular printable character: return as String

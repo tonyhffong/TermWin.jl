@@ -44,6 +44,7 @@ include("twviewer.jl")
 include("twentry.jl")
 include("readtoken.jl")
 include("twtree.jl")
+include("twfilebrowser.jl")
 include("twfunc.jl")
 include("twpopup.jl")
 include("twmultiselect.jl")
@@ -59,7 +60,7 @@ export trun # experimental
 export TwObj, TwScreen, rootTwScreen
 export newTwScreen
 export vstack, hstack, @twlayout
-export newTwEntry, newTwTree, newTwFunc, newTwViewer
+export newTwEntry, newTwTree, newTwFileBrowser, newTwFunc, newTwViewer
 export newTwCalendar, newTwPopup, newTwMultiSelect
 export newTwDfTable, newTwList
 export newTwSpacer, newTwLabel
@@ -222,6 +223,10 @@ function tshow_(x::WeakRef; kwargs...)
 end
 
 function tshow_(x::T; kwargs...) where {T<:AbstractString}
+    # if the string is a directory path, open the file browser
+    if isdir(x)
+        return newTwFileBrowser(rootTwScreen, string(x); kwargs...)
+    end
     pos = :center
     if length(x) > 100
         pos = :staggered
