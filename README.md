@@ -7,9 +7,9 @@ Requires a 256-colour terminal. `xterm-256color` or iTerm2 on macOS are recommen
 
 ---
 
-## Installation
+## Installation of Notcurses
 
-Install the Julia package and the native Notcurses library.
+Install the Julia package. It should install the notcurses. If it doesn't work you may install directly the native Notcurses library.
 
 **macOS (Homebrew)**
 ```
@@ -26,7 +26,7 @@ Then in Julia:
 ] add TermWin
 ```
 
-**iTerm2 note**: Disable *Preferences → Profiles → Terminal → Modern parser for CSI codes*.
+**MacOS iTerm2 note**: Disable *Preferences → Profiles → Terminal → Modern parser for CSI codes*.
 Map F1–F4 in *Preferences → Profiles → Keys → Key Bindings* to hex sequences
 `0x1b 0x4f 0x50` through `0x1b 0x4f 0x53` so they are not swallowed by the terminal emulator.
 
@@ -42,10 +42,11 @@ Map F1–F4 in *Preferences → Profiles → Keys → Key Bindings* to hex seque
 using TermWin
 
 tshow(42)                          # tree viewer
-tshow(:( f(x) = x^2 + 1 ))        # expression tree
+tshow(:( f(x) = x^2 + 1 ))        # expression tree — useful for understanding Julia's AST
 tshow(TermWin)                     # module browser
 tshow(sort!)                       # method table
 tshow(DataFrame(a=1:3, b=["x","y","z"]))   # DataFrame table
+tshow("path:./")                   # file browser (prefix "path:" required)
 ```
 
 Press **F1** inside any viewer for a full keyboard reference. Press **Esc** to exit.
@@ -102,7 +103,7 @@ TermWin.endsession()
 value = w.value               # nothing if user pressed Esc
 ```
 
-### Text and numeric entry — `newTwEntry`
+### Text, Date and numeric entry — `newTwEntry`
 
 Supports any Julia `DataType`: `String`, `Int`, `Float64`, `Rational`, `Date`, `Bool`, etc.
 Input is validated and converted to the requested type before being stored in `w.value`.
@@ -154,6 +155,30 @@ TermWin.endsession()
 println(w.value)   # Date or nothing
 ```
 
+The calendar highlights today's date (bold + underline) and the current year and month
+header (bold + underline).  Non-business days are shown in red using
+[BusinessDays.jl](https://github.com/felipenoris/BusinessDays.jl).
+Press **Alt-C** to pick a different holiday calendar (e.g. `USSettlement`, `TARGET`,
+`UKSettlement`); the selected calendar is shown in the header.
+
+**Calendar key bindings:**
+
+| Key | Action |
+|:----|:-------|
+| Arrow keys | Move cursor (ncal-style: ←/→ = week, ↑/↓ = day) |
+| `.` | Jump to today |
+| `a` / `e` | Start / end of current month |
+| `A` / `E` | Jan 1 / Dec 31 |
+| `d` / `D` | +1 / −1 day |
+| `w` / `W` | +1 / −1 week |
+| `m` / `M` | +1 / −1 month |
+| `q` / `Q` | +1 / −1 quarter |
+| `y` / PgDn | +1 year |
+| `Y` / PgUp | −1 year |
+| Alt-C | Change holiday calendar |
+| Enter | Confirm selection |
+| Esc | Cancel |
+
 ### Scrollable text viewer — `newTwViewer`
 
 ```julia
@@ -163,6 +188,52 @@ newTwViewer(rootTwScreen, lines; title="Log output", height=0.8, width=0.9)
 activateTwObj(rootTwScreen)
 TermWin.endsession()
 ```
+
+### File browser — `newTwFileBrowser`
+
+Browse a directory tree with a four-column left pane (name, type, size, modified time)
+and a live preview pane for text files on the right.
+
+```julia
+TermWin.initsession()
+w = newTwFileBrowser(rootTwScreen, "/path/to/dir"; title="Browse")
+activateTwObj(rootTwScreen)
+TermWin.endsession()
+println(w.value)   # selected file path, or nothing
+```
+
+Or trigger from `tshow` using the `"path:"` prefix:
+
+```julia
+tshow("path:./src")
+```
+
+Preview is shown automatically for `.jl`, `.txt`, `.md`, `.log`, `.toml`, `.csv`,
+`.json`, `.yaml`, `.yml`, `.xml`, `.cfg`, `.ini`, `.conf`, `.sh`, `.py`, `.c`, `.h`,
+`.rs`, `.go`, and any file named `README`.
+
+**File browser key bindings:**
+
+| Key | Action |
+|:----|:-------|
+| Arrow keys / PgUp / PgDn | Navigate |
+| Space / Enter | Toggle expand (directory) / select (file) |
+| Ctrl-Left | Jump to parent directory |
+| Ctrl-Up / Ctrl-Down | Jump to previous / next sibling |
+| Ctrl-PgUp / Ctrl-PgDn | Scroll preview pane up / down a page |
+| `+` / `-` | Expand / collapse one level |
+| `_` | Collapse all |
+| `.` | Toggle hidden files |
+| `s` | Cycle sort order (name → size → mtime) |
+| `/` | Search |
+| `n` / `p` | Next / previous search match |
+| F6 | Open file in popup viewer |
+| Shift-F6 | Show file stat details |
+| F1 | Full key reference |
+| Esc | Exit |
+
+Key constructor options: `showHidden` (default `false`), `previewSplit` (fraction of
+width for the tree pane, default `0.5`).
 
 ---
 
@@ -183,17 +254,18 @@ end
 
 Short names available inside `@twlayout`:
 
-| Short name    | Constructor        |
-|:--------------|:-------------------|
-| `viewer`      | `newTwViewer`      |
-| `dftable`     | `newTwDfTable`     |
-| `entry`       | `newTwEntry`       |
-| `popup`       | `newTwPopup`       |
-| `multiselect` | `newTwMultiSelect` |
-| `tree`        | `newTwTree`        |
-| `calendar`    | `newTwCalendar`    |
-| `spacer`      | `newTwSpacer`      |
-| `label`       | `newTwLabel`       |
+| Short name    | Constructor          |
+|:--------------|:---------------------|
+| `viewer`      | `newTwViewer`        |
+| `dftable`     | `newTwDfTable`       |
+| `entry`       | `newTwEntry`         |
+| `popup`       | `newTwPopup`         |
+| `multiselect` | `newTwMultiSelect`   |
+| `tree`        | `newTwTree`          |
+| `calendar`    | `newTwCalendar`      |
+| `filebrowser` | `newTwFileBrowser`   |
+| `spacer`      | `newTwSpacer`        |
+| `label`       | `newTwLabel`         |
 
 Any other expression is passed through unchanged, so you can nest `vstack`/`hstack`
 calls inside the block.
@@ -214,6 +286,23 @@ end
 
 `height` and `width` accept either an integer (rows/columns) or a float in `(0,1]`
 (fraction of the parent's size).
+
+### Layout labels and spacers
+
+Inside any layout container or `@twlayout` block:
+
+```julia
+@twlayout :vertical begin
+    label("Section header"; style=:header)        # bold yellow, acts as a title
+    label("──────────────"; style=:divider)        # ruled divider line
+    label("Plain note";     style=:plain)          # default unstyled text
+    spacer(; height=1)                             # blank row
+    dftable(df; height=0.8)
+end
+```
+
+`style` values: `:plain` (default), `:header` (bold yellow), `:divider` (white/dark-gray
+with embedded `── text ────` rule).
 
 ---
 
@@ -284,7 +373,7 @@ tshow(Base)
 ```julia
 tshow(sort!)                     # searchable, sortable methods table
 tshow(methods(sort!))            # same
-tshow(methodswith(AbstractArray))
+tshow(methods(AbstractArray))
 ```
 
 ### DataFrames
@@ -324,6 +413,28 @@ More elaborate example:
 
 `tshow` returns the widget object. Call `tshow(widget)` again to re-display it with
 its previous state (pivot selections, column order, etc.) preserved.
+
+---
+
+## Tree viewer keyboard reference
+
+The tree viewer (`tshow` on any non-DataFrame value) supports the following navigation:
+
+| Key | Action |
+|:----|:-------|
+| Arrow keys / PgUp / PgDn | Standard navigation |
+| Space / Enter | Toggle node expansion |
+| Ctrl-Left | Jump to parent node |
+| Ctrl-Up / Ctrl-Down | Jump to previous / next sibling at the same level |
+| Ctrl-Right | Jump to end of line |
+| Home / End | Jump to first / last row |
+| `+` / `-` | Expand / collapse one level |
+| `_` | Collapse all |
+| `/` | Search dialog |
+| `n` / `p` | Next / previous search match |
+| F6 | Open value in popup viewer |
+| Shift-F6 | Open type in popup viewer |
+| `m` | (Module only) toggle exported vs all names |
 
 ---
 
@@ -392,9 +503,9 @@ Switch views inside the DataFrame viewer with the **v** key.
 
 ---
 
-## Keyboard reference
+## Universal keyboard reference
 
-### Universal
+### All widgets
 
 | Key | Action |
 |:----|:-------|
@@ -481,13 +592,21 @@ config = widget.value   # Dict or nothing
 The `test/` directory contains standalone demo scripts:
 
 ```
-julia --project=. test/entrytest.jl       # numeric entry
-julia --project=. test/popuptest.jl       # single-select popup
-julia --project=. test/multiselect.jl     # multi-select
-julia --project=. test/caltest.jl         # date picker
-julia --project=. test/viewertest.jl      # text viewer
-julia --project=. test/formtest.jl        # composable data-entry form
-julia --project=. test/buildertest.jl     # @twlayout with DataFrame + viewer
-julia --project=. test/dataframe.jl       # DataFrame pivot viewer
-julia --project=. test/list.jl            # manual layout with newTwList
+julia --project=. test/entry_num_tick.jl        # numeric entry with shift-up/down to modify by tick
+julia --project=. test/entrystring.jl           # string entry
+julia --project=. test/entrydate.jl             # date entry
+julia --project=. test/popup_simpleselect.jl    # single-select popup
+julia --project=. test/popup_fuzzy.jl           # popup with substring search filter
+julia --project=. test/popup_quickselect.jl     # popup with quick-jump by letter
+julia --project=. test/popup_allownew.jl        # popup with free-text entry
+julia --project=. test/multiselect.jl           # multi-select list
+julia --project=. test/caltest.jl               # date picker with holiday calendar
+julia --project=. test/textviewertest.jl        # scrollable text viewer
+julia --project=. test/filebrowser.jl           # file browser (tshow "path:" shortcut)
+julia --project=. test/formlayout_test.jl       # composable data-entry form
+julia --project=. test/formlayout_test2.jl      # form with divider labels
+julia --project=. test/buildertest.jl           # @twlayout with DataFrame + viewer
+julia --project=. test/dataframe.jl             # DataFrame pivot viewer
+julia --project=. test/entry_listofthings.jl    # manual layout with newTwList
+julia --project=. test/keystrokes.jl            # interactive key/mouse/unicode tester
 ```
