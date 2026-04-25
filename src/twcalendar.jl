@@ -358,10 +358,10 @@ function inject(o::TwObj{TwCalendarData}, token)
     elseif token == "D"
         o.data.date = o.data.date - Day(1)
         dorefresh = true
-    elseif token == "y"
+    elseif token == "y" || token == :pagedown
         o.data.date = o.data.date + Year(1)
         dorefresh = true
-    elseif token == "Y"
+    elseif token == "Y" || token == :pageup
         o.data.date = o.data.date - Year(1)
         dorefresh = true
     elseif token == "q"
