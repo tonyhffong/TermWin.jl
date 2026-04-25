@@ -4,6 +4,10 @@ Arrow keys : standard navigation
 <spc>,<rtn>: toggle dir / select file
 Home       : jump to the start
 End        : jump to the end
+ctrl_left  : jump to parent directory
+ctrl_up    : jump to previous sibling
+ctrl_down  : jump to next sibling
+ctrl-PgUp/Dn: pageup/down in preview pane
 +, -       : expand/collapse one level
 _          : collapse all
 /          : search dialog
@@ -12,7 +16,6 @@ F6         : preview file in popup
 .          : toggle hidden files
 s          : cycle sort (name/size/mtime)
 n, p       : next/previous search match
-Ctrl-Up/Dn : scroll preview pane
 """
 defaultFileBrowserBottomText = "F1:help <spc><rtn>:toggle F6:view /:search .:hidden s:sort"
 
@@ -848,26 +851,64 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             dorefresh = true
         end
     elseif token == :ctrl_up
-        # scroll preview pane up
-        if o.data.previewTop > 1
-            o.data.previewTop -= 1
-            dorefresh = true
-        else
+        # Move to the previous sibling (same depth, same parent directory)
+        if o.data.datalistlen == 0
             beep()
+        else
+            currentstack = o.data.datalist[o.data.currentLine][5]
+            depth = length(currentstack)
+            if depth == 0
+                beep()
+            else
+                parentstack = currentstack[1:end-1]
+                found = false
+                for i = o.data.currentLine-1:-1:1
+                    rowstack = o.data.datalist[i][5]
+                    if length(rowstack) < depth
+                        break
+                    end
+                    if length(rowstack) == depth && rowstack[1:end-1] == parentstack
+                        o.data.currentLine = i
+                        checkTop()
+                        dorefresh = true
+                        found = true
+                        break
+                    end
+                end
+                if !found
+                    beep()
+                end
+            end
         end
     elseif token == :ctrl_down
-        # scroll preview pane down
-        curpath = o.data.datalistlen > 0 ? o.data.datalist[o.data.currentLine][8] : ""
-        if curpath != "" && haskey(o.data.previewCache, curpath)
-            maxTop = max(1, length(o.data.previewCache[curpath]) - viewContentHeight + 1)
-            if o.data.previewTop < maxTop
-                o.data.previewTop += 1
-                dorefresh = true
-            else
-                beep()
-            end
-        else
+        # Move to the next sibling (same depth, same parent directory)
+        if o.data.datalistlen == 0
             beep()
+        else
+            currentstack = o.data.datalist[o.data.currentLine][5]
+            depth = length(currentstack)
+            if depth == 0
+                beep()
+            else
+                parentstack = currentstack[1:end-1]
+                found = false
+                for i = o.data.currentLine+1:o.data.datalistlen
+                    rowstack = o.data.datalist[i][5]
+                    if length(rowstack) < depth
+                        break
+                    end
+                    if length(rowstack) == depth && rowstack[1:end-1] == parentstack
+                        o.data.currentLine = i
+                        checkTop()
+                        dorefresh = true
+                        found = true
+                        break
+                    end
+                end
+                if !found
+                    beep()
+                end
+            end
         end
     elseif token == :ctrl_pageup
         # page up in preview pane
@@ -903,11 +944,29 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             beep()
         end
     elseif token == :ctrl_left
-        if o.data.currentLeft > 1
-            o.data.currentLeft = 1
-            dorefresh = true
-        else
+        # Move to the parent directory node
+        if o.data.datalistlen == 0
             beep()
+        else
+            currentstack = o.data.datalist[o.data.currentLine][5]
+            if isempty(currentstack)
+                beep()
+            else
+                parentstack = currentstack[1:end-1]
+                found = false
+                for i = o.data.currentLine-1:-1:1
+                    if o.data.datalist[i][5] == parentstack
+                        o.data.currentLine = i
+                        checkTop()
+                        dorefresh = true
+                        found = true
+                        break
+                    end
+                end
+                if !found
+                    beep()
+                end
+            end
         end
     elseif token == :right
         o.data.currentLeft += 1

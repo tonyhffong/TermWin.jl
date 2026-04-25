@@ -4,14 +4,16 @@ Arrow keys : standard navigation
 <spc>,<rtn>: toggle leaf expansion
 Home       : jump to the start
 End        : jump to the end
-ctrl_arrow : jump to the start/end of the line
+ctrl_left  : jump to parent node
+ctrl_up    : jump to previous sibling
+ctrl_down  : jump to next sibling
 +, -       : expand/collapse one level
 _          : collapse all
 /          : search dialog
 F6         : popup window for value
-    Shift-F6   : popup window for type
-            n, p       : Move to next/previous matched line
-            m          : (Module Only) toggle export-only vs all names
+Shift-F6   : popup window for type
+n, p       : Move to next/previous matched line
+m          : (Module Only) toggle export-only vs all names
 """
 defaultTreeBottomText = "F1:help <spc><rtn>:toggle F6:popupValue +:expand -:collaps /:search"
 
@@ -707,22 +709,81 @@ function inject(o::TwObj{TwTreeData}, token)
             beep()
         end
     elseif token == :ctrl_left
-        if o.data.currentLeft > 1
-            o.data.currentLeft = 1
-            dorefresh = true
-        else
+        # Move to the parent node (one level up in the tree)
+        currentstack = o.data.datalist[o.data.currentLine][4]
+        if isempty(currentstack)
             beep()
+        else
+            parentstack = currentstack[1:end-1]
+            found = false
+            for i = o.data.currentLine-1:-1:1
+                if o.data.datalist[i][4] == parentstack
+                    o.data.currentLine = i
+                    checkTop()
+                    dorefresh = true
+                    found = true
+                    break
+                end
+            end
+            if !found
+                beep()
+            end
+        end
+    elseif token == :ctrl_up
+        # Move to the previous sibling (same depth, same parent)
+        currentstack = o.data.datalist[o.data.currentLine][4]
+        depth = length(currentstack)
+        if depth == 0
+            beep()
+        else
+            parentstack = currentstack[1:end-1]
+            found = false
+            for i = o.data.currentLine-1:-1:1
+                rowstack = o.data.datalist[i][4]
+                if length(rowstack) < depth
+                    break  # passed the parent level, no more siblings above
+                end
+                if length(rowstack) == depth && rowstack[1:end-1] == parentstack
+                    o.data.currentLine = i
+                    checkTop()
+                    dorefresh = true
+                    found = true
+                    break
+                end
+            end
+            if !found
+                beep()
+            end
+        end
+    elseif token == :ctrl_down
+        # Move to the next sibling (same depth, same parent)
+        currentstack = o.data.datalist[o.data.currentLine][4]
+        depth = length(currentstack)
+        if depth == 0
+            beep()
+        else
+            parentstack = currentstack[1:end-1]
+            found = false
+            for i = o.data.currentLine+1:o.data.datalistlen
+                rowstack = o.data.datalist[i][4]
+                if length(rowstack) < depth
+                    break  # passed the end of the parent's children
+                end
+                if length(rowstack) == depth && rowstack[1:end-1] == parentstack
+                    o.data.currentLine = i
+                    checkTop()
+                    dorefresh = true
+                    found = true
+                    break
+                end
+            end
+            if !found
+                beep()
+            end
         end
     elseif token == :right
         if o.data.currentLeft + o.width - 2*o.borderSizeH < viewContentWidth
             o.data.currentLeft += 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :ctrl_right
-        if o.data.currentLeft + o.width - 2*o.borderSizeH < viewContentWidth
-            o.data.currentLeft = viewContentWidth - o.width + 2*o.borderSizeH
             dorefresh = true
         else
             beep()
