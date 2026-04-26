@@ -1,18 +1,18 @@
 defaultFileBrowserHelpText = """
-PgUp/PgDn,
-Arrow keys : standard navigation
+PgUp/PgDn, Up/Dn  : standard navigation
 <spc>,<rtn>: toggle dir / select file
 Home       : jump to the start
 End        : jump to the end
 ctrl_left  : jump to parent directory
 ctrl_up    : jump to previous sibling
 ctrl_down  : jump to next sibling
-ctrl-PgUp/Dn: pageup/down in preview pane
+ctrl-PgUp/Dn      : pageup/down in preview pane
+ctrl-scroll up/dn : scroll up/down in preview pane
 +, -       : expand/collapse one level
 _          : collapse all
 /          : search dialog
 F6         : preview file in popup
-  Shift-F6 : show file stat details
+Shift-F6   : show file stat details
 .          : toggle hidden files
 s          : cycle sort (name/size/mtime)
 n, p       : next/previous search match
@@ -984,6 +984,28 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             dorefresh = moveby(-(round(Int, viewContentHeight / 5)))
         elseif mstate == :scroll_down
             dorefresh = moveby(round(Int, viewContentHeight / 5))
+        elseif mstate == :ctrl_scroll_up
+            # scroll preview pane up by one line
+            if o.data.previewTop > 1
+		o.data.previewTop = max( 1, o.data.previewTop - 5 )
+                dorefresh = true
+            else
+                beep()
+            end
+        elseif mstate == :ctrl_scroll_down
+            # scroll preview pane down by one line
+            curpath = o.data.datalistlen > 0 ? o.data.datalist[o.data.currentLine][8] : ""
+            if curpath != "" && haskey(o.data.previewCache, curpath)
+                maxTop = max(1, length(o.data.previewCache[curpath]) - viewContentHeight + 1)
+                if o.data.previewTop < maxTop
+		    o.data.previewTop = min(maxTop, o.data.previewTop + 5)
+                    dorefresh = true
+                else
+                    beep()
+                end
+            else
+                beep()
+            end
         elseif mstate == :button1_pressed
             begy, begx = getwinbegyx(o.window)
             relx = x - begx

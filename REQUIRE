@@ -1,8 +1,0 @@
-Lint 0.1.60
-julia 0.3.11
-Compat 0.1
-Formatting 0.1.2
-DataArrays
-DataFrames
-DataFramesMeta
-Lazy

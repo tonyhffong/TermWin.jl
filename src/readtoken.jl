@@ -87,16 +87,37 @@ function readtoken(nc::NC.NotcursesObject)
         return :nochar
     end
 
+    # Apply modifiers — check most-specific combos first
+    has_shift = ni.shift
+    has_ctrl = ni.ctrl
+    has_alt = ni.alt
+    #########################################################
+    # always in (ctrl)?(alt)?(shift)?_ format (in this order!)
+    #########################################################
+    modifierprefix = ""
+    if has_ctrl
+        modifierprefix = modifierprefix * "ctrl"
+    end
+    if has_alt
+	modifierprefix = modifierprefix * "alt"
+    end
+    if has_shift
+        modifierprefix = modifierprefix * "shift"
+    end
+    if length( modifierprefix ) > 0
+	modifierprefix = modifierprefix * "_"
+    end
+
     # Mouse events
     if key isa NC.Key.T
         if key == NC.Key.BUTTON1
             _last_mouse_event[] = (:button1_pressed, Int(ni.x), Int(ni.y), nothing)
             return :KEY_MOUSE
         elseif key == NC.Key.BUTTON4 || key == NC.Key.SCROLL_UP
-            _last_mouse_event[] = (:scroll_up, Int(ni.x), Int(ni.y), nothing)
+	    _last_mouse_event[] = ( Symbol( modifierprefix * "scroll_up" ), Int(ni.x), Int(ni.y), nothing)
             return :KEY_MOUSE
         elseif key == NC.Key.BUTTON5 || key == NC.Key.SCROLL_DOWN
-            _last_mouse_event[] = (:scroll_down, Int(ni.x), Int(ni.y), nothing)
+	    _last_mouse_event[] = ( Symbol( modifierprefix * "scroll_down"), Int(ni.x), Int(ni.y), nothing)
             return :KEY_MOUSE
         elseif key == NC.Key.MOTION
             return :nochar  # Ignore pure mouse motion
@@ -109,51 +130,16 @@ function readtoken(nc::NC.NotcursesObject)
         if base_sym === nothing
             return :nochar  # Unknown special key
         end
-
-        # Apply modifiers — check most-specific combos first
-        has_shift = ni.shift
-        has_ctrl = ni.ctrl
-        has_alt = ni.alt
-
-        if has_ctrl && has_shift && has_alt
-            return Symbol("ctrlshiftalt_" * string(base_sym))
-        elseif has_ctrl && has_alt
-            return Symbol("ctrlalt_" * string(base_sym))
-        elseif has_ctrl && has_shift
-            return Symbol("ctrlshift_" * string(base_sym))
-        elseif has_alt && has_shift
-            return Symbol("altshift_" * string(base_sym))
-        elseif has_ctrl
-            return Symbol("ctrl_" * string(base_sym))
-        elseif has_alt
-            return Symbol("alt_" * string(base_sym))
-        elseif has_shift
-            # shift + function keys
-            if base_sym in (:F1, :F2, :F3, :F4, :F5, :F6, :F7, :F8, :F9, :F10, :F11, :F12)
-                return Symbol("shift_" * string(base_sym))
-            elseif base_sym in
-                   (:up, :down, :left, :right, :home, Symbol("end"), :pageup, :pagedown)
-                return Symbol("shift_" * string(base_sym))
-            elseif base_sym == :tab
-                return :shift_tab
-            else
-                return base_sym
-            end
-        else
-            return base_sym
-        end
+	return Symbol( modifierprefix * String(base_sym) ) 
     end
 
     # Printable character
     if key isa Char
         c = key
         code = UInt32(c)
-        has_ctrl = ni.ctrl
-        has_shift = ni.shift
-        has_alt = ni.alt
 
         # Handle ctrl flag + letter (lowercase, uppercase, or raw control code)
-        if has_ctrl
+	if length(modifierprefix) > 0 && modifierprefix != "shift_"
             local base_letter::Union{Char,Nothing} = nothing
             if code >= UInt32('a') && code <= UInt32('z')
                 base_letter = c
@@ -163,16 +149,7 @@ function readtoken(nc::NC.NotcursesObject)
                 base_letter = Char(code + UInt32('a') - 1)
             end
             if base_letter !== nothing
-                prefix = if has_shift && has_alt
-                    "ctrlshiftalt_"
-                elseif has_alt
-                    "ctrlalt_"
-                elseif has_shift
-                    "ctrlshift_"
-                else
-                    "ctrl_"
-                end
-                return Symbol(prefix * string(base_letter))
+		return Symbol(modifierprefix * string(base_letter))
             end
         end
 
@@ -191,11 +168,11 @@ function readtoken(nc::NC.NotcursesObject)
         elseif code < 0x20
             # Raw control code from terminal that doesn't set ni.ctrl
             letter = Char(code + UInt32('a') - 1)
-            if has_alt
-                return Symbol("ctrlalt_" * string(letter))
-            else
-                return Symbol("ctrl_" * string(letter))
-            end
+	    if length(modifierprefix)>0 && modifierprefix != "shift_"
+                return Symbol(modifierprefix * string(letter))
+	    else
+		return string(letter)
+	    end
         end
 
         # Resolve the effective character using ncinput.eff_text, which
@@ -215,13 +192,9 @@ function readtoken(nc::NC.NotcursesObject)
         end
 
         # Alt + printable character (no ctrl)
-        if has_alt
+	if modifierprefix == "alt_"
             base_str = isletter(effective_c) ? string(lowercase(effective_c)) : string(effective_c)
-            if has_shift
-                return Symbol("altshift_" * base_str)
-            else
-                return Symbol("alt_" * base_str)
-            end
+            return Symbol(base_str)
         end
 
         # Regular printable character: return as String
