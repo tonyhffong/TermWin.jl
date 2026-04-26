@@ -228,7 +228,11 @@ function tshow_(x::T; kwargs...) where {T<:AbstractString}
     # we put a cap in the length of the possible path. isdir will throw anyway if the string is malformed / too long
     s = string(x)
     if startswith(s, "path:") && length(s) < 400 && isdir(s[6:end])
-        return newTwFileBrowser(rootTwScreen, s[6:end]; title = s[6:end])
+	p = abspath(s[6:end])
+	if basename(p)==""
+	    p = dirname(p)
+	end
+        return newTwFileBrowser(rootTwScreen, p; title = p)
     end
     pos = :center
     if length(x) > 100

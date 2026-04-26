@@ -1,6 +1,7 @@
 defaultFileBrowserHelpText = """
 PgUp/PgDn, Up/Dn  : standard navigation
 <spc>,<rtn>: toggle dir / select file
+..         : go up one directory level
 Home       : jump to the start
 End        : jump to the end
 ctrl_left  : jump to parent directory
@@ -150,6 +151,14 @@ function file_tree_data(
     showHidden::Bool,
     sortBy::Symbol,
 )
+    # Prepend ".." navigation entry at the top level only
+    if isempty(stack)
+        parentpath = dirname(rootpath)
+        if parentpath != rootpath  # not already at filesystem root
+            push!(list, ("../", "<dir>", "", "", Any[], :single, Int[], parentpath, true))
+        end
+    end
+
     isexp = haskey(openstatemap, rootpath) && openstatemap[rootpath]
     local entries
     try
@@ -570,6 +579,36 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             updateFileBrowserDimensions(o)
         end
 
+    navigate_up =
+        () -> begin
+            parentpath = dirname(o.data.rootpath)
+            if parentpath == o.data.rootpath
+                beep()
+                return false
+            end
+            o.data.rootpath = parentpath
+            o.title = parentpath
+            o.data.openstatemap = Dict{String,Bool}()
+            o.data.openstatemap[o.data.rootpath] = true
+            o.data.datalist = Any[]
+            file_tree_data(
+                o.data.rootpath,
+                o.data.datalist,
+                o.data.openstatemap,
+                Any[],
+                Int[],
+                o.data.showHidden,
+                o.data.sortBy,
+            )
+            updateFileBrowserDimensions(o)
+            o.data.currentLine = 1
+            o.data.currentTop = 1
+            o.data.currentLeft = 1
+            o.data.previewPath = ""
+            o.data.previewTop = 1
+            return true
+        end
+
     checkTop =
         () -> begin
             if o.data.currentTop < 1
@@ -636,7 +675,11 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             expandhint = o.data.datalist[o.data.currentLine][6]
             is_dir = o.data.datalist[o.data.currentLine][9]
             fullpath = o.data.datalist[o.data.currentLine][8]
-            if is_dir
+            if fullpath == dirname(o.data.rootpath) && o.data.datalist[o.data.currentLine][1] == "../"
+                # ".." entry — navigate to parent directory
+                navigate_up()
+                dorefresh = true
+            elseif is_dir
                 # toggle expand/collapse
                 if expandhint == :single
                     beep()
