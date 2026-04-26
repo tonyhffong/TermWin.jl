@@ -439,6 +439,8 @@ function testkeydialog()
     global nc_context, rootplane
     width = 42
     initsession()
+    NC.erase(rootplane)
+    NC.render(nc_context)
     win = winnewcenter(6, width)
     box(win, 0, 0)
     title = "Test Key/Mouse/Unicode"
@@ -452,8 +454,12 @@ function testkeydialog()
         if token == :nochar
             continue
         end
-        k = ""
+        werase(win)
+        box(win, 0, 0)
+        mvwprintw(win, 0, Int((width-length(title))>>1), "%s", title)
+        mvwprintw(win, 5, Int((width-length(keyhint))>>1), "%s", keyhint)
         if isa(token, AbstractString)
+            k = ""
             for c in token
                 if isprint(c) && isascii(c)
                     k *= string(c)
@@ -461,24 +467,19 @@ function testkeydialog()
                     k *= @sprintf("{%x}", UInt(c))
                 end
             end
-            k = k * repeat(" ", max(0, 21-length(k)))
             mvwprintw(win, 1, 2, "%s", k)
             if 1 <= length(token) == 1 && UInt64(token[1]) <= 127
-                mvwprintw(win, 2, 2, "%s", "acs_val:        ")
                 ch = get_acs_val(token[1])
-                mvwprintw(win, 2, 11, "%s", string(ch))
+                mvwprintw(win, 2, 2, "%s", "acs_val:" * string(ch))
             else
-                mvwprintw(win, 2, 2, "%s        ", "print  :" * string(token[1]))
+                mvwprintw(win, 2, 2, "%s", "print  :" * string(token[1]))
             end
         elseif token == :KEY_MOUSE
             (state, x, y, bs) = getmouse()
-            mvwprintw(win, 1, 2, "%s", @sprintf("x:%d y:%d   ", x, y))
-            mvwprintw(win, 2, 2, ":%s      ", string(state))
+            mvwprintw(win, 1, 2, "%s", @sprintf("x:%d y:%d", x, y))
+            mvwprintw(win, 2, 2, "%s", ":" * string(state))
         elseif isa(token, Symbol)
-            k = ":" * string(token)
-            mvwprintw(win, 2, 2, "%s", "                ")
-            k = k * repeat(" ", max(0, 21-length(k)))
-            mvwprintw(win, 1, 2, "%s", k)
+            mvwprintw(win, 1, 2, "%s", ":" * string(token))
         end
         NC.render(nc_context)
     end
