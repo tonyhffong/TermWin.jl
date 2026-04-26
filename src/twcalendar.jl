@@ -103,7 +103,13 @@ function newTwCalendar(
     obj.data.ncalStyle = ncalStyle
     alignxy!(obj, h, w, posx, posy)
     configure_newwinpanel!(obj)
+    obj.value = dt
     obj
+end
+
+function apply_default!(obj::TwObj{TwCalendarData}, value::Date)
+    obj.data.date = value
+    obj.value = value
 end
 
 function draw(o::TwObj{TwCalendarData})

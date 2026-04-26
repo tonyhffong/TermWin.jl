@@ -88,11 +88,21 @@ function newTwMultiSelect(
     link_parent_child(scr, obj, h, w, posy, posx)
     obj.formkey = key
 
+    if !isempty(obj.data.selected)
+        obj.value = copy(obj.data.selected)
+    end
+
     obj.data.searchbox =
         newTwEntry(obj, String, width = minwidth, posy = :bottom, posx = 1, box = false)
     obj.data.searchbox.title = "?"
     obj.data.searchbox.hasFocus = false
     obj
+end
+
+function apply_default!(obj::TwObj{TwMultiSelectData}, value::AbstractVector)
+    obj.data.selected = String[string(v) for v in value]
+    rebuild_select_datalist(obj)
+    obj.value = copy(obj.data.selected)
 end
 
 function rebuild_select_datalist(o::TwObj{TwMultiSelectData})
@@ -359,8 +369,10 @@ function inject(o::TwObj{TwMultiSelectData}, token)
         end
         dorefresh = true
     elseif token == :enter || token == Symbol("return")
-        o.value = o.data.selected
+        o.value = copy(o.data.selected)
         retcode = :exit_ok
+    elseif token == :focus_off
+        o.value = copy(o.data.selected)
     else
         retcode = :pass # I don't know what to do with it
     end

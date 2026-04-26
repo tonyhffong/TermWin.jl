@@ -50,6 +50,7 @@ function vstack(
     width::Real = 1.0,
     posy::Any = :top,
     posx::Any = :left,
+    defaults = nothing,
     kwargs...,
 )
     list = newTwList(
@@ -63,6 +64,7 @@ function vstack(
     )
     f(list)
     update_list_canvas(list)    # finalize canvas after all children are sized
+    defaults !== nothing && apply_defaults!(list, defaults)
     list
 end
 
@@ -80,6 +82,7 @@ function hstack(
     width::Real = 1.0,
     posy::Any = :top,
     posx::Any = :left,
+    defaults = nothing,
     kwargs...,
 )
     list = newTwList(
@@ -93,6 +96,7 @@ function hstack(
     )
     f(list)
     update_list_canvas(list)
+    defaults !== nothing && apply_defaults!(list, defaults)
     list
 end
 
@@ -179,7 +183,7 @@ function _twlayout_impl(orientation, opts, body)
     # --- Optional options tuple (height=, width=, title=, ...) ---
     # A single kwarg: (title=x)   → Expr(:(=), :title, x)
     # Multiple kwargs: (h=x, w=y) → Expr(:tuple, Expr(:(=),:h,x), Expr(:(=),:w,y))
-    opt_args = if opts !== nothing
+    all_opt_args = if opts !== nothing
         if opts isa Expr && opts.head == :tuple
             opts.args
         elseif opts isa Expr && opts.head == :(=)
@@ -189,6 +193,18 @@ function _twlayout_impl(orientation, opts, body)
         end
     else
         Expr[]
+    end
+
+    # Extract `defaults=...` — handled separately; not forwarded to newTwList
+    defaults_expr = nothing
+    opt_args = Expr[]
+    for arg in all_opt_args
+        nm = arg isa Expr && arg.head in (:(=), :kw) ? arg.args[1] : nothing
+        if nm == :defaults
+            defaults_expr = esc(arg.args[2])
+        else
+            push!(opt_args, arg)
+        end
     end
 
     # Collect names the user explicitly specified so we don't duplicate defaults
@@ -225,11 +241,17 @@ function _twlayout_impl(orientation, opts, body)
     newTwList_ref = GlobalRef(_TWBUILDER_MODULE, :newTwList)
     rootTwScreen_ref = GlobalRef(_TWBUILDER_MODULE, :rootTwScreen)
     update_canvas_ref = GlobalRef(_TWBUILDER_MODULE, :update_list_canvas)
+    apply_defaults_ref = GlobalRef(_TWBUILDER_MODULE, :apply_defaults!)
+
+    # defaults_sym holds the evaluated defaults expression (or nothing)
+    defaults_sym = gensym("twdefaults")
 
     return quote
         local $list_sym = $newTwList_ref($rootTwScreen_ref; $(list_kwargs...))
         $(transformed...)
         $update_canvas_ref($list_sym)
+        local $defaults_sym = $defaults_expr
+        $defaults_sym !== nothing && $apply_defaults_ref($list_sym, $defaults_sym)
         $list_sym
     end
 end

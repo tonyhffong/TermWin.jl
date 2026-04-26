@@ -295,6 +295,16 @@ function collect_form_values(o::TwObj{TwListData})::Dict{Symbol,Any}
     result
 end
 
+function apply_defaults!(o::TwObj{TwListData}, defaults::Dict{Symbol,Any})
+    for w in o.data.widgets
+        if objtype(w) == :List
+            apply_defaults!(w, defaults)
+        elseif w.formkey !== nothing && haskey(defaults, w.formkey)
+            apply_default!(w, defaults[w.formkey])
+        end
+    end
+end
+
 function inject(o::TwObj{TwListData}, token::Any)
     retcode = :pass
     dorefresh = false
@@ -550,6 +560,11 @@ function inject(o::TwObj{TwListData}, token::Any)
         dorefresh = true
         retcode = :got_it
     elseif token == :F10 && isrootlist && o.data.isForm
+        # Flush any in-progress state from the currently focused widget
+        # (e.g. multiselect Space-bar selections not yet committed via Enter)
+        if focus != 0
+            inject(lowest_widget(o), :focus_off)
+        end
         o.value = collect_form_values(o)
         dorefresh = true
         retcode = :exit_ok

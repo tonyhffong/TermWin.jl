@@ -19,15 +19,15 @@ TermWin.initsession()
 form = @twlayout :vertical (form=true, title="Server Config", height=0.75, width=0.55) begin
 
     label("Connection";  style=:header)
-    entry(String; key=:host, title="Host",    width=35)
-    entry(Int;    key=:port, title="Port",    width=10)
-    entry(String; key=:db,   title="Database",width=25)
+    entry(String; key=:host, title="Host",     width=35, titlewidth=10)
+    entry(Int;    key=:port, title="Port",     width=18, titlewidth=10)
+    entry(String; key=:db,   title="Database", width=35, titlewidth=10)
 
     spacer()
 
     label("Credentials"; style=:divider)
-    entry(String; key=:user, title="Username", width=20)
-    entry(String; key=:pass, title="Password", width=20)
+    entry(String; key=:user, title="Username", width=25, titlewidth=10)
+    entry(String; key=:pass, title="Password", width=25, titlewidth=10)
 
     spacer()
 

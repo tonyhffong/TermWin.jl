@@ -19,8 +19,8 @@ using TermWin
 TermWin.initsession()
 
 form = @twlayout :vertical (form=true, title="New User", height=0.6, width=0.5) begin
-    entry(String; key=:username, title="Username",   width=28)
-    entry(Int;    key=:age,      title="Age",         width=10)
+    entry(String; key=:username, title="Username",   width=28, titlewidth=10)
+    entry(Int;    key=:age,      title="Age",        width=18, titlewidth=10)
     popup(["Engineering", "Sales", "Operations", "HR"];
           key=:department, title="Department")
     multiselect(["read", "write", "exec"];
@@ -38,8 +38,8 @@ TermWin.endsession()
 # TermWin.initsession()
 #
 # form = vstack(rootTwScreen; form=true, title="New User", height=0.6, width=0.5) do parent
-#     newTwEntry(parent, String; key=:username,    title="Username",    width=28)
-#     newTwEntry(parent, Int;    key=:age,         title="Age",         width=10)
+#     newTwEntry(parent, String; key=:username,    title="Username",    width=28, titlewidth=10)
+#     newTwEntry(parent, Int;    key=:age,         title="Age",         width=18, titlewidth=10)
 #     newTwPopup(parent, ["Engineering","Sales","Operations","HR"];
 #                key=:department, title="Department")
 #     newTwMultiSelect(parent, ["read","write","exec"];

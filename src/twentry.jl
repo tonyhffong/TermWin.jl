@@ -47,6 +47,7 @@ mutable struct TwEntryData
     fieldLeftPos::Int # what is the position of the first char on the field
     tickSize::Any
     titleLeft::Bool
+    titlewidth::Int # -1 = natural title length; >=0 = fixed column width via ensure_length
     overwriteMode::Bool
     incomplete::Bool # is the input not yet done?
     limitToWidth::Bool # TODO: not implemented yet
@@ -55,7 +56,7 @@ mutable struct TwEntryData
     stripzeros::Bool
     conversion::String
     function TwEntryData(dt::DataType)
-        o = new(dt, false, "", "", 1, 1, 0, true, false, false, false, -1, true, true, "")
+        o = new(dt, false, "", "", 1, 1, 0, true, -1, false, false, false, -1, true, true, "")
         if dt <: AbstractString
             o.helpText = defaultEntryStringHelpText
             o.conversion = "s"
@@ -95,6 +96,7 @@ function newTwEntry(
     showHelp = true,
     titleLeft = true,
     title = "",
+    titlewidth::Int = -1,
     precision = -1,
     stripzeros = (precision == -1),
     conversion = "",
@@ -104,6 +106,7 @@ function newTwEntry(
     data = TwEntryData(dt)
     data.showHelp = showHelp
     data.titleLeft = titleLeft
+    data.titlewidth = titlewidth
     data.precision = precision
     data.stripzeros = stripzeros
     if conversion != ""
@@ -123,9 +126,20 @@ function newTwEntry(
     obj
 end
 
+function apply_default!(obj::TwObj{TwEntryData}, value)
+    value === nothing && return
+    data = obj.data
+    (fieldcount, _) = getFieldDimension(obj)
+    s = data.valueType <: AbstractString ? string(value) : myNumFormat(value, data, fieldcount)
+    data.inputText = s
+    data.cursorPos = textwidth(s) + 1
+    obj.value = value
+end
+
 function getFieldDimension(o::TwObj)
     if o.data.titleLeft && !isempty(o.title)
-        fieldcount = o.width - length(o.title) - o.borderSizeH * 2
+        tw = o.data.titlewidth >= 0 ? o.data.titlewidth : length(o.title)
+        fieldcount = o.width - tw - o.borderSizeH * 2
         remainspacecount = fieldcount - textwidth(o.data.inputText)
     else
         fieldcount = o.width - (o.box ? 2 : 0)
@@ -147,8 +161,13 @@ function draw(o::TwObj{TwEntryData})
 
     fieldcount, remainspacecount = getFieldDimension(o)
     if o.data.titleLeft && !isempty(o.title)
-        mvwprintw(o.window, starty, startx, "%s", o.title)
-        startx += length(o.title)
+        if o.data.titlewidth >= 0
+            mvwprintw(o.window, starty, startx, "%s", ensure_length(o.title, o.data.titlewidth))
+            startx += o.data.titlewidth
+        else
+            mvwprintw(o.window, starty, startx, "%s", o.title)
+            startx += length(o.title)
+        end
     end
     if o.data.valueType <: Number && o.data.valueType != Bool # right justifed
         if remainspacecount <= 0

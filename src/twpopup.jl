@@ -156,6 +156,17 @@ function newTwPopup(
     obj
 end
 
+function apply_default!(obj::TwObj{TwPopupData}, value)
+    value === nothing && return
+    if value isa Integer
+        obj.data.currentLine = clamp(Int(value), 1, length(obj.data.choices))
+    else
+        idx = findfirst(==(string(value)), obj.data.choices)
+        idx !== nothing && (obj.data.currentLine = idx)
+    end
+    obj.value = obj.data.choices[obj.data.currentLine]
+end
+
 function popup_use_datalist(o::TwObj)
     o.data.selectmode & POPUPHIDEUNMATCHED != 0 || o.data.selectmode & POPUPSORTMATCHED != 0
 end

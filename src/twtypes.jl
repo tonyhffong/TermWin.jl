@@ -180,3 +180,6 @@ end
 
 draw(p::TwObj) = error(string(p) * " draw is undefined.")
 objtype(_::TwObj{T,S}) where {T,S} = S
+
+# Fallback: widget types without an apply_default! method are silently skipped.
+apply_default!(::TwObj, ::Any) = nothing
