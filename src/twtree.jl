@@ -72,8 +72,8 @@ end
 function newTwTree(
     scr::TwObj,
     ex;
-    height::Real = 0.8,
-    width::Real = 0.8,
+    height::Real = 1.0,
+    width::Real = 1.0,
     posy::Any = :staggered,
     posx::Any = :staggered,
     title::String = string(typeof(ex)),
