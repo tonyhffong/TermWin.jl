@@ -53,6 +53,7 @@ include("twcalendar.jl")
 include("twdftable.jl")
 include("twlist.jl")
 include("twlabel.jl")
+include("twedittable.jl")
 include("twbuilder.jl")
 include("precompile.jl")
 
@@ -64,6 +65,7 @@ export vstack, hstack, @twlayout
 export newTwEntry, newTwTree, newTwFileBrowser, newTwFunc, newTwViewer
 export newTwCalendar, newTwPopup, newTwMultiSelect
 export newTwDfTable, newTwList
+export newTwEditTable, TwEditTableCol
 export newTwSpacer, newTwLabel
 
 export uniqvalue, unionall
@@ -261,6 +263,10 @@ function tshow_(df::DataFrame; kwargs...)
     newTwDfTable(rootTwScreen, df; kwargs...)
 end
 
+function tshow_(df::DataFrame,cols::Vector{TwEditTableCol}; kwargs...)
+    newTwEditTable(rootTwScreen, df, cols; kwargs...)
+end
+
 function tshow_(o::TwObj; kwargs...)
     registerTwObj(rootTwScreen, o)
     return o
@@ -332,7 +338,7 @@ function titleof(x::Any)
 end
 
 # it'd return the widget, which can be displayed again.
-function tshow(x; kwargs...)
+function tshow(x...; kwargs...)
     global callcount, nc_context, rootTwScreen, rootplane
     title = extractkwarg!(kwargs, :title, titleof(x))
     widget = nothing
@@ -341,7 +347,7 @@ function tshow(x; kwargs...)
         callcount += 1
         werase(rootplane)
         try
-            widget = Base.invokelatest(tshow_, x; title = title, kwargs...)
+            widget = Base.invokelatest(tshow_, x...; title = title, kwargs...)
             if widget !== nothing
                 activateTwObj(rootTwScreen)
             end

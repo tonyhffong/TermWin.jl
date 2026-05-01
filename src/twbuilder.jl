@@ -116,6 +116,7 @@ const _TW_WIDGET_CTORS = Dict{Symbol,Symbol}(
     :spacer => :newTwSpacer,
     :label => :newTwLabel,
     :filebrowser => :newTwFileBrowser,
+    :edittable => :newTwEditTable,
 )
 
 # Transform one statement from a @twlayout body.
