@@ -1,2 +1,2 @@
 using TermWin
-tshow( "path:../" )
+tshow( "../", "path" )

@@ -225,17 +225,7 @@ function tshow_(x::WeakRef; kwargs...)
     end
 end
 
-function tshow_(x::T; kwargs...) where {T<:AbstractString}
-    # "path:/some/dir" prefix opens the file browser
-    # we put a cap in the length of the possible path. isdir will throw anyway if the string is malformed / too long
-    s = string(x)
-    if startswith(s, "path:") && length(s) < 400 && isdir(s[6:end])
-	p = abspath(s[6:end])
-	if basename(p)==""
-	    p = dirname(p)
-	end
-        return newTwFileBrowser(rootTwScreen, p; title = p)
-    end
+function tshow_(x::String; kwargs...)
     pos = :center
     if length(x) > 100
         pos = :staggered
@@ -243,6 +233,22 @@ function tshow_(x::T; kwargs...) where {T<:AbstractString}
     posx = get(kwargs, :posx, pos)
     posy = get(kwargs, :posy, pos)
     newTwViewer(rootTwScreen, x; posy = posy, posx = posx, kwargs...)
+end
+
+#TODO: support a variety of hint e.g. "url", "json", "xml" ...
+function tshow_(x::String, hint::String; kwargs... )
+    if hint == "path"
+        if length(x)<400 && isdir(x)
+            p=abspath(x)
+            if basename(p)==""
+                p = dirname(p)
+            end
+            return newTwFileBrowser( rootTwScreen, p, title = p )
+        end
+        println("Unknown path: " * x )
+    else
+        tshow_( x; kwargs... )
+    end
 end
 
 function tshow_(f::Function; kwargs...)
