@@ -1,6 +1,6 @@
 # twedittable.jl — editable table widget backed by a DataFrame
 
-defaultEditTableBottomText = "F1:Help  Esc:Cancel_Edit  F10:Submit"
+defaultEditTableBottomText = "F1:Help  Ctrl-N:New_row  Ctrl-D:Del_Row  Ctrl-Y:Copy  Ctrl-P:Paste  F10:Submit"
 
 struct TwEditTableCol
     name::Symbol                               # DataFrame column name
@@ -315,6 +315,113 @@ function _et_draw_active_cell!(
     wattroff(o.window, inputflag)
 end
 
+function _et_clipboard_write(s::String)
+    try
+        if Sys.isapple()
+            open(`pbcopy`, "w") do io; write(io, s); end
+        elseif Sys.iswindows()
+            open(`clip`, "w") do io; write(io, s); end
+        else
+            try
+                open(`xclip -selection clipboard`, "w") do io; write(io, s); end
+            catch
+                open(`xsel --clipboard --input`, "w") do io; write(io, s); end
+            end
+        end
+    catch
+        beep()
+    end
+end
+
+function _et_clipboard_read()::String
+    try
+        if Sys.isapple()
+            return read(`pbpaste`, String)
+        elseif Sys.iswindows()
+            return read(`powershell -command Get-Clipboard`, String)
+        else
+            try
+                return read(`xclip -selection clipboard -o`, String)
+            catch
+                return read(`xsel --clipboard --output`, String)
+            end
+        end
+    catch
+        return ""
+    end
+end
+
+function _et_tsv_cell(val, col::TwEditTableCol)::String
+    val === missing && return ""
+    col.valuetype <: Date && return Dates.format(Date(val), "yyyy-mm-dd")
+    col.valuetype <: Number && return string(val)
+    return string(val)
+end
+
+function _et_copy_table!(o::TwObj{TwEditTableData})
+    data = o.data
+    rows = String[]
+    push!(rows, join((col.title for col in data.colspecs), "\t"))
+    for r in 1:nrow(data.df)
+        push!(rows, join((_et_tsv_cell(data.df[r, col.name], col) for col in data.colspecs), "\t"))
+    end
+    _et_clipboard_write(join(rows, "\n"))
+end
+
+function _et_paste_table!(o::TwObj{TwEditTableData})
+    data = o.data
+    raw = _et_clipboard_read()
+    isempty(raw) && return
+
+    lines = split(raw, r"\r?\n")
+    while !isempty(lines) && isempty(strip(lines[end]))
+        pop!(lines)
+    end
+    isempty(lines) && return
+
+    # Detect and skip a header line that matches our column titles from currentCol onward
+    paste_cols = data.colspecs[data.currentCol:end]
+    first_fields = split(lines[1], "\t")
+    is_header = length(first_fields) <= length(paste_cols) &&
+                all(i -> strip(first_fields[i]) == paste_cols[i].title,
+                    1:length(first_fields))
+    data_lines = is_header ? lines[2:end] : lines
+
+    isempty(data_lines) && return
+    _et_commit_cell!(data)
+
+    dest_row = data.currentRow
+    for line in data_lines
+        fields = split(line, "\t")
+
+        # Auto-insert row if needed
+        if dest_row > nrow(data.df)
+            _et_insert_row_after!(data, nrow(data.df))
+        end
+
+        for (fi, field) in enumerate(fields)
+            col_idx = data.currentCol + fi - 1
+            col_idx > length(data.colspecs) && break
+            col = data.colspecs[col_idx]
+            !col.editable && continue
+
+            s = strip(field)
+            if col.valuetype <: AbstractString || col.enumvalues !== nothing
+                data.df[dest_row, col.name] = s
+            else
+                ed = TwEntryData(col.valuetype)
+                (v, _) = evalNFormat(ed, s, col.width)
+                v !== nothing && (data.df[dest_row, col.name] = v)
+            end
+        end
+
+        dest_row += 1
+    end
+
+    _et_load_cell!(data)
+    _et_checkTop!(o)
+end
+
 function _et_open_enum_popup!(o::TwObj{TwEditTableData})
     global rootTwScreen
     data = o.data
@@ -436,32 +543,22 @@ function inject(o::TwObj{TwEditTableData}, token)
     end
 
     function move_next_editable()
-        c = data.currentCol
-        r = data.currentRow
+        c = data.currentCol; r = data.currentRow
         start_c, start_r = c, r
         while true
             c += 1
-            if c > ncols
-                c = 1
-                r += 1
-                r > nrows && (r = start_r; c = start_c; return)
-            end
+            if c > ncols; c = 1; r += 1; r > nrows && (r = start_r; c = start_c; return); end
             (c == start_c && r == start_r) && return
             data.colspecs[c].editable && (data.currentCol = c; data.currentRow = r; return)
         end
     end
 
     function move_prev_editable()
-        c = data.currentCol
-        r = data.currentRow
+        c = data.currentCol; r = data.currentRow
         start_c, start_r = c, r
         while true
             c -= 1
-            if c < 1
-                c = ncols
-                r -= 1
-                r < 1 && (r = start_r; c = start_c; return)
-            end
+            if c < 1; c = ncols; r -= 1; r < 1 && (r = start_r; c = start_c; return); end
             (c == start_c && r == start_r) && return
             data.colspecs[c].editable && (data.currentCol = c; data.currentRow = r; return)
         end
@@ -537,26 +634,6 @@ function inject(o::TwObj{TwEditTableData}, token)
             data.currentRow = min(nrows, data.currentRow + pageSize)
             _et_load_cell!(data)
             _et_checkTop!(o)
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :tab
-        if _et_commit_cell!(data)
-            move_next_editable()
-            _et_load_cell!(data)
-            _et_checkTop!(o)
-            _et_checkLeft!(o)
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :shift_tab
-        if _et_commit_cell!(data)
-            move_prev_editable()
-            _et_load_cell!(data)
-            _et_checkTop!(o)
-            _et_checkLeft!(o)
             dorefresh = true
         else
             beep()
@@ -736,6 +813,31 @@ function inject(o::TwObj{TwEditTableData}, token)
             _et_checkTop!(o)
             dorefresh = true
         end
+    elseif token == :ctrl_i
+        if _et_commit_cell!(data)
+            move_next_editable()
+            _et_load_cell!(data)
+            _et_checkTop!(o)
+            _et_checkLeft!(o)
+            dorefresh = true
+        else
+            beep()
+        end
+    elseif token == :ctrlshift_i
+        if _et_commit_cell!(data)
+            move_prev_editable()
+            _et_load_cell!(data)
+            _et_checkTop!(o)
+            _et_checkLeft!(o)
+            dorefresh = true
+        else
+            beep()
+        end
+    elseif token == :ctrl_y
+        _et_copy_table!(o)
+    elseif token == :ctrl_p
+        _et_paste_table!(o)
+        dorefresh = true
     elseif token == :KEY_MOUSE
         (mstate, x, y, bs) = getmouse()
         bv = o.borderSizeV
@@ -756,6 +858,11 @@ function inject(o::TwObj{TwEditTableData}, token)
             end
         elseif mstate == :button1_pressed
             rely, relx = screen_to_relative(o.window, y, x)
+            # screen_to_relative returns canvas coords for TwWindow; normalise to widget-local.
+            if isa(o.window, TwWindow)
+                rely -= o.window.yloc
+                relx -= o.window.xloc
+            end
             # Check click is inside the data area (not border, not header row)
             in_content = bh <= relx < o.width - bh && bv + 1 <= rely < o.height - bv
             if in_content
@@ -808,13 +915,16 @@ function helptext(o::TwObj{TwEditTableData})
 ←/→      : move cursor (at edge: switch column)
 ↑/↓      : move row (commits current cell)
 Enter    : move down
-Tab/S-Tab: next/prev editable column
 Home/End : cursor to start/end of cell
 Ctrl-K   : clear cell contents
 Ctrl-R   : toggle insert/overwrite mode
 Del/BS   : delete character
 Ctrl-N   : insert new row after current row
 Ctrl-D   : delete current row
+Ctrl-Tab : advance to next editable field (wraps rows)
+C-Sh-Tab : retreat to previous editable field (wraps rows)
+Ctrl-Y   : copy whole table to clipboard (TSV with header)
+Ctrl-P   : paste TSV from clipboard starting at cursor position
 Esc      : revert cell (if changed) / exit
 F10      : commit and exit
 """
