@@ -194,6 +194,27 @@ function _et_visible_cols(o::TwObj{TwEditTableData})
     cols, starts
 end
 
+function _et_default_value(col::TwEditTableCol)
+    col.enumvalues !== nothing    && return col.enumvalues[1]
+    col.valuetype <: AbstractString && return ""
+    col.valuetype <: AbstractFloat   && return zero(col.valuetype)
+    col.valuetype <: Integer         && return zero(col.valuetype)
+    col.valuetype <: Date            && return today()
+    col.valuetype == Bool            && return false
+    return missing
+end
+
+function _et_insert_row_after!(data::TwEditTableData, after_row::Int)
+    col_syms = Tuple(Symbol.(names(data.df)))
+    colspec_map = Dict(col.name => col for col in data.colspecs)
+    vals = Tuple(
+        haskey(colspec_map, sym) ? _et_default_value(colspec_map[sym]) : missing
+        for sym in col_syms
+    )
+    new_row = NamedTuple{col_syms}(vals)
+    insert!(data.df, after_row + 1, new_row)
+end
+
 function _et_format_cell(val, col::TwEditTableCol)::String
     val === missing && return repeat(" ", col.width)
     s = _et_cell_to_buf(val, col)
@@ -691,6 +712,30 @@ function inject(o::TwObj{TwEditTableData}, token)
                 beep()
             end
         end
+    elseif token == :ctrl_n
+        if _et_commit_cell!(data)
+            _et_insert_row_after!(data, data.currentRow)
+            data.currentRow += 1
+            # Move to first editable column on the new row
+            first_ed = findfirst(c -> c.editable, data.colspecs)
+            data.currentCol = first_ed !== nothing ? first_ed : 1
+            _et_load_cell!(data)
+            _et_checkTop!(o)
+            _et_checkLeft!(o)
+            dorefresh = true
+        else
+            beep()
+        end
+    elseif token == :ctrl_d
+        if nrows <= 1
+            beep()
+        else
+            delete!(data.df, data.currentRow)
+            data.currentRow = min(data.currentRow, nrow(data.df))
+            _et_load_cell!(data)
+            _et_checkTop!(o)
+            dorefresh = true
+        end
     elseif token == :KEY_MOUSE
         (mstate, x, y, bs) = getmouse()
         bv = o.borderSizeV
@@ -768,6 +813,8 @@ Home/End : cursor to start/end of cell
 Ctrl-K   : clear cell contents
 Ctrl-R   : toggle insert/overwrite mode
 Del/BS   : delete character
+Ctrl-N   : insert new row after current row
+Ctrl-D   : delete current row
 Esc      : revert cell (if changed) / exit
 F10      : commit and exit
 """

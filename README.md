@@ -258,6 +258,7 @@ Short names available inside `@twlayout`:
 |:--------------|:---------------------|
 | `viewer`      | `newTwViewer`        |
 | `dftable`     | `newTwDfTable`       |
+| `edittable`   | `newTwEditTable`     |
 | `entry`       | `newTwEntry`         |
 | `popup`       | `newTwPopup`         |
 | `multiselect` | `newTwMultiSelect`   |
