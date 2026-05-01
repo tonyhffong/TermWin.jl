@@ -1,6 +1,6 @@
 defaultTableHelpText = """
 PgUp/PgDn,
-Arrow keys : standard navigation
+←/→/↑/↓    : standard navigation
 <spc>,<rtn>: toggle leaf expansion
 Home       : jump to the start
 End        : jump to the end

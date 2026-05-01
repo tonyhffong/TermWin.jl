@@ -464,10 +464,11 @@ function inject(o::TwObj{TwPopupData}, token)
             dorefresh = moveby(-(round(Int, viewContentHeight/10)))
         elseif mstate == :scroll_down
             dorefresh = moveby(round(Int, viewContentHeight/10))
-        elseif mstate == :button1_pressed && o.data.trackLine
+        elseif mstate == :button1_pressed
             (rely, relx) = screen_to_relative(o.window, y, x)
-            if 0<=relx<o.width && 0<=rely<o.height
-                o.data.currentLine = o.data.currentTop + rely - o.borderSizeH + 1
+            if o.borderSizeV <= rely < o.height - o.borderSizeV && 0 <= relx < o.width
+                sz = popup_use_datalist(o) ? length(o.data.datalist) : length(o.data.choices)
+                o.data.currentLine = clamp(o.data.currentTop + rely - o.borderSizeV, 1, sz)
                 dorefresh = true
             else
                 retcode = :pass
