@@ -290,6 +290,19 @@ function activateTwObj(o::TwObj, tokens::Any = nothing)
                 return o.value
             elseif status == :exit_nothing # most likely a cancel
                 return nothing
+            elseif status == :pass && token == :F1
+                h = helptext(o)
+                if h != ""
+                    helper = newTwViewer(
+                        o.screen.value, h;
+                        posy = :center, posx = :center,
+                        showHelp = false, showLineInfo = false,
+                        bottomText = "Esc to continue",
+                    )
+                    activateTwObj(helper)
+                    unregisterTwObj(o.screen.value, helper)
+                    refresh(o)
+                end
             end # default is to continue
         end
     else
