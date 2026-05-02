@@ -1,5 +1,12 @@
 using TermWin
 using Test
+using Base.Meta
+
+expr = :( @my( :def ) + @my( :abc ) )
+s    = exprstring( expr )
+s2   = string( Base.Meta.parse( s ) )
+@test contains( s2, "@my(:abc)" )
+@test contains( s2, "@my(:def)" )
 
 @test TermWin.substr_by_width( "abc", 0, 3 ) == "abc"
 @test TermWin.substr_by_width( "abc", 0, 1 ) == "a"

@@ -9,6 +9,7 @@ using Printf
 using BusinessDays
 import Notcurses as NC
 import JuliaSyntaxHighlighting
+using Base.Meta
 
 debugloghandle = nothing
 

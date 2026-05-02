@@ -253,17 +253,31 @@ end
 # Like string(e) but only the first LineNumberNode is kept; all subsequent
 # ones are dropped. Useful for debug output where location context matters
 # but repeated #= file:line =# entries add noise.
+#
+# :macrocall exprs structurally require a LineNumberNode at args[2]; dropping
+# it shifts the real arguments and breaks printing. Dropped nodes in that
+# position are replaced with a silent placeholder LineNumberNode(0, :_) which
+# is then stripped from the resulting string.
 function exprstring(e::Expr)
     seen = Ref(false)
     function strip(node)
         if node isa LineNumberNode
             seen[] ? nothing : (seen[] = true; node)
         elseif node isa Expr
-            filtered = Any[r for a in node.args for r in (strip(a),) if r !== nothing]
-            Expr(node.head, filtered...)
+            new_args = Any[]
+            for (i, a) in enumerate(node.args)
+                r = strip(a)
+                if r === nothing
+                    node.head == :macrocall && i == 2 &&
+                        push!(new_args, LineNumberNode(0, :_))
+                else
+                    push!(new_args, r)
+                end
+            end
+            Expr(node.head, new_args...)
         else
             node
         end
     end
-    string(strip(e))
+    replace(string(strip(e)), r"#= _:0 =# ?" => "")
 end
