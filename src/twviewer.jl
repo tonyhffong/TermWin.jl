@@ -21,8 +21,9 @@ mutable struct TwViewerData
     showHelp::Bool
     helpText::String
     tabWidth::Int
+    colorspans::Union{Nothing, Vector{Vector{Tuple{Int,Int,TwAttr}}}}
     TwViewerData() =
-        new(String[], 0, 0, 1, 1, 1, true, "", false, true, defaultViewerHelpText, 4)
+        new(String[], 0, 0, 1, 1, 1, true, "", false, true, defaultViewerHelpText, 4, nothing)
 end
 
 # the ways to use it:
@@ -98,14 +99,152 @@ function newTwViewer(
     obj
 end
 
-function newTwViewer(scr::TwScreen, msg::T; kwargs...) where {T<:AbstractString}
-    newTwViewer(scr, split(msg, "\n"); kwargs...)
+function newTwViewer(
+    scr::TwObj, msg::T;
+    highlight::Bool  = false,
+    height::Real     = 0,
+    width::Real      = 0,
+    posy::Any        = :staggered,
+    posx::Any        = :staggered,
+    box              = true,
+    showLineInfo     = true,
+    bottomText       = "",
+    showHelp         = true,
+    tabWidth         = 4,
+    trackLine        = false,
+    title            = "",
+) where {T<:AbstractString}
+    if !highlight
+        return newTwViewer(scr, split(String(msg), "\n");
+            height=height, width=width, posy=posy, posx=posx, box=box,
+            showLineInfo=showLineInfo, bottomText=bottomText, showHelp=showHelp,
+            tabWidth=tabWidth, trackLine=trackLine, title=title)
+    end
+    # Highlighted path: tab-expand whole source first so span byte offsets align
+    src   = replace(String(msg), "\t" => repeat(" ", tabWidth))
+    lines = split(src, "\n", keepempty=true)
+    obj   = TwObj(TwViewerData(), Val{:Viewer})
+    obj.title           = title
+    obj.box             = box
+    obj.borderSizeV     = box ? 1 : 0
+    obj.borderSizeH     = box ? 2 : 0
+    obj.data.showLineInfo = showLineInfo
+    obj.data.showHelp     = showHelp
+    obj.data.tabWidth     = tabWidth
+    obj.data.bottomText   = bottomText
+    obj.data.trackLine    = trackLine
+    setTwViewerMsgs(obj, lines)
+    try
+        obj.data.colorspans = _highlight_julia_spans(src)
+    catch
+    end
+    h = height != 0 ? height :
+        obj.data.msglen + obj.borderSizeV * 2 +
+        (!box && !isempty(obj.data.bottomText) ? 1 : 0)
+    w = width != 0 ? width :
+        max(25, obj.data.msgwidth + obj.borderSizeH * 2, length(title) + 6)
+    link_parent_child(scr, obj, h, w, posy, posx)
+    obj
 end
 
-# Allow a generic TwObj parent (e.g. TwList container) with a string message.
-function newTwViewer(scr::TwObj, msg::T; kwargs...) where {T<:AbstractString}
-    newTwViewer(scr, split(msg, "\n"); kwargs...)
+# ─── syntax highlighting helpers ─────────────────────────────────────────────
+
+# face symbol → (color_pair_number, bold?)
+const _HIGHLIGHT_FACE_PAIR = Dict{Symbol,Tuple{Int,Bool}}(
+    :julia_keyword  => (4, true),
+    :julia_string   => (2, false),
+    :julia_comment  => (6, false),
+    :julia_number   => (3, false),
+    :julia_type     => (6, true),
+    :julia_typedec  => (6, true),
+    :julia_macro    => (5, false),
+    :julia_symbol   => (4, false),
+    :julia_builtin  => (4, true),
+    :julia_funcall  => (7, false),
+    :julia_operator => (7, false),
+)
+
+function _face_to_attr(sym::Symbol)::Union{Nothing,TwAttr}
+    if haskey(_HIGHLIGHT_FACE_PAIR, sym)
+        (n, bold) = _HIGHLIGHT_FACE_PAIR[sym]
+        return bold ? COLOR_PAIR(n) | A_BOLD : COLOR_PAIR(n)
+    end
+    s = string(sym)
+    if startswith(s, "julia_rainbow_paren_")
+        n = tryparse(Int, s[length("julia_rainbow_paren_")+1:end])
+        n !== nothing && return COLOR_PAIR(mod1(n, 6))
+    end
+    return nothing
 end
+
+function _highlight_julia_spans(src::String)::Vector{Vector{Tuple{Int,Int,TwAttr}}}
+    isempty(src) && return [Tuple{Int,Int,TwAttr}[]]
+    lines = split(src, '\n', keepempty=true)
+    nlines = length(lines)
+    # byte start of each line in src (1-based)
+    line_starts = Vector{Int}(undef, nlines + 1)
+    line_starts[1] = 1
+    for i in 1:nlines
+        line_starts[i+1] = line_starts[i] + ncodeunits(lines[i]) + 1
+    end
+    spans = [Tuple{Int,Int,TwAttr}[] for _ in 1:nlines]
+    highlighted = JuliaSyntaxHighlighting.highlight(src)
+    for (range, label, sym) in Base.annotations(highlighted)
+        label === :face || continue
+        attr = _face_to_attr(sym)
+        attr === nothing && continue
+        bstart = first(range); bend = last(range)
+        for li in 1:nlines
+            ls = line_starts[li]
+            le = ls + ncodeunits(lines[li]) - 1
+            le < ls && continue                 # empty line
+            istart = max(bstart, ls); iend = min(bend, le)
+            istart > iend && continue
+            push!(spans[li], (istart - ls + 1, iend - ls + 1, attr))
+        end
+    end
+    for li in 1:nlines
+        sort!(spans[li], by = first)
+    end
+    return spans
+end
+
+function _draw_highlighted_line!(
+    win, y::Int, line::AbstractString, spans::Vector{Tuple{Int,Int,TwAttr}},
+    currentLeft::Int, viewW::Int, startx::Int,
+)
+    llen   = ncodeunits(line)
+    vstart = currentLeft
+    # Clamp to a valid UTF-8 boundary: s[a:b] requires isvalid(s, b+1) or b==llen.
+    # Walk back from the raw end until the next byte is a character start (or string end).
+    raw_vend = currentLeft + viewW - 1
+    vend = min(raw_vend, llen)
+    # s[i:j] in Julia requires isvalid(s,j); walk back until vend is a char start.
+    while vend > 0 && !isvalid(line, vend)
+        vend -= 1
+    end
+    prev   = 1
+    for (cs, ce, attr) in spans
+        cs > llen && break
+        ce = min(ce, llen)
+        # gap before span
+        vs = max(prev, vstart); ve = min(cs - 1, vend, llen)
+        vs <= ve && mvwprintw(win, y, startx + vs - vstart, "%s", line[vs:ve])
+        # colored span
+        vs = max(cs, vstart); ve = min(ce, vend)
+        if vs <= ve
+            wattron(win, attr)
+            mvwprintw(win, y, startx + vs - vstart, "%s", line[vs:ve])
+            wattroff(win, attr)
+        end
+        prev = ce + 1
+    end
+    # trailing gap
+    vs = max(prev, vstart); ve = min(llen, vend)
+    vs <= ve && mvwprintw(win, y, startx + vs - vstart, "%s", line[vs:ve])
+end
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 function viewContentDimensions(o::TwObj{TwViewerData})
     vh = o.height
@@ -129,6 +268,9 @@ end
 function draw(o::TwObj{TwViewerData})
     viewContentHeight, viewContentWidth, viewStartRow = viewContentDimensions(o)
 
+    if o.data.colorspans !== nothing
+        werase(o.window)
+    end
     if o.box
         box(o.window, 0, 0)
     end
@@ -159,20 +301,30 @@ function draw(o::TwObj{TwViewerData})
         mvwprintw(o.window, 0, o.width - length(msg)-3, "%s", msg)
     end
     for r = o.data.currentTop:min(o.data.currentTop+viewContentHeight-1, o.data.msglen)
-        s = o.data.messages[r]
-        endpos=o.data.currentLeft + o.width - 2 * o.borderSizeH - 1
-        if endpos < length(s)
-            s = s[o.data.currentLeft:endpos]
+        row_y = r - o.data.currentTop + viewStartRow
+        if o.data.colorspans !== nothing
+            line  = o.data.messages[r]
+            rspans = r <= length(o.data.colorspans) ? o.data.colorspans[r] : Tuple{Int,Int,TwAttr}[]
+            _draw_highlighted_line!(
+                o.window, row_y, line, rspans,
+                o.data.currentLeft, viewContentWidth, o.borderSizeH,
+            )
         else
-            s = s[o.data.currentLeft:end]
-        end
-        if o.data.trackLine && r == o.data.currentLine
-            wattron(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
-            s *= repeat(" ", max(0, viewContentWidth - length(s)))
-        end
-        mvwprintw(o.window, r - o.data.currentTop + viewStartRow, o.borderSizeH, "%s", s)
-        if o.data.trackLine && r == o.data.currentLine
-            wattroff(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+            s = o.data.messages[r]
+            endpos = o.data.currentLeft + viewContentWidth - 1
+            if endpos < length(s)
+                s = s[o.data.currentLeft:endpos]
+            else
+                s = s[o.data.currentLeft:end]
+            end
+            if o.data.trackLine && r == o.data.currentLine
+                wattron(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+                s *= repeat(" ", max(0, viewContentWidth - length(s)))
+            end
+            mvwprintw(o.window, row_y, o.borderSizeH, "%s", s)
+            if o.data.trackLine && r == o.data.currentLine
+                wattroff(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+            end
         end
     end
     if length(o.data.bottomText) != 0

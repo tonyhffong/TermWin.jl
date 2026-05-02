@@ -47,6 +47,7 @@ mutable struct TwFileBrowserData
     # preview state
     previewSplit::Float64
     previewCache::Dict{String,Vector{String}}
+    previewSpanCache::Dict{String,Vector{Vector{Tuple{Int,Int,TwAttr}}}}
     previewTop::Int
     previewPath::String
     function TwFileBrowserData()
@@ -70,6 +71,7 @@ mutable struct TwFileBrowserData
             :name,
             0.5,
             Dict{String,Vector{String}}(),
+            Dict{String,Vector{Vector{Tuple{Int,Int,TwAttr}}}}(),
             1,
             "",
         )
@@ -276,8 +278,8 @@ end
 function newTwFileBrowser(
     scr::TwObj,
     rootpath::String = pwd();
-    height::Real = 0.8,
-    width::Real = 0.8,
+    height::Real = 0.93,
+    width::Real = 0.93,
     posy::Any = :staggered,
     posx::Any = :staggered,
     title::String = rootpath,
@@ -503,28 +505,40 @@ function draw(o::TwObj{TwFileBrowserData})
                     ks = collect(keys(o.data.previewCache))
                     for k in ks[1:min(10, length(ks))]
                         delete!(o.data.previewCache, k)
+                        delete!(o.data.previewSpanCache, k)
                     end
                 end
-                o.data.previewCache[o.data.previewPath] = load_preview(o.data.previewPath)
+                plines = load_preview(o.data.previewPath)
+                o.data.previewCache[o.data.previewPath] = plines
+                if lowercase(splitext(o.data.previewPath)[2]) == ".jl"
+                    try
+                        src = join(map(l -> replace(l, "\t" => "    "), plines), "\n")
+                        o.data.previewSpanCache[o.data.previewPath] = _highlight_julia_spans(src)
+                    catch
+                    end
+                end
             end
             lines = o.data.previewCache[o.data.previewPath]
         end
 
+        pspans = get(o.data.previewSpanCache, o.data.previewPath, nothing)
         for i in 1:viewContentHeight
             lineIdx = o.data.previewTop + i - 1
+            # always blank the line first so stale chars don't bleed through
+            mvwprintw(o.window, i, previewX, "%s", repeat(" ", rightW))
             if lineIdx <= length(lines)
-                # expand tabs for display
                 rawline = replace(lines[lineIdx], "\t" => "    ")
-                txt = ensure_length(rawline, rightW, false)
-                # pad to fill background
-                padlen = rightW - textwidth(txt)
-                if padlen > 0
-                    txt = txt * repeat(" ", padlen)
+                if pspans !== nothing
+                    linespans = lineIdx <= length(pspans) ?
+                        pspans[lineIdx] : Tuple{Int,Int,TwAttr}[]
+                    _draw_highlighted_line!(
+                        o.window, i, rawline, linespans, 1, rightW, previewX,
+                    )
+                else
+                    txt = ensure_length(rawline, rightW, false)
+                    mvwprintw(o.window, i, previewX, "%s", txt)
                 end
-            else
-                txt = repeat(" ", rightW)
             end
-            mvwprintw(o.window, i, previewX, "%s", txt)
         end
 
         # preview line info in top border (right-aligned)

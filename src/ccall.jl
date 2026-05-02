@@ -324,7 +324,8 @@ function show_panel(panel::NC.Plane)
 end
 
 function hide_panel(panel::NC.Plane)
-    global hidden_planes
+    global hidden_planes, nc_context
+    nc_context === nothing && return   # Notcurses already stopped; plane is gone
     # Save current position and move off-screen
     pos = NC.yx(panel)
     hidden_planes[panel.ptr] = (Int(pos.y), Int(pos.x))

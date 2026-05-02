@@ -17,6 +17,7 @@ ctrl_down  : jump to next sibling
 _          : collapse all
 /          : search dialog
 n, p       : next / previous match
+F5         : show string(value) — with Julia syntax color if Expr
 F6         : popup viewer for value
 F10        : submit changes and return
 Esc        : cancel edit / exit without saving
@@ -576,13 +577,13 @@ function draw(o::TwObj{TwDictTreeData})
         box(o.window, 0, 0)
     end
     if !isempty(o.title) && o.box
-        mvwprintw(o.window, 0, round(Int, (o.width - length(o.title)) / 2), "%s", o.title)
+        mvwprintw(o.window, 0, max(0, round(Int, (o.width - length(o.title)) / 2)), "%s", o.title)
     end
     if data.showLineInfo && o.box && data.datalistlen > 0
         msg = data.datalistlen <= viewH ? "ALL" :
             @sprintf("%d/%d %5.1f%%", data.currentLine, data.datalistlen,
                      data.currentLine / data.datalistlen * 100)
-        mvwprintw(o.window, 0, o.width - length(msg) - 3, "%s", msg)
+        mvwprintw(o.window, 0, max(0, o.width - length(msg) - 3), "%s", msg)
     end
 
     for r = data.currentTop:min(data.currentTop + viewH - 1, data.datalistlen)
@@ -650,7 +651,7 @@ function draw(o::TwObj{TwDictTreeData})
 
     if !isempty(data.bottomText) && o.box
         mvwprintw(o.window, o.height - 1,
-                  round(Int, (o.width - length(data.bottomText)) / 2),
+                  max(0, round(Int, (o.width - length(data.bottomText)) / 2)),
                   "%s", data.bottomText)
     end
 end
@@ -803,6 +804,21 @@ function inject(o::TwObj{TwDictTreeData}, token)
                 else
                     data.editIncomplete = true; beep()
                 end
+            elseif vt <: Dates.Date && token == "?"
+                ed = TwEntryData(vt)
+                (parsed, _) = evalNFormat(ed, data.editbuffer, fieldW)
+                init_date = parsed isa Dates.Date ? parsed : Dates.today()
+                cal = newTwCalendar(o.screen.value, init_date; posy = :center, posx = :center)
+                activateTwObj(cal)
+                if cal.value isa Dates.Date
+                    data.editbuffer   = Dates.format(cal.value, "yyyy-mm-dd")
+                    data.cursorPos    = length(data.editbuffer) + 1
+                    data.fieldLeftPos = 1
+                    data.editDirty    = true
+                    data.editIncomplete = false
+                end
+                unregisterTwObj(o.screen.value, cal)
+                dorefresh = true
             elseif vt <: Number && vt != Bool
                 allowed = isdigit(token[1]) ||
                           (vt <: AbstractFloat && in(token, [".", "e", "+", "-"])) ||
@@ -1079,6 +1095,18 @@ function inject(o::TwObj{TwDictTreeData}, token)
                 end
                 found || beep()
             end
+
+        elseif token == :F5
+            stck = copy(data.datalist[data.currentLine][4])
+            lastkey = isempty(stck) ? o.title : stck[end]
+            v = getvaluebypath(o.value, copy(stck))
+            if v isa Expr
+                tshow(exprstring( v ), "julia"; title = string(lastkey))
+            else
+                s = string(v)
+                tshow(s; title = string(lastkey))
+            end
+            dorefresh = true
 
         elseif token == :F6
             stck = copy(data.datalist[data.currentLine][4])

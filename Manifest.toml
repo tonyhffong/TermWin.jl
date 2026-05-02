@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "45c60636c477279ad8634c63fab444cf47d0c9eb"
+project_hash = "24776dcabe4902f50e622e24f5b8421fee0574f8"
 
 [[deps.Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -444,7 +444,7 @@ uuid = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 version = "1.12.1"
 
 [[deps.TermWin]]
-deps = ["BusinessDays", "CategoricalArrays", "DataFrames", "Dates", "Format", "Notcurses", "Printf", "Statistics"]
+deps = ["BusinessDays", "CategoricalArrays", "DataFrames", "Dates", "Format", "JuliaSyntaxHighlighting", "Notcurses", "Printf", "Statistics"]
 path = "."
 uuid = "ddbe2de8-fbff-40aa-a5ae-e0ef0f1059f5"
 version = "0.1.0"

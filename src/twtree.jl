@@ -10,12 +10,13 @@ ctrl_down  : jump to next sibling
 +, -       : expand/collapse one level
 _          : collapse all
 /          : search dialog
+F5         : show string(value) — with Julia syntax color if Expr
 F6         : popup window for value
 Shift-F6   : popup window for type
 n, p       : Move to next/previous matched line
 m          : (Module Only) toggle export-only vs all names
 """
-defaultTreeBottomText = "F1:help <spc><rtn>:toggle F6:popupValue +:expand -:collaps /:search"
+defaultTreeBottomText = "F1:help <spc><rtn>:toggle F5:string F6:popup +:expand -:collaps /:search"
 
 modulenames = Dict{Module,Array{Symbol,1}}()
 moduleallnames = Dict{Module,Array{Symbol,1}}()
@@ -358,7 +359,7 @@ function draw(o::TwObj{TwTreeData})
                 titlestr *= "(exported )"
             end
         end
-        mvwprintw(o.window, 0, round(Int, (o.width - length(titlestr))/2), "%s", titlestr)
+        mvwprintw(o.window, 0, max(0, round(Int, (o.width - length(titlestr))/2)), "%s", titlestr)
     end
     if o.data.showLineInfo && o.box
         if o.data.datalistlen <= viewContentHeight
@@ -371,7 +372,7 @@ function draw(o::TwObj{TwTreeData})
                 o.data.currentLine / o.data.datalistlen * 100
             )
         end
-        mvwprintw(o.window, 0, o.width - length(msg)-3, "%s", msg)
+        mvwprintw(o.window, 0, max(0, o.width - length(msg)-3), "%s", msg)
     end
     for r = o.data.currentTop:min(o.data.currentTop+viewContentHeight-1, o.data.datalistlen)
 
@@ -453,7 +454,7 @@ function draw(o::TwObj{TwTreeData})
         mvwprintw(
             o.window,
             o.height-1,
-            round(Int, (o.width - length(o.data.bottomText))/2),
+            max(0, round(Int, (o.width - length(o.data.bottomText))/2)),
             "%s",
             o.data.bottomText,
         )
@@ -663,6 +664,17 @@ function inject(o::TwObj{TwTreeData}, token)
         end
         o.data.currentLine = max(1, bestline)
         checkTop()
+        dorefresh = true
+    elseif token == :F5
+        stck = copy(o.data.datalist[o.data.currentLine][4])
+        lastkey = isempty(stck) ? o.title : stck[end]
+        v = getvaluebypath(o.value, copy(stck))
+        if v isa Expr
+            tshow( exprstring( v ), "julia"; title = string(lastkey))
+        else
+            s = string(v)
+            tshow(s; title = string(lastkey))
+        end
         dorefresh = true
     elseif token == :F6
         stck = copy(o.data.datalist[o.data.currentLine][4])

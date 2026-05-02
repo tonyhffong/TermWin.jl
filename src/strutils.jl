@@ -249,3 +249,21 @@ function longest_common_prefix(s1::String, s2::String)
     end
     return s1[1:lcpidx]
 end
+
+# Like string(e) but only the first LineNumberNode is kept; all subsequent
+# ones are dropped. Useful for debug output where location context matters
+# but repeated #= file:line =# entries add noise.
+function exprstring(e::Expr)
+    seen = Ref(false)
+    function strip(node)
+        if node isa LineNumberNode
+            seen[] ? nothing : (seen[] = true; node)
+        elseif node isa Expr
+            filtered = Any[r for a in node.args for r in (strip(a),) if r !== nothing]
+            Expr(node.head, filtered...)
+        else
+            node
+        end
+    end
+    string(strip(e))
+end

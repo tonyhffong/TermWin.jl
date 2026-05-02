@@ -8,6 +8,7 @@ using Statistics
 using Printf
 using BusinessDays
 import Notcurses as NC
+import JuliaSyntaxHighlighting
 
 debugloghandle = nothing
 
@@ -33,11 +34,11 @@ import Base.getindex
 # logstart()
 
 include("consts.jl")
+include("strutils.jl")
 include("twtypes.jl")
 include("twobj.jl")
 include("twscreen.jl")
 include("ccall.jl")
-include("strutils.jl")
 include("format.jl")
 include("dfutils.jl")
 #include( "twprogress.jl")
@@ -69,6 +70,7 @@ export newTwDfTable, newTwList
 export newTwEditTable, TwEditTableCol
 export newTwDictTree
 export newTwSpacer, newTwLabel
+export exprstring
 
 export uniqvalue, unionall
 export CalcPivot, discretize, topnames
@@ -248,6 +250,13 @@ function tshow_(x::String, hint::String; kwargs... )
             return newTwFileBrowser( rootTwScreen, p, title = p )
         end
         println("Unknown path: " * x )
+    elseif hint == "julia"
+        pos   = length(x) > 100 ? :staggered : :center
+        posx  = get(kwargs, :posx, pos)
+        posy  = get(kwargs, :posy, pos)
+        title_v = get(kwargs, :title, "")
+        return newTwViewer(rootTwScreen, x;
+            highlight=true, posy=posy, posx=posx, title=String(title_v))
     else
         tshow_( x; kwargs... )
     end
@@ -380,7 +389,7 @@ function tshow(x...; kwargs...)
         if !found
             widget = nothing
             try
-                widget = Base.invokelatest(tshow_, x; title = title, kwargs...)
+                widget = Base.invokelatest(tshow_, x...; title = title, kwargs...)
             catch err
                 bt = catch_backtrace()
                 msg = wordwrap(string(err) * "\n" * string(bt), 80)

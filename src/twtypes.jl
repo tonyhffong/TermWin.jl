@@ -87,7 +87,9 @@ mutable struct TwObj{T,S}
                     NC.destroy(y.window)
                     y.window = nothing
                 end
-                if y.screen.value !== nothing
+                if y.screen.value !== nothing &&
+                   nc_context !== nothing &&
+                   y.session_id == current_session_id
                     unregisterTwObj(y.screen.value, y)
                     y.screen = WeakRef()
                 end
