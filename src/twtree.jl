@@ -143,7 +143,8 @@ function tree_data(
        typx == Any ||
        (typx == DataType && !isempty(stack)) || # so won't expand deep
        typx <: Ptr ||
-       typx <: AbstractString
+       typx <: AbstractString ||
+       typx <: Dates.TimeType
         s = string(name)
         t = string(typx)
         if typx <: Integer && typx <: Unsigned

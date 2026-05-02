@@ -54,6 +54,7 @@ include("twdftable.jl")
 include("twlist.jl")
 include("twlabel.jl")
 include("twedittable.jl")
+include("twdicttree.jl")
 include("twbuilder.jl")
 include("precompile.jl")
 
@@ -66,6 +67,7 @@ export newTwEntry, newTwTree, newTwFileBrowser, newTwFunc, newTwViewer
 export newTwCalendar, newTwPopup, newTwMultiSelect
 export newTwDfTable, newTwList
 export newTwEditTable, TwEditTableCol
+export newTwDictTree
 export newTwSpacer, newTwLabel
 
 export uniqvalue, unionall
