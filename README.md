@@ -46,7 +46,8 @@ tshow(:( f(x) = x^2 + 1 ))        # expression tree — useful for understanding
 tshow(TermWin)                     # module browser
 tshow(sort!)                       # method table
 tshow(DataFrame(a=1:3, b=["x","y","z"]))   # DataFrame table
-tshow("path:./")                   # file browser (prefix "path:" required)
+tshow(DataFrame(a=1:3, b=["x","y","z"]),cols::Vector{TwEditTableCol} )   # editable DataFrame table (2nd arg is important)
+tshow("./","path")                 # file browser (2nd argument "path" required)
 ```
 
 Press **F1** inside any viewer for a full keyboard reference. Press **Esc** to exit.
