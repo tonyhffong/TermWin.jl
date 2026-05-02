@@ -206,7 +206,7 @@ println(w.value)   # selected file path, or nothing
 Or trigger from `tshow` using the `"path:"` prefix:
 
 ```julia
-tshow("path:./src")
+tshow("./src", "path" )
 ```
 
 Preview is shown automatically for `.jl`, `.txt`, `.md`, `.log`, `.toml`, `.csv`,
@@ -604,7 +604,7 @@ julia --project=. test/popup_allownew.jl        # popup with free-text entry
 julia --project=. test/multiselect.jl           # multi-select list
 julia --project=. test/caltest.jl               # date picker with holiday calendar
 julia --project=. test/textviewertest.jl        # scrollable text viewer
-julia --project=. test/filebrowser.jl           # file browser (tshow "path:" shortcut)
+julia --project=. test/filebrowser.jl           # file browser (tshow "path" 2nd arg)
 julia --project=. test/formlayout_test.jl       # composable data-entry form
 julia --project=. test/formlayout_test2.jl      # form with divider labels
 julia --project=. test/buildertest.jl           # @twlayout with DataFrame + viewer
