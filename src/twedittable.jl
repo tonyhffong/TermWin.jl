@@ -758,6 +758,19 @@ function inject(o::TwObj{TwEditTableData}, token)
         elseif col.valuetype <: Date && !in(token, ["?", ","])
             insertchar(token)
             dorefresh = true
+        elseif col.valuetype <: Date && token == "?"
+            ed = TwEntryData(Date)
+            (parsed, _) = evalNFormat(ed, data.editbuffer, col.width)
+            init_date = parsed isa Dates.Date ? parsed : Dates.today()
+            cal = newTwCalendar(o.screen.value, init_date; posy = :center, posx = :center)
+            activateTwObj(cal)
+            if cal.value isa Dates.Date
+                data.editbuffer   = Dates.format(cal.value, "yyyy-mm-dd")
+                data.cursorPos    = length(data.editbuffer) + 1
+                data.fieldLeftPos = 1
+            end
+            unregisterTwObj(o.screen.value, cal)
+            dorefresh = true
         elseif col.valuetype <: Number && col.valuetype != Bool
             allowed =
                 isdigit(token[1]) ||
@@ -838,7 +851,7 @@ function inject(o::TwObj{TwEditTableData}, token)
             _et_checkTop!(o)
             dorefresh = true
         end
-    elseif token == :ctrl_i
+    elseif token == :ctrl_i #ctrl_tab
         if _et_commit_cell!(data)
             move_next_editable()
             _et_load_cell!(data)
@@ -848,7 +861,7 @@ function inject(o::TwObj{TwEditTableData}, token)
         else
             beep()
         end
-    elseif token == :ctrlshift_i
+    elseif token == :ctrlshift_i #ctrlshift_tab
         if _et_commit_cell!(data)
             move_prev_editable()
             _et_load_cell!(data)
