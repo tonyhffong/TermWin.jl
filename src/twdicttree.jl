@@ -420,6 +420,7 @@ function _dt_delete_entry!(o::TwObj{TwDictTreeData})
             posy = :center, posx = :center,
             title = "Delete '$name' ($n children)?",
             maxwidth = 44,
+            colorpair = 12 #red chicken box
         )
         choice = activateTwObj(popup)
         unregisterTwObj(scr, popup)
