@@ -1,26 +1,27 @@
 defaultTableHelpText = """
-PgUp/PgDn,
-←/→/↑/↓    : standard navigation
+PgUp/PgDn,←/→/↑/↓  : standard navigation
 <spc>,<rtn>: toggle leaf expansion
-Home       : jump to the start
-End        : jump to the end
-ctrl_left/right arrow: paginate to left/right
+Home/End   : jump to the start/end of the table
+ctrl_←/→   : paginate to left/right
+ctrl_↑/↓   : move up to the previous/next branch of the same level
 [, ]       : make current column narrower/wider
-ctrl_up    : move up to the start of the current branch or previous branch
-ctrl_down  : move down to the next branch
 +, -       : Expand or collapse 1 level everywhere
 p          : Change pivot
 c          : Change columns/order (then use Shift-up/down to reorder)
 v          : Switch preset views
 /          : search text (on string columns) on exposed rows
 ?          : DEEP search text (on string columns), may expand nodes
-ctrl_n     : search next occurence on exposed rows
-ctrl_p     : search previous occurence on exposed rows
+ctrl_n/p   : search next/previous occurence on exposed rows
 N          : search next occurence on any row. may expand more nodes
+F2         : describe() all columns of the full table
+Shift-F2   : describe(:all) for the current column only (transposed)
 F6         : popup window for value
 F7         : popup window for leaf & root node stats
+Ctrl-Y     : Export current view (HTML→browser, CSV/TSV→clipboard or file)
+             CSV uses tab indentation to represent pivot depth.
+             HTML opens a dark-themed self-contained file in the default browser.
 """
-defaultTableBottomText = "F1:help p:Pivot c:ColOrd v:Views"
+defaultTableBottomText = "F1:help p:Pivot c:ColOrd v:Views  F2:Describe  Ctrl-Y:Export"
 
 mutable struct TwTableColInfo
     name::Symbol
@@ -756,6 +757,198 @@ function draw(o::TwObj{TwDfTableData})
     end
 end
 
+function _dt_cell_str(node::TwDfTableNode, exphint::Symbol, stack::Array{Int,1}, col::TwTableColInfo)::String
+    try
+        if exphint == :single
+            val = node.subdataframesorted[!, col.name][stack[end]]
+            return ismissing(val) ? "" : applyformat(val, col.format)
+        else
+            val = node[col.name]
+            return (val === nothing || ismissing(val)) ? "" : applyformat(val, col.format)
+        end
+    catch
+        return ""
+    end
+end
+
+function _dt_extract_rows(data::TwDfTableData)
+    rows = NamedTuple{(:depth, :is_leaf, :pivot_name, :cells), Tuple{Int,Bool,String,Vector{String}}}[]
+    for entry in data.datalist
+        (name, stack, exphint, skiplines, node) = entry
+        is_leaf = (exphint == :single)
+        depth = length(node.pivotcols) + (is_leaf ? 1 : 0)
+        cells = String[_dt_cell_str(node, exphint, stack, col) for col in data.colInfo]
+        push!(rows, (depth=depth, is_leaf=is_leaf, pivot_name=name, cells=cells))
+    end
+    rows
+end
+
+function _dt_to_csv(data::TwDfTableData; indent::Bool=true)::String
+    lines = String[]
+    header = join(vcat(["Group"], [c.displayname for c in data.colInfo]), "\t")
+    push!(lines, header)
+    for row in _dt_extract_rows(data)
+        prefix = indent ? ">"^row.depth : ""
+        push!(lines, prefix * row.pivot_name * "\t" * join(row.cells, "\t"))
+    end
+    join(lines, "\n")
+end
+
+const _DT_PIVOT_COLORS = ["#2a3a2a", "#3a2a2a", "#2a2a3a", "#3a3a2a"]  # green, red, blue, yellow tints
+
+function _dt_to_html(data::TwDfTableData, title::String)::String
+    cols = data.colInfo
+    ncols = length(cols)
+
+    # Detect numeric columns for right-alignment
+    is_num = Bool[
+        all(r -> r.is_leaf ? tryparse(Float64, r.cells[i]) !== nothing || r.cells[i] == "" : true,
+            _dt_extract_rows(data))
+        for i in 1:ncols
+    ]
+
+    rows_data = _dt_extract_rows(data)
+
+    # Build CSS
+    pivot_css = join(
+        ["tr.depth-$(d) { background-color: $(_DT_PIVOT_COLORS[mod1(d, 4)]); font-weight: bold; }"
+         for d in 1:8],
+        "\n    "
+    )
+
+    col_widths = join(
+        ["col.c$(i) { width: $(max(4, cols[i].format.width) * 8)px; }" for i in 1:ncols],
+        "\n    "
+    )
+
+    css = """
+    body { background:#1e1e1e; color:#e0e0e0; font-family:monospace; font-size:13px; margin:12px; }
+    h2 { color:#a0c0ff; }
+    table { border-collapse:collapse; border-spacing:0; }
+    th { background:#1a3a6a; color:#fff; padding:3px 8px; text-align:left; white-space:nowrap; border:1px solid #333; }
+    td { padding:2px 8px; white-space:nowrap; border:1px solid #2e2e2e; }
+    tr.leaf:nth-child(odd) td { background:#242424; }
+    tr.leaf:nth-child(even) td { background:#2c2c2c; }
+    $pivot_css
+    td.num { text-align:right; }
+    $col_widths"""
+
+    # Build header
+    header_cells = join(["<th>$(escapeHTML(c.displayname))</th>" for c in cols], "")
+    thead = "<thead><tr><th>Group</th>$header_cells</tr></thead>"
+
+    # Build body rows
+    tbody_lines = String[]
+    leaf_idx = 0
+    for row in rows_data
+        if row.is_leaf
+            leaf_idx += 1
+            cls = "leaf"
+        else
+            cls = "depth-$(row.depth)"
+        end
+        indent_px = row.depth * 16
+        tree_td = "<td style=\"padding-left:$(indent_px)px\">$(escapeHTML(row.pivot_name))</td>"
+        data_tds = join([
+            "<td class=\"$(is_num[i] ? "num" : "")\">$(escapeHTML(row.cells[i]))</td>"
+            for i in 1:ncols
+        ], "")
+        push!(tbody_lines, "<tr class=\"$cls\">$tree_td$data_tds</tr>")
+    end
+    tbody = "<tbody>$(join(tbody_lines, "\n"))</tbody>"
+
+    colgroup = "<colgroup><col class=\"c0\">" *
+        join(["<col class=\"c$(i)\">" for i in 1:ncols], "") * "</colgroup>"
+
+    title_html = isempty(title) ? "" : "<h2>$(escapeHTML(title))</h2>\n"
+    nrows = count(r -> r.is_leaf, rows_data)
+    subtitle = "<p style=\"color:#888;font-size:11px\">$(nrows) rows, $(ncols) columns</p>\n"
+
+    """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>$(escapeHTML(title))</title>
+<style>$css</style>
+</head><body>
+$(title_html)$(subtitle)<table>$colgroup$thead\n$tbody\n</table>
+</body></html>"""
+end
+
+function escapeHTML(s::AbstractString)::String
+    s = replace(s, "&" => "&amp;")
+    s = replace(s, "<" => "&lt;")
+    s = replace(s, ">" => "&gt;")
+    s = replace(s, "\"" => "&quot;")
+    s
+end
+
+function _dt_open_browser(path::String)
+    try
+        if Sys.isapple()
+            run(`open $path`, wait = false)
+        elseif Sys.iswindows()
+            run(`cmd /c start "" $path`, wait = false)
+        else
+            run(`xdg-open $path`, wait = false)
+        end
+    catch
+        beep()
+    end
+end
+
+function _dt_export_menu!(o::TwObj{TwDfTableData})
+    global rootTwScreen
+    options = ["HTML → browser", "CSV → clipboard", "CSV → file", "TSV → clipboard", "Cancel"]
+    popup = newTwPopup(
+        o.screen.value,
+        options;
+        posy = :center, posx = :center,
+        title = "Export view",
+        substrsearch = true,
+        maxheight = length(options) + 2,
+        maxwidth = 28,
+    )
+    result = activateTwObj(popup)
+    unregisterTwObj(o.screen.value, popup)
+
+    result === nothing && return
+    result == "Cancel" && return
+
+    data = o.data
+    if result == "HTML → browser"
+        html = _dt_to_html(data, o.title)
+        tmp = tempname() * ".html"
+        try
+            write(tmp, html)
+            _dt_open_browser(tmp)
+        catch
+            beep()
+        end
+    elseif result == "CSV → clipboard"
+        csv = _dt_to_csv(data; indent = true)
+        _et_clipboard_write(csv)
+    elseif result == "CSV → file"
+        entry = newTwEntry(
+            o.screen.value,
+            String;
+            title = "Save CSV to:",
+            width = 50,
+            posy = :center, posx = :center,
+        )
+        path = activateTwObj(entry)
+        unregisterTwObj(o.screen.value, entry)
+        if path !== nothing && path != ""
+            try
+                write(path, _dt_to_csv(data; indent = true))
+            catch
+                beep()
+            end
+        end
+    elseif result == "TSV → clipboard"
+        tsv = _dt_to_csv(data; indent = false)
+        _et_clipboard_write(tsv)
+    end
+    refresh(o)
+end
+
 function inject(o::TwObj{TwDfTableData}, token)
     dorefresh = false
     retcode = :got_it # default behavior is that we know what to do with it
@@ -1146,23 +1339,14 @@ function inject(o::TwObj{TwDfTableData}, token)
         if isempty(stck)
             beep()
         else
-            if o.data.datalist[curr][3] == :single
-                tmpstack = copy(stck)
-                pop!(tmpstack)
-            else
-                tmpstack = stck
-            end
+            tmpstack = copy(stck)
+            pop!(tmpstack)
             for r = (curr+1):length(o.data.datalist)
                 rstack = o.data.datalist[r][2]
-                if o.data.datalist[r][3] != :single && (
-                    length(rstack) <= length(tmpstack) ||
-                    rstack[1:length(tmpstack)] == tmpstack
-                )
-                    if r != curr
-                        o.data.currentLine = r
-                        checkTop()
-                        dorefresh = true
-                    end
+                if length(rstack) == length(tmpstack)+1 && rstack[1:length(tmpstack)] == tmpstack
+                    o.data.currentLine = r
+                    checkTop()
+                    dorefresh = true
                     break
                 end
             end
@@ -1177,12 +1361,10 @@ function inject(o::TwObj{TwDfTableData}, token)
             pop!(tmpstack)
             for r = (curr-1):-1:1
                 rstack = o.data.datalist[r][2]
-                if o.data.datalist[r][3] != :single && length(rstack) <= length(tmpstack)
-                    if r != curr
-                        o.data.currentLine = r
-                        checkTop()
-                        dorefresh = true
-                    end
+                if length(rstack) == length(tmpstack)+1 && rstack[1:length(tmpstack)] == tmpstack
+                    o.data.currentLine = r
+                    checkTop()
+                    dorefresh = true
                     break
                 end
             end
@@ -1301,6 +1483,21 @@ function inject(o::TwObj{TwDfTableData}, token)
     elseif token == "N"
         searchNextDeep(false)
         dorefresh = true
+    elseif token == :ctrl_y
+        _dt_export_menu!(o)
+        dorefresh = true
+    elseif token == :F2
+        df_desc = string(DataFrames.describe(o.value))
+        tshow(df_desc; title = o.title * " columns", posx = :center, posy = :center)
+        dorefresh = true
+    elseif token == :shift_F2
+        colsym = o.data.colInfo[o.data.currentCol].name
+        d = DataFrames.describe(o.value, :all, cols=[colsym])
+        stat_names = String.(names(d)[2:end])
+        stat_vals  = [string(d[1, n]) for n in names(d)[2:end]]
+        stats_df = DataFrame(stat = stat_names, value = stat_vals)
+        tshow(stats_df; title = string(colsym) * " full stats", posx = :center, posy = :center, width = 50, height = 35)
+        dorefresh = true
     elseif token == :F6
         colsym = o.data.colInfo[o.data.currentCol].name
         node = o.data.datalist[o.data.currentLine][5]
@@ -1319,11 +1516,11 @@ function inject(o::TwObj{TwDfTableData}, token)
         colsym = o.data.colInfo[o.data.currentCol].name
         node = o.data.datalist[o.data.currentLine][5]
         out = IOBuffer()
-        describe(out, node.subdataframe[!, colsym])
+        TermWin.describe(out, node.subdataframe[!, colsym])
 
         if node != o.data.rootnode
             println(out, "\nRoot table stats")
-            describe(out, o.data.rootnode.subdataframe[!, colsym])
+            TermWin.describe(out, o.data.rootnode.subdataframe[!, colsym])
         end
         tshow(
             String(take!(out));

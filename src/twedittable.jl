@@ -9,6 +9,7 @@ struct TwEditTableCol
     editable::Bool                             # Whether user may edit
     valuetype::DataType                        # String, Int, Float64, Date, ...
     enumvalues::Union{Nothing,Vector{String}}  # Non-nothing → popup picker
+    missingok::Bool                            # missing is ok
 end
 
 mutable struct TwEditTableData
@@ -93,7 +94,24 @@ end
 function _et_commit_cell!(data::TwEditTableData)::Bool
     col = data.colspecs[data.currentCol]
     !col.editable && return true
-    col.enumvalues !== nothing && return true  # enum written directly on selection
+
+    col.enumvalues !== nothing && !col.missingok && return true  # enum written directly on selection
+    if col.enumvalues !== nothing && col.missingok
+        if in( data.editbuffer, col.enumvalues )
+            data.df[data.currentRow, col.name] = data.editbuffer
+            data.incomplete = false
+            data.editDirty = false
+            return true
+        end
+        if data.editbuffer == ""
+            data.df[data.currentRow, col.name] = missing
+            data.incomplete = false
+            data.editDirty = false
+            return true
+        end
+        data.incomplete = true
+        return false
+    end
 
     if col.valuetype <: AbstractString
         data.df[data.currentRow, col.name] = data.editbuffer
@@ -103,7 +121,11 @@ function _et_commit_cell!(data::TwEditTableData)::Bool
     else
         ed = TwEntryData(col.valuetype)
         (v, s) = evalNFormat(ed, data.editbuffer, col.width)
-        if v !== nothing
+        if v !== nothing || col.missingok
+            if v === nothing
+                v = missing
+            end
+
             data.df[data.currentRow, col.name] = v
             data.editbuffer = s
             data.incomplete = false
@@ -195,8 +217,11 @@ function _et_visible_cols(o::TwObj{TwEditTableData})
 end
 
 function _et_default_value(col::TwEditTableCol)
-    col.enumvalues !== nothing    && return col.enumvalues[1]
     col.valuetype <: AbstractString && return ""
+
+    col.missingok && return missing #this overrides everything else
+
+    col.enumvalues !== nothing    && return col.enumvalues[1]
     col.valuetype <: AbstractFloat   && return zero(col.valuetype)
     col.valuetype <: Integer         && return zero(col.valuetype)
     col.valuetype <: Date            && return today()
@@ -691,7 +716,7 @@ function inject(o::TwObj{TwEditTableData}, token)
             _et_checkcursor!(data)
             dorefresh = true
         end
-    elseif token == :ctrl_k && is_editable && !is_enum
+    elseif token == :ctrl_k && is_editable && ( !is_enum || col.missingok )
         data.editbuffer = ""
         data.cursorPos = 1
         data.fieldLeftPos = 1

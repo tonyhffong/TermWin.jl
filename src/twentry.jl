@@ -558,7 +558,7 @@ function evalNFormat(data::TwEntryData, s::AbstractString, fieldcount::Int)
         stmp = replace(s, "," => "")
         try
             if length(stmp)==0
-                v = 0.0
+                v = nothing
             else
                 v = parse(dt, stmp)
             end
@@ -575,7 +575,7 @@ function evalNFormat(data::TwEntryData, s::AbstractString, fieldcount::Int)
         if dpos === nothing
             try
                 if length(stmp) == 0
-                    v = 0
+                    v = nothing
                 else
                     v = parse(dt.types[1], stmp)
                 end
@@ -612,7 +612,7 @@ function evalNFormat(data::TwEntryData, s::AbstractString, fieldcount::Int)
         stmp = replace(s, "," => "")
         try
             if length(stmp)==0
-                v = 0
+                v = nothing
             else
                 v = parse(dt, stmp)
             end
