@@ -163,7 +163,7 @@ function ensure_length(s::T, w::Int, pad::Bool = true) where {T<:AbstractString}
     len = textwidth(t)
     if w == 1
         if len > 1
-            return string(Char(0x2026))
+            return string(Char(0x2026)) #ellipsis
         elseif len==1
             return t
         else

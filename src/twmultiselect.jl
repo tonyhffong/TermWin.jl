@@ -83,7 +83,8 @@ function newTwMultiSelect(
     end
 
     h = 2 + min(length(arr), maxheight)
-    w = 4 + max(min(max(length(title), obj.data.maxchoicelength), maxwidth), minwidth)
+    # 2 borders, ->, checkbox, a space
+    w = 5 + max(min(max(length(title), obj.data.maxchoicelength), maxwidth), minwidth)
 
     link_parent_child(scr, obj, h, w, posy, posx)
     obj.formkey = key
@@ -137,14 +138,16 @@ function draw(o::TwObj{TwMultiSelectData})
     n = length(o.data.datalist)
     for r = o.data.currentTop:min(o.data.currentTop+viewContentHeight-1, n)
         flag = 0
+        prefix = " "
         if r == o.data.currentLine
             flag = A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30)
+            prefix = "→"
         end
         s = o.data.datalist[r][1]
-        if o.data.datalist[r][2]
-            s = string('\U2612') * " " * s
+        if o.data.datalist[r][2] #checked!
+            s = prefix * string('\U2612') * " " * s
         else
-            s = string('\U2610') * " " * s
+            s = prefix * string('\U2610') * " " * s
         end
         s = substr_by_width(s, o.data.currentLeft-1, viewContentWidth)
 

@@ -52,8 +52,9 @@ mutable struct TwPopupData
     currentTop::Int
     selectmode::Int
     helpText::String
+    colorpair::Int
     TwPopupData(arr::Array{String,1}) =
-        new(arr, Any[], maximum(map(z->length(z), arr)), nothing, 1, 1, 1, 0, "")
+        new(arr, Any[], maximum(map(z->length(z), arr)), nothing, 1, 1, 1, 0, "", 0)
 end
 TwPopupData(arr::Array{T,1}) where {T<:AbstractString} = TwPopupData(map(x->String(x), arr))
 
@@ -76,6 +77,7 @@ function newTwPopup(
     sortmatched = false,
     allownew = false,
     key::Union{Nothing,Symbol} = nothing,
+    colorpair::Int = 0,
 )
 
     return (newTwPopup(
@@ -93,6 +95,7 @@ function newTwPopup(
         sortmatched = sortmatched,
         allownew = allownew,
         key = key,
+        colorpair = colorpair,
     ))
 end
 
@@ -111,6 +114,7 @@ function newTwPopup(
     sortmatched = false,
     allownew = false,
     key::Union{Nothing,Symbol} = nothing,
+    colorpair::Int = 0,
 ) where {T<:AbstractString}
     obj = TwObj(TwPopupData(arr), Val{:Popup})
     obj.box = true
@@ -143,8 +147,11 @@ function newTwPopup(
         obj.data.helpText = defaultPopupHelpText
     end
 
+    obj.data.colorpair = colorpair
+
     h = 2 + min(length(arr), maxheight)
-    w = 2 + max(min(max(length(title), obj.data.maxchoicelength), maxwidth), minwidth)
+    # we add an extra 1 char for the →
+    w = 3 + max(min(max(length(title), obj.data.maxchoicelength), maxwidth), minwidth)
 
     link_parent_child(scr, obj, h, w, posy, posx)
     obj.formkey = key
@@ -181,6 +188,10 @@ end
 
 function draw(o::TwObj{TwPopupData})
     werase(o.window)
+    use_theme = o.data.colorpair != 0
+    base_attr = COLOR_PAIR( use_theme ? o.data.colorpair : 0 )
+    sel_pair  = COLOR_PAIR( use_theme ? o.data.colorpair : (o.hasFocus ? 15 : 30) )
+    wattron( o.window, base_attr )
     if o.box
         box(o.window, 0, 0)
     end
@@ -197,17 +208,23 @@ function draw(o::TwObj{TwPopupData})
         n = length(o.data.choices)
     end
     for r = o.data.currentTop:min(o.data.currentTop+viewContentHeight-1, n)
-        flag = 0
         if r == o.data.currentLine
-            flag = A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30)
+            flag = A_BOLD | sel_pair
+            prefix = "→"
+        else
+            flag = base_attr
+            prefix = " "
         end
         if usedatalist
             s = o.data.datalist[r][2]
         else
             s = o.data.choices[r]
         end
-        s = substr_by_width(s, o.data.currentLeft - 1, viewContentWidth)
-
+        s = prefix * substr_by_width(s, o.data.currentLeft - 1, viewContentWidth-1)
+        sw = textwidth(s)
+        if sw < viewContentWidth
+            s = s * repeat(" ", viewContentWidth - sw)
+        end
         wattron(o.window, flag)
         mvwprintw(o.window, r - o.data.currentTop + starty, o.borderSizeH, "%s", s)
         wattroff(o.window, flag)
