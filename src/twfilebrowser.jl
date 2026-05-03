@@ -864,6 +864,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             fullpath = o.data.datalist[o.data.currentLine][8]
             is_dir = o.data.datalist[o.data.currentLine][9]
             if !is_dir && isfile(fullpath)
+                ext = o.data.datalist[o.data.currentLine][2]
                 sz = filesize(fullpath)
                 if sz == 0
                     text = "(empty file)"
@@ -875,7 +876,11 @@ function inject(o::TwObj{TwFileBrowserData}, token)
                         text = String(bytes)
                     end
                 end
-                tshow(text, title = basename(fullpath))
+                if ext == ".jl"
+                    tshow(text,"julia"; title = basename(fullpath))
+                else
+                    tshow(text, title = basename(fullpath))
+                end
                 dorefresh = true
             else
                 beep()
