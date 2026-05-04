@@ -251,13 +251,23 @@ function tshow_(x::String, hint::String; kwargs... )
             return newTwFileBrowser( rootTwScreen, p, title = p )
         end
         println("Unknown path: " * x )
-    elseif hint == "julia"
+    elseif startswith( hint, "julia" )
         pos   = length(x) > 100 ? :staggered : :center
         posx  = get(kwargs, :posx, pos)
         posy  = get(kwargs, :posy, pos)
         title_v = get(kwargs, :title, "")
+        filename = ""
+        fileloc = 0
+        m = match( r"^julia:([^:]+)(:([0-9]+))?", hint )
+        if m != nothing
+            filename = m.captures[1]
+            if m.captures[3] != nothing
+                fileloc = parse( Int, m.captures[3] )
+            end
+        end
+
         return newTwViewer(rootTwScreen, x;
-            highlight=true, posy=posy, posx=posx, title=String(title_v))
+            highlight=true, posy=posy, posx=posx, title=String(title_v), filename=filename, fileloc=fileloc)
     else
         tshow_( x; kwargs... )
     end

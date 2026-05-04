@@ -877,7 +877,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
                     end
                 end
                 if ext == ".jl"
-                    tshow(text,"julia"; title = basename(fullpath))
+                    tshow(text,"julia:" * fullpath; title = basename(fullpath))
                 else
                     tshow(text, title = basename(fullpath))
                 end

@@ -1,7 +1,6 @@
 
 defaultViewerHelpText = """
-PgUp/PgDn,
-Arrow keys : standard navigation
+PgUp/PgDn,←/→/↑/↓ : standard navigation
 l          : move halfway toward the start
 L          : move halfway to the end
 Home       : jump to the start
@@ -22,8 +21,10 @@ mutable struct TwViewerData
     helpText::String
     tabWidth::Int
     colorspans::Union{Nothing, Vector{Vector{Tuple{Int,Int,TwAttr}}}}
+    filename::String #if we want to introduce a shortcut to edit the file
+    fileloc::Int     #if we want to introduce a shortcut to edit the file
     TwViewerData() =
-        new(String[], 0, 0, 1, 1, 1, true, "", false, true, defaultViewerHelpText, 4, nothing)
+        new(String[], 0, 0, 1, 1, 1, true, "", false, true, defaultViewerHelpText, 4, nothing, "", 0 )
 end
 
 # the ways to use it:
@@ -42,6 +43,8 @@ function newTwViewer(
     tabWidth = 4,
     trackLine = false,
     title = "",
+    filename = "",
+    fileloc = 0
 )
     obj = TwObj(TwViewerData(), Val{:Viewer})
     obj.box = box
@@ -53,6 +56,8 @@ function newTwViewer(
     obj.data.tabWidth = tabWidth
     obj.data.bottomText = bottomText
     obj.data.trackLine = trackLine
+    obj.data.filename = filename
+    obj.data.fileloc = fileloc
     link_parent_child(scr, obj, height, width, posy, posx)
     obj
 end
@@ -66,11 +71,13 @@ function newTwViewer(
     posx::Any = :staggered,
     box = true,
     showLineInfo = true,
-    bottomText = "",
+    bottomText = "F1:Help",
     showHelp = true,
     tabWidth = 4,
     trackLine = false,
     title = "",
+    filename = "",
+    fileloc = 0
 )
     newmsgs = map(z->escape_string(replace(z, "\t" => repeat(" ", tabWidth))), msgs)
     obj = TwObj(TwViewerData(), Val{:Viewer})
@@ -84,6 +91,8 @@ function newTwViewer(
     obj.data.tabWidth = tabWidth
     obj.data.bottomText = bottomText
     obj.data.trackLine = trackLine
+    obj.data.filename = filename
+    obj.data.fileloc = fileloc
 
     # If caller specified explicit size, honour it; otherwise auto-size from content.
     h =
@@ -113,12 +122,14 @@ function newTwViewer(
     tabWidth         = 4,
     trackLine        = false,
     title            = "",
+    filename         = "",
+    fileloc          = 0
 ) where {T<:AbstractString}
     if !highlight
         return newTwViewer(scr, split(String(msg), "\n");
             height=height, width=width, posy=posy, posx=posx, box=box,
             showLineInfo=showLineInfo, bottomText=bottomText, showHelp=showHelp,
-            tabWidth=tabWidth, trackLine=trackLine, title=title)
+            tabWidth=tabWidth, trackLine=trackLine, title=title, filename=filename, fileloc=fileloc)
     end
     # Highlighted path: tab-expand whole source first so span byte offsets align
     src   = replace(String(msg), "\t" => repeat(" ", tabWidth))
@@ -131,8 +142,15 @@ function newTwViewer(
     obj.data.showLineInfo = showLineInfo
     obj.data.showHelp     = showHelp
     obj.data.tabWidth     = tabWidth
-    obj.data.bottomText   = bottomText
     obj.data.trackLine    = trackLine
+    obj.data.filename     = filename
+    obj.data.fileloc      = fileloc
+    obj.data.bottomText   = "F1:Help"
+
+    if bottomText != "" && filename != ""
+        obj.data.bottomText *= "  F11:vim"
+    end
+
     setTwViewerMsgs(obj, lines)
     try
         obj.data.colorspans = _highlight_julia_spans(src)
@@ -327,13 +345,14 @@ function draw(o::TwObj{TwViewerData})
             end
         end
     end
-    if length(o.data.bottomText) != 0
+    bt = o.data.bottomText
+    if bt != ""
         mvwprintw(
             o.window,
             o.height-1,
-            round(Int, (o.width - length(o.data.bottomText))/2),
+            round(Int, (o.width - length(bt))/2),
             "%s",
-            o.data.bottomText,
+            bt
         )
     end
 end
@@ -427,6 +446,8 @@ function inject(o::TwObj{TwViewerData}, token)
             end
         end
         dorefresh = true
+    elseif token == :F11 && o.data.filename != ""
+        open_in_vim( o.data.filename, o.data.fileloc )
     elseif token == "L" # move half-way toward the end
         if o.data.trackLine
             target =
@@ -528,5 +549,54 @@ function clamp_scroll!(o::TwObj{TwViewerData})
     end
     if o.data.currentLeft < 1
         o.data.currentLeft = 1
+    end
+end
+
+function open_in_vim( file::String, line::Int )
+    if haskey(ENV, "TMUX")
+        run(`tmux new-window vim +$line $file`; wait=false)
+        return true
+    end
+
+    if Sys.isapple() && !isempty(Sys.which("mvim"))
+        serverlist = strip(readchomp(Cmd(["mvim", "--serverlist"])))
+        if !isempty(serverlist)
+            # Send to existing server: :tab drop reuses an open buffer or opens a new tab
+            cmd = ":tab drop $file | call cursor($line, 0)\r"
+            run(Cmd(["mvim", "--remote-send", cmd]); wait=false)
+        else
+            run(Cmd(["mvim", "+$line", file]); wait=false)
+        end
+        return true
+    end
+
+    if Sys.isapple() && get(ENV, "TERM_PROGRAM", "") == "iTerm.app"
+        script = """
+tell application "iTerm2"
+    set newWin to (create window with default profile)
+    tell current session of newWin
+        write text "vim +$(line) $(file)"
+    end tell
+end tell"""
+        run(Cmd(["osascript", "-e", script]))
+        return true
+    end
+
+    if haskey(ENV, "TERMINAL")
+        run(Cmd([ENV["TERMINAL"], "-e", "vim", "+$line", file]); wait=false)
+        return true
+    end
+
+    for (bin, args) in [
+        ("gnome-terminal", ["--", "vim", "+$line", file]),
+        ("konsole",        ["-e", "vim", "+$line", file]),
+        ("xterm",          ["-e", "vim +$line $file"]),
+        ("kitty",          ["vim", "+$line", file]),
+        ("alacritty",      ["-e", "vim", "+$line", file]),
+    ]
+        if !isempty(Sys.which(bin))
+            run(Cmd([bin; args]); wait=false)
+            return true
+        end
     end
 end
