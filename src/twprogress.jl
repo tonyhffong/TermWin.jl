@@ -1,98 +1,51 @@
-# progress bar
+# Progress bar widget — driven by a Threads.@spawn worker.
+#
+# Architecture:
+#   * The worker runs in a separate OS thread (via Threads.@spawn in trun()).
+#   * The worker reports updates by calling a `report(...)` closure that
+#     pushes onto a buffered Channel{ProgressUpdate}.
+#   * The main thread's screen event loop calls `tick(o)` on this widget
+#     every ~50ms. `tick` drains the channel, updates internal state,
+#     refreshes the screen, and detects task completion.
+#   * Esc / Ctrl-K set an Atomic{Bool} cancel flag. The worker is responsible
+#     for checking it via the `cancelled()` closure (cooperative cancel).
+
+struct ProgressUpdate
+    progress::Union{Nothing,Float64}
+    text::Union{Nothing,String}
+end
 
 mutable struct TwProgressData
-    uiChannel::RemoteRef
-    statusChannel::RemoteRef
+    updates::Channel{ProgressUpdate}
+    cancelFlag::Threads.Atomic{Bool}
+    workTask::Task
     progress::Float64
-    showProgress::Bool
-    cursorPos::Int # where is the progress bar cursor
-    text::UTF8String
-    redrawTime::Float64
-    statusTime::Float64
+    text::String
     startTime::Float64
-    TwProgressData() =
-        new(RemoteRef(), RemoteRef(), 0.0, true, 1, utf8(""), time(), time(), time())
+    redrawTime::Float64
 end
 
-twGlobProgressData = TwProgressData()
-
-function updateProgressChannel(status::Symbol, v::Any)
-    global twGlobProgressData
-    if isready(twGlobProgressData.statusChannel)
-        take!(twGlobProgressData.statusChannel)
-    end
-    put!(twGlobProgressData.statusChannel, (status, v))
-end
-
-function progressMessage(s::UTF8String)
-    global twGlobProgressData
-    st = :normal
-    val = nothing
-    if isready(twGlobProgressData.statusChannel)
-        (st, val) = take!(twGlobProgressData.statusChannel)
-        if st == :init
-            st = :normal
-        end
-    end
-    if typeof(val) <: Dict && eltype(val) <: (Symbol, Any)
-        val[:message] = utf8(s)
-        put!(twGlobProgressData.statusChannel, (st, val))
-    else
-        if st != :error && st != :done
-            put!(
-                twGlobProgressData.statusChannel,
-                (st, @compat Dict{Symbol,Any}(:message => utf8(s))),
-            )
-        end
-    end
-end
-
-function progressUpdate(n::Float64)
-    global twGlobProgressData
-    st = :normal
-    val = nothing
-    if isready(twGlobProgressData.statusChannel)
-        (st, val) = take!(twGlobProgressData.statusChannel)
-        if st == :init
-            st = :normal
-        end
-    end
-    if typeof(val) <: Dict && eltype(val) <: (Symbol, Any)
-        val[:progress] = n
-        put!(twGlobProgressData.statusChannel, (st, val))
-    else
-        if st != :error && st != :done
-            put!(
-                twGlobProgressData.statusChannel,
-                (st, @compat Dict{Symbol,Any}(:progress => n)),
-            )
-        end
-    end
-end
-
-# standalone panel
-# as a subwin as part of another widget (see next function)
-# w include title width, if it's shown on the left
-# the function f takes no argument. It's started right-away
-# the function can call
-# * TermWin.progressMessage( s::UTF8String ) # make sure height can accommodate the content
-# * TermWin.progressUpdate( n::Float64 ) # 0.0 <= n <= 1.0
 function newTwProgress(
     scr::TwObj;
-    height::Real = 5,
-    width::Real = 40,
+    updates::Channel{ProgressUpdate},
+    cancelFlag::Threads.Atomic{Bool},
+    workTask::Task,
+    title::AbstractString = "",
+    height::Int = 5,
+    width::Int = 50,
     posy::Any = :center,
     posx::Any = :center,
     box = true,
-    title = utf8(""),
 )
-    global twGlobProgressData
-    obj = TwObj(TwProgressData(), Val{:Progress})
-    obj.data = twGlobProgressData
+    obj = TwObj(
+        TwProgressData(updates, cancelFlag, workTask, 0.0, "", time(), time()),
+        Val{:Progress},
+    )
     obj.box = box
-    obj.title = title
+    obj.title = String(title)
     obj.borderSizeV = box ? 1 : 0
     obj.borderSizeH = box ? 1 : 0
+    obj.acceptsFocus = true
     link_parent_child(scr, obj, height, width, posy, posx)
     obj
 end
@@ -106,69 +59,80 @@ function draw(o::TwObj{TwProgressData})
         mvwprintw(
             o.window,
             0,
-            (@compat round(Int, (o.width - length(o.title))/2)),
+            round(Int, (o.width - length(o.title)) / 2),
             "%s",
             o.title,
         )
     end
     starty = o.borderSizeV
     startx = o.borderSizeH
-    viewContentHeight = o.height - o.borderSizeV * 2
-    viewContentWidth = o.width - o.borderSizeH * 2
+    contentW = o.width - 2 * o.borderSizeH
+    contentH = o.height - 2 * o.borderSizeV
 
-    wattron(o.window, COLOR_PAIR(15)) #white on blue for progress bar
-
-    p = max(0.0, min(1.0, twGlobProgressData.progress))
-    left = max(0, (@compat round(Int, viewContentWidth * p)) - 1)
-    bar = repeat(string('\U2592'), left+1) * repeat(" ", viewContentWidth - left - 1)
+    p = clamp(o.data.progress, 0.0, 1.0)
+    filled = round(Int, contentW * p)
+    bar = repeat('▒', filled) * repeat(' ', max(0, contentW - filled))
+    wattron(o.window, COLOR_PAIR(15))
     mvwprintw(o.window, starty, startx, "%s", bar)
     wattroff(o.window, COLOR_PAIR(15))
-    if twGlobProgressData.text != ""
-        mvwprintw(o.window, starty+1, startx, "%s", twGlobProgressData.text)
+    if !isempty(o.data.text) && contentH >= 2
+        # Truncate text to content width to avoid border overrun
+        txt = o.data.text
+        if length(txt) > contentW
+            txt = txt[1:contentW]
+        end
+        mvwprintw(o.window, starty + 1, startx, "%s", txt)
     end
 end
 
-function inject(o::TwObj{TwProgressData}, token::Any)
-    global twGlobProgressData
-    t = time()
-    dorefresh = (t - twGlobProgressData.redrawTime) > 1.0
-    retcode = :got_it # default behavior is that we know what to do with it
-
-    if token == :progressupdate
-        (st, val) = take!(twGlobProgressData.statusChannel)
-        twGlobProgressData.statusTime = t
-        if st == :init
-            twGlobProgressData.startTime = t
-            twGlobProgressData.progress = 0.0
-            twGlobProgressData.text = utf8("init" * strftime(" %H:%M:%S", time()))
-        elseif st == :error
-            o.value = val
-            retcode = :exit_nothing
-        elseif st == :done
-            o.value = val
-            retcode = :exit_ok
-        else
-            if typeof(val) <: Dict && eltype(val) <: (Symbol, Any)
-                if haskey(val, :message) && typeof(val[:message]) <: AbstractString
-                    twGlobProgressData.text = utf8(val[:message])
-                end
-                if haskey(val, :progress) && typeof(val[:progress]) == Float64
-                    twGlobProgressData.progress = val[:progress]
-                    #twGlobProgressData.text = utf8( string( st ) * strftime( " %H:%M:%S", time() ) )
-                end
-            end
-            dorefresh = true
+# Drain channel, refresh, check task. Called by screen loop every ~50ms.
+function tick(o::TwObj{TwProgressData})
+    dirty = false
+    while isready(o.data.updates)
+        u = take!(o.data.updates)
+        if u.progress !== nothing
+            o.data.progress = u.progress
+            dirty = true
         end
-    elseif token == :ctrl_k # kill, preemptively
-    elseif token == :ctrl_p # pause, cooperatively
-    else
-        retcode = :pass # I don't know what to do with it
+        if u.text !== nothing
+            o.data.text = u.text
+            dirty = true
+        end
     end
 
-    if dorefresh
-        twGlobProgressData.redrawTime = t
+    if istaskdone(o.data.workTask)
+        # Drain any final updates the worker pushed before finishing
+        while isready(o.data.updates)
+            u = take!(o.data.updates)
+            u.progress !== nothing && (o.data.progress = u.progress)
+            u.text !== nothing && (o.data.text = u.text)
+        end
+        if o.data.workTask.state === :failed
+            o.value = nothing
+            return :exit_nothing
+        else
+            o.value = o.data.workTask.result
+            return :exit_ok
+        end
+    end
+
+    # Throttle redraw: at most every 100ms even if many updates arrived
+    t = time()
+    if dirty && (t - o.data.redrawTime) > 0.1
+        o.data.redrawTime = t
         refresh(o)
     end
-
-    return retcode
+    return :got_it
 end
+
+function inject(o::TwObj{TwProgressData}, token)
+    if token == :esc || token == :ctrl_k
+        o.data.cancelFlag[] = true
+        return :got_it
+    end
+    return :pass
+end
+
+helptext(o::TwObj{TwProgressData}) =
+    "Esc or Ctrl-K  : request cooperative cancel\n" *
+    "                 (the worker must check `cancelled()` and stop)"

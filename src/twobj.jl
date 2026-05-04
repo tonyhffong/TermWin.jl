@@ -285,6 +285,10 @@ function activateTwObj(o::TwObj, tokens::Any = nothing)
         while true
             NC.render(nc_context)
             token = readtoken(nc_context)
+            if token == :nochar
+                sleep(0.05)   # avoid 100% CPU spin when no input is ready
+                continue
+            end
             status = Base.invokelatest(inject, o, token) # note that it could be :nochar
             if status == :exit_ok
                 return o.value
@@ -500,4 +504,21 @@ function relayout_list_children!(p::TwObj{TwListData})
         clamp_scroll!(c)
     end
     update_list_canvas(p)
+end
+
+# ─── Generic tick framework ────────────────────────────────────────────────
+# Widgets that need periodic updates (e.g. progress driven by a worker thread)
+# override `tick(o)` and register themselves via `register_tickable!`. The
+# screen event loop calls `tick` on each registered widget once per loop pass.
+tick(o::TwObj) = :pass
+
+function register_tickable!(scr::TwObj{TwScreenData}, o::TwObj)
+    o in scr.data.tickables || push!(scr.data.tickables, o)
+    nothing
+end
+
+function unregister_tickable!(scr::TwObj{TwScreenData}, o::TwObj)
+    idx = findfirst(==(o), scr.data.tickables)
+    idx !== nothing && deleteat!(scr.data.tickables, idx)
+    nothing
 end

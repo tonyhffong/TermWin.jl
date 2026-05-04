@@ -105,7 +105,8 @@ end
 mutable struct TwScreenData
     objects::Vector{TwObj}
     focus::Int
-    TwScreenData() = new(TwObj[], 0)
+    tickables::Vector{TwObj}
+    TwScreenData() = new(TwObj[], 0, TwObj[])
 end
 
 mutable struct TwListData

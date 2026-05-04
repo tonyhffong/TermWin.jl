@@ -42,7 +42,7 @@ include("twscreen.jl")
 include("ccall.jl")
 include("format.jl")
 include("dfutils.jl")
-#include( "twprogress.jl")
+include("twprogress.jl")
 include("twviewer.jl")
 include("twentry.jl")
 include("readtoken.jl")
@@ -414,34 +414,58 @@ function tshow(x...; kwargs...)
     end
 end
 
-# f is a no-arg function
-function trun(f::Function; kwargs...)
-    # async start the function
-    # start the progress bar window and listen to it
+# Run a function `f(report, cancelled)` on a separate OS thread (Threads.@spawn)
+# while showing a progress dialog. The function receives:
+#   * report(; progress=nothing, text=nothing)  — push an update to the UI
+#   * cancelled()                                — returns true if user pressed Esc/Ctrl-K
+# Returns whatever `f` returned, or `nothing` if the worker errored.
+#
+# Requires Julia started with -t > 1 for true CPU-bound parallelism.
+# With -t 1, Threads.@spawn still works but does not parallelize.
+function trun(
+    f::Function;
+    title::AbstractString = "Working...",
+    height::Int = 5,
+    width::Int = 50,
+    kwargs...,
+)
     global callcount, nc_context, rootTwScreen
-    @async begin
-        problem = false
-        updateProgressChannel(:init, nothing)
-        try
-            val = f()
-            updateProgressChannel(:done, val)
-        catch er
-            updateProgressChannel(:error, er)
-        end
-    end
 
-    ret = nothing
+    updates    = Channel{ProgressUpdate}(64)
+    cancelFlag = Threads.Atomic{Bool}(false)
+
+    # Closures the worker uses to talk back to the UI
+    report = (; progress::Union{Nothing,Real} = nothing,
+               text::Union{Nothing,AbstractString} = nothing) -> begin
+        put!(updates, ProgressUpdate(
+            progress === nothing ? nothing : Float64(progress),
+            text     === nothing ? nothing : String(text),
+        ))
+        nothing
+    end
+    cancelled = () -> cancelFlag[]
+
+    task = Threads.@spawn f(report, cancelled)
 
     if callcount == 0
         initsession()
         callcount += 1
         werase(rootplane)
+        ret = nothing
         try
-            o = newTwProgress(rootTwScreen; kwargs...)
-            if o !== nothing
-                activateTwObj(rootTwScreen)
-                ret = o.value
-            end
+            o = newTwProgress(
+                rootTwScreen;
+                updates = updates,
+                cancelFlag = cancelFlag,
+                workTask = task,
+                title = title,
+                height = height,
+                width = width,
+                kwargs...,
+            )
+            register_tickable!(rootTwScreen, o)
+            activateTwObj(rootTwScreen)
+            ret = o.value
         catch er
             callcount -= 1
             endsession()
@@ -451,21 +475,21 @@ function trun(f::Function; kwargs...)
         endsession()
         return ret
     else
-        found = false
-        for o in rootTwScreen.data.objects
-            if objtype(o) == :Progress
-                raiseTwObject(o)
-                o.isvisible = true
-                found = true
-                break
-            end
-        end
-        if !found
-            o = newTwProgress(rootTwScreen; kwargs...)
-            o.hasFocus = true
-            rootTwScreen.data.focus = length(rootTwScreen.data.objects)
-            refresh(rootTwScreen)
-        end
+        # Nested call inside an existing session: register and let the
+        # outer activateTwObj loop drive ticks.
+        o = newTwProgress(
+            rootTwScreen;
+            updates = updates,
+            cancelFlag = cancelFlag,
+            workTask = task,
+            title = title,
+            height = height,
+            width = width,
+            kwargs...,
+        )
+        register_tickable!(rootTwScreen, o)
+        raiseTwObject(o)
+        refresh(rootTwScreen)
         return nothing
     end
 end

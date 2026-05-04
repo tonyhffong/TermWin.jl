@@ -238,19 +238,28 @@ function activateTwObj(scr::TwObj{TwScreenData}, tokens::Any = nothing)
         while true
             NC.render(nc_context)
             token = readtoken(nc_context)
-            status = inject(scr, token)
-
-            for o in scr.data.objects
-                global twGlobProgressData
-                if objtype(o) == :Progress && isready(twGlobProgressData.statusChannel)
-                    inject(o, :progressupdate)
+            if token != :nochar
+                status = inject(scr, token)
+                if handleStatus(status, token) == :really_exit
+                    return retvalue
                 end
             end
 
-            if handleStatus(status, token) == :really_exit
-                return retvalue
+            # Generic tick: each registered widget gets a chance to update.
+            # Iterate over a copy because tick() may unregister.
+            for o in copy(scr.data.tickables)
+                tickstatus = tick(o)
+                if tickstatus == :exit_ok || tickstatus == :exit_nothing
+                    if tickstatus == :exit_ok
+                        retvalue = o.value
+                    end
+                    unregister_tickable!(scr, o)
+                    unregisterTwObj(scr, o)
+                    return retvalue
+                end
             end
-            sleep(0.01) # this is important or @async task won't run
+
+            sleep(0.05) # ~20Hz UI loop; worker runs on its own thread
         end
     else
         for token in tokens

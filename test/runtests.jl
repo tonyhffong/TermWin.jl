@@ -4,3 +4,4 @@ using TermWin
 
 include( "dftests.jl" )
 include( "strtests.jl" )
+include( "progress_unit.jl" )
