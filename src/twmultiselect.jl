@@ -145,9 +145,9 @@ function draw(o::TwObj{TwMultiSelectData})
         end
         s = o.data.datalist[r][1]
         if o.data.datalist[r][2] #checked!
-            s = prefix * string('\U2612') * " " * s
+            s = prefix * "■ " * s
         else
-            s = prefix * string('\U2610') * " " * s
+            s = prefix * "□ " * s
         end
         s = substr_by_width(s, o.data.currentLeft-1, viewContentWidth)
 

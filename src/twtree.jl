@@ -688,15 +688,13 @@ function inject(o::TwObj{TwTreeData}, token)
             try
                 f = getfield(v.module, v.name)
                 edit(f, v.sig)
-                dorefresh = true
             catch err
                 tshow("Error showing Method\n" * string(err), title = string(lastkey))
-                dorefresh = true
             end
         elseif !in(v, [nothing, Nothing, Any])
             tshow(v, title = string(lastkey))
-            dorefresh = true
         end
+        dorefresh = true
     elseif token == :shift_F6
         stck = copy(o.data.datalist[o.data.currentLine][4])
         if !isempty(stck)
