@@ -147,7 +147,7 @@ function newTwViewer(
     obj.data.fileloc      = fileloc
     obj.data.bottomText   = "F1:Help"
 
-    if bottomText != "" && filename != ""
+    if filename != ""
         obj.data.bottomText *= "  F11:vim"
     end
 
