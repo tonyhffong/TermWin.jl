@@ -44,6 +44,7 @@ include("format.jl")
 include("dfutils.jl")
 include("twprogress.jl")
 include("twviewer.jl")
+include("twimage.jl")
 include("twentry.jl")
 include("readtoken.jl")
 include("twtree.jl")
@@ -66,7 +67,7 @@ export TwObj, TwScreen, rootTwScreen
 export newTwScreen
 export vstack, hstack, @twlayout
 export newTwEntry, newTwTree, newTwFileBrowser, newTwFunc, newTwViewer
-export newTwCalendar, newTwPopup, newTwMultiSelect
+export newTwCalendar, newTwPopup, newTwMultiSelect, newTwImage
 export newTwDfTable, newTwList
 export newTwEditTable, TwEditTableCol
 export newTwDictTree
@@ -268,6 +269,15 @@ function tshow_(x::String, hint::String; kwargs... )
 
         return newTwViewer(rootTwScreen, x;
             highlight=true, posy=posy, posx=posx, title=String(title_v), filename=filename, fileloc=fileloc)
+    elseif hint == "img" || startswith(hint, "img:")
+        # Optional title from "img:My Title" form. Caller-supplied
+        # `title=` kwarg takes precedence over the hint suffix.
+        title_v = get(kwargs, :title, "")
+        if isempty(String(title_v)) && startswith(hint, "img:")
+            suffix = String(SubString(hint, 5))
+            !isempty(suffix) && (title_v = suffix)
+        end
+        return newTwImage(rootTwScreen, x; title=String(title_v), kwargs...)
     else
         tshow_( x; kwargs... )
     end

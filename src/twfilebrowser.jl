@@ -22,6 +22,8 @@ defaultFileBrowserBottomText = "F1:help <spc><rtn>:toggle F6:view /:search .:hid
 
 const PREVIEW_EXTENSIONS = Set([".txt", ".md", ".jl", ".log", ".toml", ".csv", ".json", ".yaml", ".yml", ".xml", ".cfg", ".ini", ".conf", ".sh", ".py", ".c", ".h", ".rs", ".go"])
 
+const IMAGE_EXTENSIONS = Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif"])
+
 fileTypeMaxWidth = 6
 fileMtimeWidth = 6
 
@@ -48,10 +50,12 @@ mutable struct TwFileBrowserData
     previewSplit::Float64
     previewCache::Dict{String,Vector{String}}
     previewSpanCache::Dict{String,Vector{Vector{Tuple{Int,Int,TwAttr}}}}
+    previewMtimeCache::Dict{String,Float64}
     previewTop::Int
     previewPath::String
+    imagePreviewCache::Dict{String,NC.Visual}
     function TwFileBrowserData()
-        new(
+        ret = new(
             "",
             Dict{String,Bool}(),
             Any[],
@@ -72,9 +76,18 @@ mutable struct TwFileBrowserData
             0.5,
             Dict{String,Vector{String}}(),
             Dict{String,Vector{Vector{Tuple{Int,Int,TwAttr}}}}(),
+            Dict{String,Float64}(),
             1,
             "",
+            Dict{String,NC.Visual}(),
         )
+        finalizer(ret) do d
+            for v in values(d.imagePreviewCache)
+                try; NC.destroy(v); catch; end
+            end
+            empty!(d.imagePreviewCache)
+        end
+        ret
     end
 end
 
@@ -125,6 +138,41 @@ function load_preview(path::String)::Vector{String}
         return ["(binary file)"]
     end
     return split(String(bytes), '\n')
+end
+
+function is_image_preview(path::String)
+    isfile(path) || return false
+    ext = lowercase(splitext(path)[2])
+    return ext in IMAGE_EXTENSIONS
+end
+
+# Returns the cached NC.Visual, decoding+caching if needed. Bounded LRU
+# (8 entries, evict 4 oldest when full). Returns nothing on decode failure.
+function load_image_preview(o::TwObj{TwFileBrowserData}, path::String)
+    if haskey(o.data.imagePreviewCache, path)
+        return o.data.imagePreviewCache[path]
+    end
+    if length(o.data.imagePreviewCache) >= 8
+        ks = collect(keys(o.data.imagePreviewCache))
+        for k in ks[1:4]
+            v = o.data.imagePreviewCache[k]
+            try; NC.destroy(v); catch; end
+            delete!(o.data.imagePreviewCache, k)
+        end
+    end
+    visual = nothing
+    try
+        ptr = NC.LibNotcurses.ncvisual_from_file(path)
+        if ptr != C_NULL
+            visual = NC.Visual(ptr)
+        end
+    catch er
+        log("file browser: ncvisual_from_file failed: " * sprint(showerror, er))
+    end
+    if visual !== nothing
+        o.data.imagePreviewCache[path] = visual
+    end
+    return visual
 end
 
 function file_sort_entries(entries, sortBy::Symbol)
@@ -492,71 +540,128 @@ function draw(o::TwObj{TwFileBrowserData})
             mvwprintw(o.window, 0, previewX + 1, "%s", ptitle)
         end
 
-        # get preview lines
-        local lines::Vector{String}
-        if o.data.previewPath == ""
-            lines = String[]
-        elseif o.data.datalistlen > 0 && o.data.datalist[o.data.currentLine][9]
-            lines = ["(directory)"]
-        else
-            if !haskey(o.data.previewCache, o.data.previewPath)
-                # evict old entries if cache is full
-                if length(o.data.previewCache) > 20
-                    ks = collect(keys(o.data.previewCache))
-                    for k in ks[1:min(10, length(ks))]
-                        delete!(o.data.previewCache, k)
-                        delete!(o.data.previewSpanCache, k)
-                    end
-                end
-                plines = load_preview(o.data.previewPath)
-                o.data.previewCache[o.data.previewPath] = plines
-                if lowercase(splitext(o.data.previewPath)[2]) == ".jl"
-                    try
-                        src = join(map(l -> replace(l, "\t" => "    "), plines), "\n")
-                        o.data.previewSpanCache[o.data.previewPath] = _highlight_julia_spans(src)
-                    catch
-                    end
-                end
-            end
-            lines = o.data.previewCache[o.data.previewPath]
-        end
+        # Check whether the current selection is an image. If so, blit the
+        # cached visual onto the preview pane and skip the text-preview path.
+        is_image_path = o.data.previewPath != "" &&
+                        !(o.data.datalistlen > 0 &&
+                          o.data.datalist[o.data.currentLine][9]) &&
+                        is_image_preview(o.data.previewPath)
 
-        pspans = get(o.data.previewSpanCache, o.data.previewPath, nothing)
-        for i in 1:viewContentHeight
-            lineIdx = o.data.previewTop + i - 1
-            # always blank the line first so stale chars don't bleed through
-            mvwprintw(o.window, i, previewX, "%s", repeat(" ", rightW))
-            if lineIdx <= length(lines)
-                rawline = replace(lines[lineIdx], "\t" => "    ")
-                if pspans !== nothing
-                    linespans = lineIdx <= length(pspans) ?
-                        pspans[lineIdx] : Tuple{Int,Int,TwAttr}[]
-                    _draw_highlighted_line!(
-                        o.window, i, rawline, linespans, 1, rightW, previewX,
-                    )
-                else
-                    txt = ensure_length(rawline, rightW, false)
-                    mvwprintw(o.window, i, previewX, "%s", txt)
-                end
+        if is_image_path
+            # Clear preview area first to wipe any prior text
+            for i in 1:viewContentHeight
+                mvwprintw(o.window, i, previewX, "%s", repeat(" ", rightW))
             end
-        end
-
-        # preview line info in top border (right-aligned)
-        if o.box && !isempty(lines)
-            totalLines = length(lines)
-            if totalLines <= viewContentHeight
-                pmsg = "ALL"
+            visual = load_image_preview(o, o.data.previewPath)
+            if visual === nothing
+                mvwprintw(o.window, 1, previewX, "%s",
+                          ensure_length("(failed to decode image)", rightW, false))
             else
-                pmsg = @sprintf(
-                    "%d/%d %5.1f%%",
-                    o.data.previewTop,
-                    totalLines,
-                    o.data.previewTop / totalLines * 100
-                )
+                blitter = NC.Blitter.DEFAULT
+                if o.window isa NC.Plane
+                    try
+                        blitter = _resolve_image_blitter(nc_context, NC.Scale.SCALE)
+                    catch
+                        blitter = NC.Blitter.DEFAULT
+                    end
+                    opts = NC.VisualOptions(;
+                        plane   = o.window,
+                        scaling = NC.Scale.SCALE,
+                        y       = 1,           # below the title border
+                        x       = previewX,
+                        leny    = UInt(0),
+                        lenx    = UInt(0),
+                        blitter = blitter,
+                    )
+                    try
+                        NC.blit(nc_context, visual, opts)
+                    catch er
+                        log("file browser image blit failed: " *
+                            sprint(showerror, er))
+                        mvwprintw(o.window, 1, previewX, "%s",
+                                  ensure_length("(blit failed)", rightW, false))
+                    end
+                else
+                    mvwprintw(o.window, 1, previewX, "%s",
+                              ensure_length("(image preview unavailable)", rightW, false))
+                end
             end
-            ppos = o.width - o.borderSizeH - length(pmsg)
-            if ppos > previewX
-                mvwprintw(o.window, 0, ppos, "%s", pmsg)
+        else
+            # get preview lines
+            local lines::Vector{String}
+            if o.data.previewPath == ""
+                lines = String[]
+            elseif o.data.datalistlen > 0 && o.data.datalist[o.data.currentLine][9]
+                lines = ["(directory)"]
+            else
+                current_mtime = try; Float64(stat(o.data.previewPath).mtime); catch; 0.0; end
+                if haskey(o.data.previewCache, o.data.previewPath) &&
+                        get(o.data.previewMtimeCache, o.data.previewPath, -1.0) != current_mtime
+                    delete!(o.data.previewCache, o.data.previewPath)
+                    delete!(o.data.previewSpanCache, o.data.previewPath)
+                    delete!(o.data.previewMtimeCache, o.data.previewPath)
+                end
+                if !haskey(o.data.previewCache, o.data.previewPath)
+                    # evict old entries if cache is full
+                    if length(o.data.previewCache) > 20
+                        ks = collect(keys(o.data.previewCache))
+                        for k in ks[1:min(10, length(ks))]
+                            delete!(o.data.previewCache, k)
+                            delete!(o.data.previewSpanCache, k)
+                            delete!(o.data.previewMtimeCache, k)
+                        end
+                    end
+                    plines = load_preview(o.data.previewPath)
+                    o.data.previewCache[o.data.previewPath] = plines
+                    o.data.previewMtimeCache[o.data.previewPath] = current_mtime
+                    if lowercase(splitext(o.data.previewPath)[2]) == ".jl"
+                        try
+                            src = join(map(l -> replace(l, "\t" => "    "), plines), "\n")
+                            o.data.previewSpanCache[o.data.previewPath] = _highlight_julia_spans(src)
+                        catch
+                        end
+                    end
+                end
+                lines = o.data.previewCache[o.data.previewPath]
+            end
+
+            pspans = get(o.data.previewSpanCache, o.data.previewPath, nothing)
+            for i in 1:viewContentHeight
+                lineIdx = o.data.previewTop + i - 1
+                # always blank the line first so stale chars don't bleed through
+                mvwprintw(o.window, i, previewX, "%s", repeat(" ", rightW))
+                if lineIdx <= length(lines)
+                    rawline = replace(lines[lineIdx], "\t" => "    ")
+                    if pspans !== nothing
+                        linespans = lineIdx <= length(pspans) ?
+                            pspans[lineIdx] : Tuple{Int,Int,TwAttr}[]
+                        _draw_highlighted_line!(
+                            o.window, i, rawline, linespans, 1, rightW, previewX,
+                        )
+                    else
+                        txt = ensure_length(rawline, rightW, false)
+                        mvwprintw(o.window, i, previewX, "%s", txt)
+                    end
+                end
+            end
+
+            # preview line info in top border (right-aligned)
+            if o.box && !isempty(lines)
+                totalLines = length(lines)
+                if totalLines <= viewContentHeight
+                    pmsg = "ALL"
+                else
+                    pmsg = @sprintf(
+                        "%d/%d %5.1f%%",
+                        o.data.previewTop,
+                        totalLines,
+                        o.data.previewTop / totalLines * 100
+                    )
+                end
+                ppos = o.width - o.borderSizeH - length(pmsg)
+                if ppos > previewX
+                    mvwprintw(o.window, 0, ppos, "%s", pmsg)
+                end
             end
         end
     end
