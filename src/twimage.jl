@@ -71,8 +71,8 @@ Press Esc to close.
 function newTwImage(
     scr::TwObj,
     path::AbstractString;
-    height::Real = 0,
-    width::Real  = 0,
+    height::Real = 0.8,
+    width::Real  = 0.8,
     posy::Any    = :center,
     posx::Any    = :center,
     box          = true,
