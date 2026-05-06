@@ -59,7 +59,6 @@ include("twlabel.jl")
 include("twedittable.jl")
 include("twdicttree.jl")
 include("twbuilder.jl")
-include("precompile.jl")
 
 export tshow, activateTwObj, registerTwObj, unregisterTwObj
 export trun # experimental
