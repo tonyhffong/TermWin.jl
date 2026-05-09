@@ -1,14 +1,19 @@
 # TermWin.jl
 
-A terminal UI toolkit for Julia built on [Notcurses](https://github.com/dankamongmen/notcurses).
+## Introducation
+TermWin is a UI toolkit for Julia built on [Notcurses](https://github.com/dankamongmen/notcurses).
 Explore data structures interactively, collect user input, and compose multi-panel layouts — all in the terminal.
 
 Requires a 256-colour terminal. `xterm-256color` or iTerm2 on macOS are recommended.
 
 ---
 
-## Installation of Notcurses
+## Requirements
 
+* NotCurses.jl
+* 256-color terminal (e.g. iTerm2)
+
+### NotCurses
 Install the Julia package. It should install the notcurses. If it doesn't work you may install directly the native Notcurses library.
 
 **macOS (Homebrew)**
@@ -26,6 +31,7 @@ Then in Julia:
 ] add TermWin
 ```
 
+### Terminal Notes
 **MacOS iTerm2 note**: Disable *Preferences → Profiles → Terminal → Modern parser for CSI codes*.
 Map F1–F4 in *Preferences → Profiles → Keys → Key Bindings* to hex sequences
 `0x1b 0x4f 0x50` through `0x1b 0x4f 0x53` so they are not swallowed by the terminal emulator.
@@ -34,23 +40,28 @@ Map F1–F4 in *Preferences → Profiles → Keys → Key Bindings* to hex seque
 
 ## Quick start
 
-### 1 — Explore anything with `tshow`
+### 1 — Explore anything with `tshow` (Read-only)
 
 `tshow` accepts almost any Julia value and renders an interactive viewer:
 
 ```julia
 using TermWin
 
-tshow(42)                          # tree viewer
-tshow(:( f(x) = x^2 + 1 ))        # expression tree — useful for understanding Julia's AST
+tshow(42)                          # value viewer
+tshow(:( f(x) = x^2 + 1 ) )        # expression tree — useful for understanding Julia's AST
 tshow(TermWin)                     # module browser
 tshow(sort!)                       # method table
 tshow(DataFrame(a=1:3, b=["x","y","z"]))   # DataFrame table
 tshow(DataFrame(a=1:3, b=["x","y","z"]),cols::Vector{TwEditTableCol} )   # editable DataFrame table (2nd arg is important)
 tshow("./","path")                 # file browser (2nd argument "path" required)
+tshow( code_snippet,"julia")       # show julia code with syntax coloring (2nd argument "julia" required, or coloring won't happen)
+tshow( code_snippet,"julia:pathname.jl")  # show julia code with syntax coloring, and a shortcut to launch to vim
 ```
 
 Press **F1** inside any viewer for a full keyboard reference. Press **Esc** to exit.
+
+Note: later on, you will find that tshow is indispensible when compositing a UI. Read-only widgets can be readily shown by just tshow()'ing 
+the thing.
 
 ### 2 — Collect a value from the user
 
