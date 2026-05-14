@@ -15,8 +15,8 @@ ctrl_n/p   : search next/previous occurence on exposed rows
 N          : search next occurence on any row. may expand more nodes
 F2         : describe() all columns of the full table
 Shift-F2   : describe(:all) for the current column only (transposed)
+F3         : popup window for leaf & root node stats
 F6         : popup window for value
-F7         : popup window for leaf & root node stats
 Ctrl-Y     : Export current view (HTML→browser, CSV/TSV→clipboard or file)
              CSV uses tab indentation to represent pivot depth.
              HTML opens a dark-themed self-contained file in the default browser.
@@ -1512,7 +1512,7 @@ function inject(o::TwObj{TwDfTableData}, token)
             tshow(v; title = string(colsym), posx = :center, posy = :center)
             dorefresh = true
         end
-    elseif token == :F7
+    elseif token == :F3
         colsym = o.data.colInfo[o.data.currentCol].name
         node = o.data.datalist[o.data.currentLine][5]
         out = IOBuffer()

@@ -13,10 +13,11 @@ _          : collapse all
 F5         : show string(value) — with Julia syntax color if Expr
 F6         : popup window for value
 Shift-F6   : popup window for type
+F7         : store value into a Main global variable
 n, p       : Move to next/previous matched line
 m          : (Module Only) toggle export-only vs all names
 """
-defaultTreeBottomText = "F1:help <spc><rtn>:toggle F5:string F6:popup +:expand -:collaps /:search"
+defaultTreeBottomText = "F1:help <spc><rtn>:toggle F5:string F6:popup F7:SaveGlobal +/-:exp&collaps /:search"
 
 modulenames = Dict{Module,Array{Symbol,1}}()
 moduleallnames = Dict{Module,Array{Symbol,1}}()
@@ -708,6 +709,30 @@ function inject(o::TwObj{TwTreeData}, token)
             tshow(vtyp)
             dorefresh = true
         end
+    elseif token == :F7
+        stck = copy(o.data.datalist[o.data.currentLine][4])
+        lastkey = isempty(stck) ? o.title : stck[end]
+        v = getvaluebypath(o.value, stck)
+        helper = newTwEntry(
+            o.screen.value,
+            String;
+            width = 34,
+            posy = :center,
+            posx = :center,
+            title = "Store as global: ",
+        )
+        helper.data.inputText = string(lastkey)
+        helper.data.cursorPos = length(helper.data.inputText) + 1
+        varname = activateTwObj(helper)
+        unregisterTwObj(o.screen.value, helper)
+        if varname !== nothing && !isempty(strip(varname))
+            try
+                Core.eval(Main, Expr(:(=), Symbol(strip(varname)), QuoteNode(v)))
+            catch err
+                tshow("Error storing variable:\n" * string(err), title = "F7 error")
+            end
+        end
+        dorefresh = true
     elseif token == :up
         dorefresh = moveby(-1)
     elseif token == :down

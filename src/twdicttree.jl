@@ -19,6 +19,7 @@ _          : collapse all
 n, p       : next / previous match
 F5         : show string(value) — with Julia syntax color if Expr
 F6         : popup viewer for value
+F7         : store value into a Main global variable
 F10        : submit changes and return
 Esc        : cancel edit / exit without saving
 """
@@ -1117,6 +1118,31 @@ function inject(o::TwObj{TwDictTreeData}, token)
                 tshow(v, title = string(lastkey))
                 dorefresh = true
             end
+
+        elseif token == :F7
+            stck = copy(data.datalist[data.currentLine][4])
+            lastkey = isempty(stck) ? o.title : stck[end]
+            v = getvaluebypath(o.value, stck)
+            helper = newTwEntry(
+                o.screen.value,
+                String;
+                width = 34,
+                posy = :center,
+                posx = :center,
+                title = "Store as global: ",
+            )
+            helper.data.inputText = string(lastkey)
+            helper.data.cursorPos = length(helper.data.inputText) + 1
+            varname = activateTwObj(helper)
+            unregisterTwObj(o.screen.value, helper)
+            if varname !== nothing && !isempty(strip(varname))
+                try
+                    Core.eval(Main, Expr(:(=), Symbol(strip(varname)), QuoteNode(v)))
+                catch err
+                    tshow("Error storing variable:\n" * string(err), title = "F7 error")
+                end
+            end
+            dorefresh = true
 
         elseif token == "/"
             helper = newTwEntry(
