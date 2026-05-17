@@ -202,6 +202,10 @@ function draw(o::TwObj{TwListData})
                 mvwprintw(o.window, 0, o.width - length(msg) - 3, "%s", msg)
             end
 
+            if o.title != ""
+                mvwprintw(o.window, 0, 2, "%s", o.title )
+            end
+
             if o.data.bottomText != ""
                 mvwprintw(o.window, o.height-1, 2, "%s", o.data.bottomText)
             end
