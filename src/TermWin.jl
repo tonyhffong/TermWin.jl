@@ -76,7 +76,7 @@ export exprstring
 export uniqvalue, unionall
 export CalcPivot, discretize, topnames
 export FormatHints
-export COLOR_PAIR
+export COLOR_PAIR, A_BOLD, A_UNDERLINE, A_REVERSE
 
 # ===== Global state =====
 nc_context = nothing   # ::Union{Nothing, NC.NotcursesObject}
