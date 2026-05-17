@@ -385,7 +385,7 @@ function inject(o::TwObj{TwEntryData}, token)
         else
             beep()
         end
-    elseif o.data.valueType == Bool && typeof(token) <: AbstractString && isprint(token)
+    elseif o.data.valueType == Bool && typeof(token) <: AbstractString && !isempty(token) && isprint(first(token))
         if token == "t"
             o.data.inputText = "true"
             o.data.cursorPos = 1
