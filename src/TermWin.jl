@@ -143,8 +143,8 @@ function initsession()
             23 => (COLOR_WHITE, 52),
             24 => (56, COLOR_BLACK),  # light purple on black
             25 => (56, 19),           # light purple on dark blue
-            26 => (COLOR_GREEN, 19),  # green on dark blue
-            27 => (COLOR_YELLOW, 19),  # yellow on dark blue
+            26 => (COLOR_CYAN, 235),  # cyan on dark grey
+            27 => (COLOR_YELLOW, 235),  # yellow on dark gray
             28 => (8, 19),           # gray on dark blue
             29 => (COLOR_RED, 235),    # red on dark gray
             30 => (COLOR_WHITE, 17),   # white on dark blue

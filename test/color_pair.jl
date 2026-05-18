@@ -51,8 +51,8 @@ const _PAIR_DESC = [
     "white on dark red",         # 23
     "light purple on black",     # 24
     "light purple on dark blue", # 25
-    "green on dark blue",        # 26
-    "yellow on dark blue",       # 27
+    "cyan on dark grey",         # 26
+    "yellow on dark grey",       # 27
     "gray on dark blue",         # 28
     "red on dark gray",          # 29
     "white on dark blue",        # 30
@@ -61,10 +61,12 @@ const _PAIR_DESC = [
 
 const _PAIR_USAGE = Dict{Int,String}(
     1  => "calendar non-bday, negative values",
-    3  => "header labels",
+    2  => "Node clean state",
+    3  => "dataframe header labels, ICJ model box",
     12 => "invalid input; delete confirmation",
     13 => "divider labels; alternating rows",
     15 => "focused selection highlight",
+    23 => "Node dirty state",
     30 => "unfocused selection highlight",
 )
 
@@ -90,7 +92,7 @@ function _build_palette()
     for n in 1:31
         desc  = n <= length(_PAIR_DESC) ? _PAIR_DESC[n] : "?"
         usage = get(_PAIR_USAGE, n, "")
-        label = isempty(usage) ? desc : desc * "   [" * usage * "]"
+        label = isempty(usage) ? desc : desc * " "^(max(25-length(desc), 0)) * "   [" * usage * "]"
 
         line = lpad(string(n), _NUM_W) * _GAP * _SWATCH * _GAP * _SWATCH * "  " * label
         push!(lines, line)
