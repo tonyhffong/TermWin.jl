@@ -445,9 +445,31 @@ The tree viewer (`tshow` on any non-DataFrame value) supports the following navi
 | `_` | Collapse all |
 | `/` | Search dialog |
 | `n` / `p` | Next / previous search match |
+| F5 | Show `string(value)` in popup viewer (Julia syntax-highlighted for `Expr`) |
 | F6 | Open value in popup viewer |
 | Shift-F6 | Open type in popup viewer |
+| F7 | Save current node's value to a `Main` global variable (prompts for name) |
 | `m` | (Module only) toggle exported vs all names |
+
+### Saving a node value to a Julia variable
+
+Press **F7** on any node to capture its value into a `Main` global variable at runtime.
+A small entry popup appears pre-filled with the node's key name; edit it if needed and
+press Enter.  The value is assigned immediately, so it is available in the REPL as soon
+as the tree viewer returns:
+
+```julia
+tshow(my_model)           # navigate to an interesting sub-value and press F7
+# → popup: "Store as global: weights"
+# → press Enter
+
+my_model                  # still intact; only the captured value was copied
+weights                   # now available in Main
+```
+
+**F7 works in both the read-only tree viewer (`tshow`) and the editable dict tree
+(`newTwDictTree`).**  The value saved is always the *current* value at the node's path
+(reflecting any edits made in dict-tree mode before pressing F7).
 
 ---
 
