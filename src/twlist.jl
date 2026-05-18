@@ -18,6 +18,7 @@ function newTwList(
     title = "",
     showLineInfo = true,
     form = false,
+    bottomText::String = "",
 )
     obj = TwObj(TwListData(), Val{:List})
     obj.box = box
@@ -27,6 +28,7 @@ function newTwList(
     obj.data.horizontal = horizontal
     obj.data.showLineInfo = showLineInfo
     obj.data.isForm = form
+    obj.data.bottomText = bottomText
     obj.data.canvasheight = canvasheight
     obj.data.canvaswidth = canvaswidth
 
