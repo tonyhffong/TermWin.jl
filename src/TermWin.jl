@@ -53,6 +53,7 @@ include("twfunc.jl")
 include("twpopup.jl")
 include("twmultiselect.jl")
 include("twcalendar.jl")
+include("twcalendar2.jl")
 include("twdftable.jl")
 include("twlist.jl")
 include("twlabel.jl")
@@ -66,7 +67,7 @@ export TwObj, TwScreen, rootTwScreen
 export newTwScreen
 export vstack, hstack, @twlayout
 export newTwEntry, newTwTree, newTwFileBrowser, newTwFunc, newTwViewer
-export newTwCalendar, newTwPopup, newTwMultiSelect, newTwImage
+export newTwCalendar, newTwCalendar2, newTwPopup, newTwMultiSelect, newTwImage
 export newTwDfTable, newTwList
 export newTwEditTable, TwEditTableCol
 export newTwDictTree

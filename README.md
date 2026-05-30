@@ -6,8 +6,9 @@ TermWin is a Julia based terminal UI toolkit optimized for
   complex tree structures (a package, a file directory, a julia expression AST, a heavily nested dictionary, etc.) 
   and dataframes.
 * a modal interface. Show a widget, collect user input, return a value, continue in REPL or interact further with another widget.
-  Use the UI to efficiently identify what the user needs, and then move on to do the work in your code with minimum disruption.
+  Use TermWin to efficiently identify what the user needs, and then get out of the way.
 * Composing multi-panel layouts to suit your own data structure human interface needs.
+* niceties on displaying julia code (pretty-print when viewing julia code) and shortcut to edit the underlying file in vim
 
 TermWin is built on [Notcurses](https://github.com/dankamongmen/notcurses). It requires a 256-colour 
 terminal. `xterm-256color` or iTerm2 on macOS are recommended.
