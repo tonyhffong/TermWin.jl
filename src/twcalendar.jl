@@ -1,21 +1,8 @@
 # hand-crafted date selector
-
-defaultCalendarHelpText = """
-Arrows : move cursor
-.      : jump to today
-a      : jump to start of cursor's month
-e      : jump to end of cursor's month
-A      : jump to Jan 1st
-E      : jump to Dec 31st
-d,D    : add/subtract a day
-w,W    : add/subtract a week
-( the following would do end-of-month truncation)
-m,M    : add/subtract a month
-q,Q    : add/subtract a quarter
-y,Y    : add/subtract a year
-Alt-C  : change holiday calendar
-(non-business days shown in red)
-"""
+#
+# This widget is the reference conversion for "bindings as data": its keymap is
+# declared once in `bindings(o)` below, and the F1 help screen is *generated*
+# from that table (see helptext) — there is no hand-maintained help constant.
 
 const HOLIDAY_CALENDAR_NAMES = [
     "AustraliaASX",
@@ -35,13 +22,12 @@ const HOLIDAY_CALENDAR_NAMES = [
 
 mutable struct TwCalendarData
     showHelp::Bool
-    helpText::String
     date::Date
     cursorweekofmonth::Int # cached "nth week" in the current month containing date, 1-based
     geometry::Tuple{Int,Int} # rows x cols in months
     ncalStyle::Bool
     holidayCal::Symbol
-    TwCalendarData(dt::Date) = new(true, defaultCalendarHelpText, dt, 1, (1, 1), false, :USSettlement)
+    TwCalendarData(dt::Date) = new(true, dt, 1, (1, 1), false, :USSettlement)
 end
 
 function monthDimension(ncalStyle::Bool)
@@ -174,7 +160,7 @@ function draw(o::TwObj{TwCalendarData})
                     flags = 0
                     is_cursor = dt == o.data.date
                     if is_cursor
-                        flags = COLOR_PAIR(o.hasFocus ? 15 : 30)
+                        flags = theme(o.hasFocus ? :selection_focused : :selection_unfocused)
                         o.data.cursorweekofmonth = wcol + 1
                     elseif !isbday(o.data.holidayCal, dt)
                         flags = COLOR_PAIR(1)  # red for non-business days
@@ -218,7 +204,7 @@ function draw(o::TwObj{TwCalendarData})
                     flags = 0
                     is_cursor = dt == o.data.date
                     if is_cursor
-                        flags = COLOR_PAIR(o.hasFocus ? 15 : 30)
+                        flags = theme(o.hasFocus ? :selection_focused : :selection_unfocused)
                         o.data.cursorweekofmonth = wrow + 1
                     elseif !isbday(o.data.holidayCal, dt)
                         flags = COLOR_PAIR(1)  # red for non-business days
@@ -268,181 +254,144 @@ function monthNthWeekRange(y::Int, m::Int, n::Int)
     return (Date(y, m, max(ws, 1)), Date(y, m, min(we, mdays)))
 end
 
-function inject(o::TwObj{TwCalendarData}, token)
-    dorefresh = false
-    retcode = :got_it # default behavior is that we know what to do with it
-
+# ── Cursor (arrow-key) navigation, extracted so it is unit-testable without a
+#    window. Mutates o.data.date in place; preserves the original ncalStyle and
+#    flow-style behaviour exactly.
+function calendar_arrow!(o::TwObj{TwCalendarData}, dir::Symbol)
     ncalStyle = o.data.ncalStyle
-    if token == :esc
-        retcode = :exit_nothing
-    elseif token == "."
-        o.data.date = today()
-        dorefresh = true
-    elseif in(token, [:up, :down, :left, :right])
-        if ncalStyle
-            if token == :left
-                o.data.date = o.data.date - Day(7)
-            elseif token == :right
-                o.data.date = o.data.date + Day(7)
-            elseif token == :up
-                if dayofweek(o.data.date) > 1 && day(o.data.date) > 1
-                    o.data.date = o.data.date - Day(1)
-                else
-                    prevmonth =
-                        o.data.date -
-                        Month(ncalStyle ? o.data.geometry[2] : o.data.geometry[1])
-                    o.data.date = monthNthWeekRange(
-                        year(prevmonth),
-                        month(prevmonth),
-                        o.data.cursorweekofmonth,
-                    )[2]
-                end
-            else # :down
-                if dayofweek(o.data.date) < 7 &&
-                   day(o.data.date) < daysinmonth(year(o.data.date), month(o.data.date))
-                    o.data.date = o.data.date + Day(1)
-                else
-                    nextmonth =
-                        o.data.date +
-                        Month(ncalStyle ? o.data.geometry[2] : o.data.geometry[1])
-                    o.data.date = monthNthWeekRange(
-                        year(nextmonth),
-                        month(nextmonth),
-                        o.data.cursorweekofmonth,
-                    )[1]
-                end
+    if ncalStyle
+        if dir == :left
+            o.data.date = o.data.date - Day(7)
+        elseif dir == :right
+            o.data.date = o.data.date + Day(7)
+        elseif dir == :up
+            if dayofweek(o.data.date) > 1 && day(o.data.date) > 1
+                o.data.date = o.data.date - Day(1)
+            else
+                prevmonth = o.data.date - Month(o.data.geometry[2])
+                o.data.date = monthNthWeekRange(
+                    year(prevmonth), month(prevmonth), o.data.cursorweekofmonth,
+                )[2]
             end
-            dorefresh = true
-        else
-            if token == :up
-                d = day(o.data.date)
-                if d >= 7
-                    o.data.date = o.data.date - Day(7)
-                else
-                    currdayofweek = dayofweek(o.data.date)
-                    prevmonth = o.data.date - Month(o.data.geometry[2])
-                    (y, m) = (year(prevmonth), month(prevmonth))
-                    mds = daysinmonth(y, m)
-                    lstdayofwk = dayofweek(Date(y, m, mds))
-                    o.data.date = Date(y, m, mds - mod(lstdayofwk-currdayofweek, 7))
-                end
-            elseif token == :down
-                (y, m, d) = (year(o.data.date), month(o.data.date), day(o.data.date))
-                mds = daysinmonth(y, m)
-                if d + 7 <= mds
-                    o.data.date = o.data.date + Day(7)
-                else
-                    currdayofweek = dayofweek(o.data.date)
-                    nextmonth = o.data.date + Month(o.data.geometry[2])
-                    (y, m) = (year(nextmonth), month(nextmonth))
-                    mds = daysinmonth(y, m)
-                    fstdayofwk = dayofweek(Date(y, m, 1))
-                    o.data.date = Date(y, m, 1 + mod(currdayofweek-fstdayofwk, 7))
-                end
-            elseif token == :left
-                if dayofweek(o.data.date) > 1 && day(o.data.date) > 1
-                    o.data.date = o.data.date - Day(1)
-                else
-                    prevmonth = o.data.date - Month(1)
-                    o.data.date = monthNthWeekRange(
-                        year(prevmonth),
-                        month(prevmonth),
-                        o.data.cursorweekofmonth,
-                    )[2]
-                end
-            else # :right
-                if dayofweek(o.data.date) < 7 &&
-                   day(o.data.date) < daysinmonth(year(o.data.date), month(o.data.date))
-                    o.data.date = o.data.date + Day(1)
-                else
-                    nextmonth = o.data.date + Month(1)
-                    o.data.date = monthNthWeekRange(
-                        year(nextmonth),
-                        month(nextmonth),
-                        o.data.cursorweekofmonth,
-                    )[1]
-                end
+        else # :down
+            if dayofweek(o.data.date) < 7 &&
+               day(o.data.date) < daysinmonth(year(o.data.date), month(o.data.date))
+                o.data.date = o.data.date + Day(1)
+            else
+                nextmonth = o.data.date + Month(o.data.geometry[2])
+                o.data.date = monthNthWeekRange(
+                    year(nextmonth), month(nextmonth), o.data.cursorweekofmonth,
+                )[1]
             end
-            dorefresh = true
         end
-    elseif token == "a"
-        o.data.date = Date(year(o.data.date), month(o.data.date))
-        dorefresh = true
-    elseif token == "e"
-        (y, m) = year(o.data.date), month(o.data.date)
-        o.data.date = Date(y, m, daysinmonth(y, m))
-        dorefresh = true
-    elseif token == "A"
-        o.data.date = Date(year(o.data.date), 1)
-        dorefresh = true
-    elseif token == "E"
-        y = year(o.data.date)
-        o.data.date = Date(y, 12, 31)
-        dorefresh = true
-    elseif token == "w"
-        o.data.date = o.data.date + Day(7)
-        dorefresh = true
-    elseif token == "W"
-        o.data.date = o.data.date - Day(7)
-        dorefresh = true
-    elseif token == "m"
-        o.data.date = o.data.date + Month(1)
-        dorefresh = true
-    elseif token == "M"
-        o.data.date = o.data.date - Month(1)
-        dorefresh = true
-    elseif token == "d"
-        o.data.date = o.data.date + Day(1)
-        dorefresh = true
-    elseif token == "D"
-        o.data.date = o.data.date - Day(1)
-        dorefresh = true
-    elseif token == "y" || token == :pagedown
-        o.data.date = o.data.date + Year(1)
-        dorefresh = true
-    elseif token == "Y" || token == :pageup
-        o.data.date = o.data.date - Year(1)
-        dorefresh = true
-    elseif token == "q"
-        o.data.date = o.data.date + Month(3)
-        dorefresh = true
-    elseif token == "Q"
-        o.data.date = o.data.date - Month(3)
-        dorefresh = true
-    elseif token == :alt_c
-        helper = newTwPopup(
-            o.screen.value,
-            HOLIDAY_CALENDAR_NAMES;
-            title = "Holiday Calendar",
-            posy = :center,
-            posx = :center,
-            substrsearch = true,
-            hideunmatched = true,
-        )
-        sel = activateTwObj(helper)
-        unregisterTwObj(o.screen.value, helper)
-        if sel !== nothing
-            o.data.holidayCal = Symbol(sel)
-        end
-        dorefresh = true
-    elseif token == :enter || token == Symbol("return")
-        o.value = o.data.date
-        retcode = :exit_ok
     else
-        retcode = :pass # I don't know what to do with it
+        if dir == :up
+            d = day(o.data.date)
+            if d >= 7
+                o.data.date = o.data.date - Day(7)
+            else
+                currdayofweek = dayofweek(o.data.date)
+                prevmonth = o.data.date - Month(o.data.geometry[2])
+                (y, m) = (year(prevmonth), month(prevmonth))
+                mds = daysinmonth(y, m)
+                lstdayofwk = dayofweek(Date(y, m, mds))
+                o.data.date = Date(y, m, mds - mod(lstdayofwk-currdayofweek, 7))
+            end
+        elseif dir == :down
+            (y, m, d) = (year(o.data.date), month(o.data.date), day(o.data.date))
+            mds = daysinmonth(y, m)
+            if d + 7 <= mds
+                o.data.date = o.data.date + Day(7)
+            else
+                currdayofweek = dayofweek(o.data.date)
+                nextmonth = o.data.date + Month(o.data.geometry[2])
+                (y, m) = (year(nextmonth), month(nextmonth))
+                mds = daysinmonth(y, m)
+                fstdayofwk = dayofweek(Date(y, m, 1))
+                o.data.date = Date(y, m, 1 + mod(currdayofweek-fstdayofwk, 7))
+            end
+        elseif dir == :left
+            if dayofweek(o.data.date) > 1 && day(o.data.date) > 1
+                o.data.date = o.data.date - Day(1)
+            else
+                prevmonth = o.data.date - Month(1)
+                o.data.date = monthNthWeekRange(
+                    year(prevmonth), month(prevmonth), o.data.cursorweekofmonth,
+                )[2]
+            end
+        else # :right
+            if dayofweek(o.data.date) < 7 &&
+               day(o.data.date) < daysinmonth(year(o.data.date), month(o.data.date))
+                o.data.date = o.data.date + Day(1)
+            else
+                nextmonth = o.data.date + Month(1)
+                o.data.date = monthNthWeekRange(
+                    year(nextmonth), month(nextmonth), o.data.cursorweekofmonth,
+                )[1]
+            end
+        end
     end
+    return Handled
+end
 
-    if dorefresh
-        refresh(o)
-    end
+# Alt-C: pick a holiday calendar from a popup (needs the live screen).
+function calendar_pick_holiday!(o::TwObj{TwCalendarData})
+    helper = newTwPopup(
+        o.screen.value, HOLIDAY_CALENDAR_NAMES;
+        title = "Holiday Calendar", posy = :center, posx = :center,
+        substrsearch = true, hideunmatched = true,
+    )
+    sel = activateTwObj(helper)
+    unregisterTwObj(o.screen.value, helper)
+    sel !== nothing && (o.data.holidayCal = Symbol(sel))
+    return Handled
+end
 
-    return retcode
+# The calendar keymap, declared once. Footer, F1 help, and dispatch all derive
+# from this table (see bindings.jl).
+function bindings(o::TwObj{TwCalendarData})
+    Binding[
+        Binding([:up],    "up",    action = w -> calendar_arrow!(w, :up)),
+        Binding([:down],  "down",  action = w -> calendar_arrow!(w, :down)),
+        Binding([:left],  "left",  action = w -> calendar_arrow!(w, :left)),
+        Binding([:right], "right", action = w -> calendar_arrow!(w, :right)),
+        Binding(["."], "today",
+                action = w -> (w.data.date = today(); Handled)),
+        Binding(["a"], "month start",
+                action = w -> (w.data.date = Date(year(w.data.date), month(w.data.date)); Handled)),
+        Binding(["e"], "month end", action = w -> (
+                    w.data.date = Date(year(w.data.date), month(w.data.date),
+                                       daysinmonth(year(w.data.date), month(w.data.date)));
+                    Handled)),
+        Binding(["A"], "Jan 1",
+                action = w -> (w.data.date = Date(year(w.data.date), 1); Handled)),
+        Binding(["E"], "Dec 31",
+                action = w -> (w.data.date = Date(year(w.data.date), 12, 31); Handled)),
+        Binding(["d"], "+day",     action = w -> (w.data.date = w.data.date + Day(1);   Handled)),
+        Binding(["D"], "-day",     action = w -> (w.data.date = w.data.date - Day(1);   Handled)),
+        Binding(["w"], "+week",    action = w -> (w.data.date = w.data.date + Day(7);   Handled)),
+        Binding(["W"], "-week",    action = w -> (w.data.date = w.data.date - Day(7);   Handled)),
+        Binding(["m"], "+month",   action = w -> (w.data.date = w.data.date + Month(1); Handled)),
+        Binding(["M"], "-month",   action = w -> (w.data.date = w.data.date - Month(1); Handled)),
+        Binding(["q"], "+quarter", action = w -> (w.data.date = w.data.date + Month(3); Handled)),
+        Binding(["Q"], "-quarter", action = w -> (w.data.date = w.data.date - Month(3); Handled)),
+        Binding(["y", :pagedown], "+year", action = w -> (w.data.date = w.data.date + Year(1); Handled)),
+        Binding(["Y", :pageup],   "-year", action = w -> (w.data.date = w.data.date - Year(1); Handled)),
+        Binding([:alt_c], "holiday cal (non-business days in red)",
+                action = calendar_pick_holiday!),
+        Binding([:enter, Symbol("return")], "select",
+                action = w -> (w.value = w.data.date; Accept)),
+        Binding([:esc], "cancel", action = _ -> Cancel),
+    ]
+end
+
+function inject(o::TwObj{TwCalendarData}, token)
+    r = inject_via_table(o, token)
+    # Every handled calendar action repaints; Accept/Cancel exit, Ignored bubbles.
+    r === Handled && refresh(o)
+    return r
 end
 
 function helptext(o::TwObj{TwCalendarData})
-    if o.data.showHelp
-        o.data.helpText
-    else
-        ""
-    end
+    o.data.showHelp ? helptext_from_bindings(o) : ""
 end

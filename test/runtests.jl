@@ -5,3 +5,5 @@ using TermWin
 include( "dftests.jl" )
 include( "strtests.jl" )
 include( "progress_unit.jl" )
+include( "primitives_unit.jl" )
+include( "editor_unit.jl" )

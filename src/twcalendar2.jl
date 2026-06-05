@@ -146,7 +146,7 @@ function draw(o::TwObj{TwCalendar2Data})
             while dt <= mend
                 flags = 0
                 if dt == o.data.date
-                    flags = COLOR_PAIR(o.hasFocus ? 15 : 30)
+                    flags = theme(o.hasFocus ? :selection_focused : :selection_unfocused)
                     o.data.cursorweekofmonth = wrow + 1
                 elseif !isbday(o.data.holidayCal, dt)
                     flags = COLOR_PAIR(1)
@@ -172,10 +172,10 @@ end
 
 function inject(o::TwObj{TwCalendar2Data}, token)
     dorefresh = false
-    retcode   = :got_it
+    retcode   = Handled
 
     if token == :esc
-        retcode = :exit_nothing
+        retcode = Cancel
     elseif token == "."
         o.data.date = today()
         dorefresh = true
@@ -252,9 +252,9 @@ function inject(o::TwObj{TwCalendar2Data}, token)
         dorefresh = true
     elseif token == :enter || token == Symbol("return")
         o.value = o.data.date
-        retcode = :exit_ok
+        retcode = Accept
     else
-        retcode = :pass
+        retcode = Ignored
     end
 
     if dorefresh

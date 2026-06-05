@@ -59,7 +59,7 @@ const _DT_TYPE_MAP = Dict{String,DataType}(
 mutable struct TwDictTreeData
     # tree display (mirrors TwTreeData fields)
     openstatemap::Dict{Any,Bool}
-    datalist::Array{Any,1}
+    datalist::Vector{TreeRow}    # typed rows, built by the shared tree_data
     datalistlen::Int
     datatreewidth::Int
     datatypewidth::Int
@@ -74,12 +74,7 @@ mutable struct TwDictTreeData
     searchText::String
     # inline edit state
     isEditing::Bool
-    editbuffer::String
-    cursorPos::Int
-    fieldLeftPos::Int
-    editDirty::Bool
-    editIncomplete::Bool
-    editValueType::DataType
+    editor::InlineEditor    # the active leaf's inline editor (state + parse/format)
 end
 
 function newTwDictTree(
@@ -97,11 +92,11 @@ function newTwDictTree(
     key::Union{Nothing,Symbol} = nothing,
 )
     data = TwDictTreeData(
-        Dict{Any,Bool}(), Any[],
+        Dict{Any,Bool}(), TreeRow[],
         0, 0, 0, 0,
         1, 1, 1,
         showLineInfo, bottomText, showHelp, defaultDictTreeHelpText, "",
-        false, "", 1, 1, false, false, String,
+        false, InlineEditor(String; width = 1),
     )
     obj = TwObj(data, Val{:DictTree})
     obj.value   = deepcopy(ex)
@@ -123,9 +118,9 @@ function _dt_update_dimensions!(o::TwObj{TwDictTreeData})
     data = o.data
     data.datalistlen = length(data.datalist)
     isempty(data.datalist) && return
-    data.datatreewidth  = maximum(map(x -> length(x[1]) + 1 + 2*length(x[4]), data.datalist))
-    data.datatypewidth  = min(treeTypeMaxWidth, max(15, maximum(map(x -> length(x[2]), data.datalist))))
-    data.datavaluewidth = maximum(map(x -> length(x[3]), data.datalist))
+    data.datatreewidth  = maximum(map(x -> length(x.name) + 1 + 2*length(x.stack), data.datalist))
+    data.datatypewidth  = min(treeTypeMaxWidth, max(15, maximum(map(x -> length(x.typestr), data.datalist))))
+    data.datavaluewidth = maximum(map(x -> length(x.valuestr), data.datalist))
 end
 
 function _dt_view_dims(o::TwObj{TwDictTreeData})
@@ -151,7 +146,7 @@ end
 
 function _dt_update_data!(o::TwObj{TwDictTreeData})
     data = o.data
-    data.datalist = Any[]
+    data.datalist = TreeRow[]
     tree_data(o.value, o.title, data.datalist, data.openstatemap, Any[], Int[], true)
     _dt_update_dimensions!(o)
 end
@@ -159,7 +154,7 @@ end
 function _dt_find_and_goto!(o::TwObj{TwDictTreeData}, target_stack)
     data = o.data
     for i = 1:data.datalistlen
-        if data.datalist[i][4] == target_stack
+        if data.datalist[i].stack == target_stack
             data.currentLine = i
             _dt_checkTop!(o)
             return true
@@ -181,66 +176,42 @@ function _dt_value_to_buf(val)::String
     return string(val)
 end
 
-function _dt_checkcursor!(data::TwDictTreeData, fieldW::Int)
-    if data.editbuffer == ""
-        data.cursorPos = 1
-    else
-        data.cursorPos = max(1, min(length(data.editbuffer) + 1, data.cursorPos))
-    end
-    if data.editValueType <: AbstractString
-        remainspace = fieldW - textwidth(data.editbuffer)
-        if remainspace <= 0
-            if data.cursorPos - data.fieldLeftPos > fieldW - 1
-                data.fieldLeftPos = data.cursorPos - fieldW + 1
-            elseif data.fieldLeftPos > data.cursorPos
-                data.fieldLeftPos = data.cursorPos
-            end
-        else
-            data.fieldLeftPos = 1
-        end
-    end
-end
-
 function _dt_begin_edit!(o::TwObj{TwDictTreeData})
     data = o.data
     row = data.datalist[data.currentLine]
-    expandhint = row[5]
+    expandhint = row.expandhint
     expandhint != :single && return false   # containers not inline-editable
 
-    stack = row[4]
+    stack = row.stack
     val = getvaluebypath(o.value, copy(stack))
     vt  = typeof(val)
     (vt <: AbstractString || vt <: Number || vt == Bool || vt <: Dates.Date) || return false
 
-    data.editValueType = vt
-    data.editbuffer    = _dt_value_to_buf(val)
-    data.cursorPos     = length(data.editbuffer) + 1
-    data.fieldLeftPos  = 1
-    data.editDirty     = false
-    data.editIncomplete = false
-    data.isEditing     = true
+    (_, _, fieldW) = _dt_view_dims(o)
+    data.editor = InlineEditor(vt; width = fieldW)
+    # Seed the buffer with the dict tree's plain string rendering (it shows
+    # numbers as `string(val)`, not grouped) rather than editor_load!'s formatter.
+    data.editor.buffer = _dt_value_to_buf(val)
+    data.editor.cursorPos = length(data.editor.buffer) + 1
+    data.isEditing = true
     return true
 end
 
 function _dt_commit_edit!(o::TwObj{TwDictTreeData})
     data = o.data
     row  = data.datalist[data.currentLine]
-    stack = row[4]
+    stack = row.stack
 
-    ed = TwEntryData(data.editValueType)
-    (_, fieldW, _) = _dt_view_dims(o)   # use a generous width for parsing
-    (val, s) = evalNFormat(ed, data.editbuffer, fieldW)
-    if val === nothing
-        data.editIncomplete = true
-        return false
+    (_, _, fieldW) = _dt_view_dims(o)
+    data.editor.width = fieldW
+    (val, ok) = editor_commit(data.editor)
+    if !ok
+        return false   # editor_commit set data.editor.incomplete
     end
 
     # write back into the live dict
     _dt_set_value_at_path!(o.value, stack, val)
-    data.editbuffer    = s
-    data.editIncomplete = false
-    data.editDirty     = false
-    data.isEditing     = false
+    data.isEditing = false
     _dt_update_data!(o)
     return true
 end
@@ -382,7 +353,7 @@ end
 function _dt_add_entry!(o::TwObj{TwDictTreeData})
     data  = o.data
     row   = data.datalist[data.currentLine]
-    stack = row[4]
+    stack = row.stack
 
     val_at_cursor = getvaluebypath(o.value, copy(stack))
     if isa(val_at_cursor, AbstractDict)
@@ -406,7 +377,7 @@ function _dt_delete_entry!(o::TwObj{TwDictTreeData})
     data  = o.data
     scr   = o.screen.value
     row   = data.datalist[data.currentLine]
-    stack = row[4]
+    stack = row.stack
     isempty(stack) && (beep(); return false)
 
     val = getvaluebypath(o.value, copy(stack))
@@ -415,7 +386,7 @@ function _dt_delete_entry!(o::TwObj{TwDictTreeData})
     needs_confirm = (isa(val, AbstractDict) || isa(val, AbstractVector)) && !isempty(val)
     if needs_confirm
         n    = length(val)
-        name = row[1]
+        name = row.name
         popup = newTwPopup(
             scr, ["No", "Yes"];
             posy = :center, posx = :center,
@@ -440,7 +411,7 @@ function _dt_rename_key!(o::TwObj{TwDictTreeData})
     data  = o.data
     scr   = o.screen.value
     row   = data.datalist[data.currentLine]
-    stack = row[4]
+    stack = row.stack
     isempty(stack) && (beep(); return false)
 
     parent = getvaluebypath(o.value, copy(stack[1:end-1]))
@@ -477,7 +448,7 @@ end
 function _dt_swap_vector_element!(o::TwObj{TwDictTreeData}, direction::Int)
     data  = o.data
     row   = data.datalist[data.currentLine]
-    stack = row[4]
+    stack = row.stack
     isempty(stack) && (beep(); return false)
 
     parent  = getvaluebypath(o.value, copy(stack[1:end-1]))
@@ -502,72 +473,11 @@ function _dt_draw_edit_cell!(
     startx::Int,
     fieldW::Int,
 )
-    data = o.data
-    vt   = data.editValueType
-    buf  = data.editbuffer
-    cp   = data.cursorPos
-    flp  = data.fieldLeftPos
-    rem  = fieldW - textwidth(buf)
-
-    local outstr::String
-    local rcursPos::Int
-
-    if vt <: Number && vt != Bool
-        if rem <= 0
-            rcursPos = max(1, min(fieldW, cp))
-            outstr   = repeat("#", fieldW - 1) * " "
-        else
-            rcursPos = max(1, min(rem + cp - 1, fieldW))
-            outstr   = repeat(" ", rem - 1) * buf * " "
-        end
-    elseif vt <: Dates.Date
-        if rem <= 0
-            rcursPos = max(1, min(fieldW, cp))
-            outstr   = repeat("#", fieldW - 1) * " "
-        else
-            rcursPos = max(1, min(cp, fieldW))
-            outstr   = buf * repeat(" ", rem)
-        end
-    else  # String / Bool
-        if rem <= 0
-            rcursPos = min(fieldW, max(1, cp - flp + 1))
-            outstr   = substr_by_width(buf, flp - 1, fieldW)
-            sw = textwidth(outstr)
-            sw < fieldW && (outstr *= repeat(" ", fieldW - sw))
-        else
-            outstr   = buf * repeat(" ", rem)
-            rcursPos = cp
-        end
-    end
-
-    inputflag = data.editIncomplete ? COLOR_PAIR(12) : COLOR_PAIR(15)
-    wattron(o.window, inputflag)
-    mvwprintw(o.window, y, startx, "%s", outstr)
-
-    # cursor underline
-    c    = substr_by_width(outstr, rcursPos - 1, 1)
-    flag = inputflag | A_UNDERLINE
-    wattron(o.window, flag)
-    mvwprintw(o.window, y, startx + rcursPos - 1, "%s", string(c))
-    wattroff(o.window, flag)
-
-    # overflow indicators for strings
-    if vt <: AbstractString
-        if flp > 1
-            c2 = substr_by_width(outstr, 0, 1)
-            wattron(o.window, inputflag | A_BOLD)
-            mvwprintw(o.window, y, startx, "%s", string(c2))
-            wattroff(o.window, inputflag | A_BOLD)
-        end
-        if flp + fieldW <= textwidth(buf)
-            c2 = substr_by_width(outstr, fieldW - 1, 1)
-            wattron(o.window, inputflag | A_BOLD)
-            mvwprintw(o.window, y, startx + fieldW - 1, "%s", string(c2))
-            wattroff(o.window, inputflag | A_BOLD)
-        end
-    end
-
-    wattroff(o.window, inputflag)
+    # The active leaf is rendered by the shared InlineEditor renderer. Editing is
+    # always focused, and the dict tree shows the incomplete color even while
+    # focused (incomplete_priority), unlike entry/edittable.
+    o.data.editor.width = fieldW
+    draw_editor!(o.window, y, startx, o.data.editor, true; incomplete_priority = true)
 end
 
 function draw(o::TwObj{TwDictTreeData})
@@ -589,23 +499,23 @@ function draw(o::TwObj{TwDictTreeData})
     end
 
     for r = data.currentTop:min(data.currentTop + viewH - 1, data.datalistlen)
-        stacklen   = length(data.datalist[r][4])
-        expandhint = data.datalist[r][5]
+        stacklen   = length(data.datalist[r].stack)
+        expandhint = data.datalist[r].expandhint
 
         s = ensure_length(
-            repeat(" ", 2 * stacklen + 1) * data.datalist[r][1],
+            repeat(" ", 2 * stacklen + 1) * data.datalist[r].name,
             data.datatreewidth,
         )
-        t = ensure_length(data.datalist[r][2], data.datatypewidth)
+        t = ensure_length(data.datalist[r].typestr, data.datatypewidth)
         v = ensure_length(
-            data.datalist[r][3],
+            data.datalist[r].valuestr,
             viewW - data.datatreewidth - data.datatypewidth - 3,
             false,
         )
 
         is_current = (r == data.currentLine)
         if is_current
-            wattron(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+            wattron(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
         end
 
         y = 1 + r - data.currentTop
@@ -617,28 +527,28 @@ function draw(o::TwObj{TwDictTreeData})
         value_startx = 2 + data.datatreewidth + data.datatypewidth + 2
         if is_current && data.isEditing
             if is_current
-                wattroff(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+                wattroff(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
             end
             _dt_draw_edit_cell!(o, y, value_startx, fieldW)
         else
             mvwprintw(o.window, y, value_startx, "%s", v)
             if is_current
-                wattroff(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+                wattroff(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
             end
         end
 
         # tree connectors
         for i = 1:(stacklen - 1)
-            if !in(i, data.datalist[r][6])
+            if !in(i, data.datalist[r].skiplines)
                 mvwaddch(o.window, y, 2 * i, get_acs_val('x'))
             end
         end
         if stacklen != 0
             contchar = get_acs_val('t')
             if r == data.datalistlen ||
-               length(data.datalist[r + 1][4]) < stacklen ||
-               (length(data.datalist[r + 1][4]) > stacklen &&
-                in(stacklen, data.datalist[r + 1][6]))
+               length(data.datalist[r + 1].stack) < stacklen ||
+               (length(data.datalist[r + 1].stack) > stacklen &&
+                in(stacklen, data.datalist[r + 1].skiplines))
                 contchar = get_acs_val('m')
             end
             mvwaddch(o.window, y, 2 * stacklen, contchar)
@@ -663,12 +573,12 @@ end
 function inject(o::TwObj{TwDictTreeData}, token)
     data      = o.data
     dorefresh = false
-    retcode   = :got_it
+    retcode   = Handled
 
     (viewH, viewW, fieldW) = _dt_view_dims(o)
 
     update_data = () -> begin
-        data.datalist = Any[]
+        data.datalist = TreeRow[]
         tree_data(o.value, o.title, data.datalist, data.openstatemap, Any[], Int[], true)
         _dt_update_dimensions!(o)
     end
@@ -687,22 +597,14 @@ function inject(o::TwObj{TwDictTreeData}, token)
         end
     end
 
-    checkcursor = () -> _dt_checkcursor!(data, fieldW)
-
-    insertchar = c -> begin
-        data.editbuffer = insertstring(data.editbuffer, c, data.cursorPos, false)
-        data.cursorPos += textwidth(c)
-        data.editDirty = true
-    end
-
     searchNext = (step, trivialstop) -> begin
         data.datalistlen == 0 && return 0
         local st = data.currentLine
         data.searchText = lowercase(data.searchText)
         i = trivialstop ? st : (mod(st - 1 + step, data.datalistlen) + 1)
         while true
-            if occursin(data.searchText, lowercase(data.datalist[i][1])) ||
-               occursin(data.searchText, lowercase(data.datalist[i][3]))
+            if occursin(data.searchText, lowercase(data.datalist[i].name)) ||
+               occursin(data.searchText, lowercase(data.datalist[i].valuestr))
                 data.currentLine = i
                 abs(i - st) > viewH && (data.currentTop = data.currentLine - (viewH >> 1))
                 checkTop()
@@ -715,171 +617,48 @@ function inject(o::TwObj{TwDictTreeData}, token)
 
     # ── edit mode ─────────────────────────────────────────────────────────────
     if data.isEditing
-        vt = data.editValueType
+        ed = data.editor
+        ed.width = fieldW
 
         if token == :esc
-            data.isEditing     = false
-            data.editIncomplete = false
+            data.isEditing = false
+            ed.incomplete = false
             dorefresh = true
-
         elseif token == :enter || token == Symbol("return")
-            if _dt_commit_edit!(o)
-                dorefresh = true
-            else
-                beep()
-                dorefresh = true
-            end
-
-        elseif token == :left
-            if data.cursorPos > 1
-                data.cursorPos -= 1; checkcursor(); dorefresh = true
-            else
-                beep()
-            end
-
-        elseif token == :right
-            if data.cursorPos <= length(data.editbuffer)
-                data.cursorPos += 1; checkcursor(); dorefresh = true
-            else
-                beep()
-            end
-
-        elseif token == :home || token == :ctrl_a
-            if data.cursorPos > 1
-                data.cursorPos = 1; checkcursor(); dorefresh = true
-            end
-
-        elseif token == Symbol("end") || token == :ctrl_e
-            newpos = length(data.editbuffer) + 1
-            if data.cursorPos < newpos
-                data.cursorPos = newpos; checkcursor(); dorefresh = true
-            end
-
-        elseif token == :backspace
-            utfs, newpos = delete_char_before(data.editbuffer, data.cursorPos)
-            if utfs != data.editbuffer
-                data.editbuffer = utfs
-                data.cursorPos  = newpos
-                checkcursor()
-                data.editDirty = true
-                dorefresh = true
-            else
-                beep()
-            end
-
-        elseif token == :delete
-            utfs = delete_char_at(data.editbuffer, data.cursorPos)
-            if utfs != data.editbuffer
-                data.editbuffer = utfs
-                checkcursor()
-                data.editDirty = true
-                dorefresh = true
-            else
-                beep()
-            end
-
-        elseif token == :ctrl_k
-            data.editbuffer   = ""
-            data.cursorPos    = 1
-            data.fieldLeftPos = 1
-            data.editDirty    = true
+            _dt_commit_edit!(o) || beep()
             dorefresh = true
-
-        elseif typeof(token) <: AbstractString
-            if vt <: AbstractString
-                insertchar(token)
-                checkcursor()
+        else
+            # All editing keys delegate to the shared InlineEditor.
+            r = editor_handle(ed, token)
+            if r === :handled
                 dorefresh = true
-            elseif vt == Bool
-                if token == "t"; data.editbuffer = "true";  data.cursorPos = 1; dorefresh = true
-                elseif token == "f"; data.editbuffer = "false"; data.cursorPos = 1; dorefresh = true
-                else; beep()
-                end
-            elseif vt <: Dates.Date && !in(token, ["?", ","])
-                insertchar(token)
-                dorefresh = true
-            elseif vt <: Dates.Date && token == ","
-                ed = TwEntryData(vt)
-                (v, s) = evalNFormat(ed, data.editbuffer, fieldW)
-                if v !== nothing
-                    data.editbuffer = s; checkcursor(); data.editIncomplete = false; dorefresh = true
-                else
-                    data.editIncomplete = true; beep()
-                end
-            elseif vt <: Dates.Date && token == "?"
-                ed = TwEntryData(vt)
-                (parsed, _) = evalNFormat(ed, data.editbuffer, fieldW)
+            elseif r === :rejected || r === :at_left_edge || r === :at_right_edge
+                beep()                 # dict tree leaves have no columns; edges beep
+            elseif r === :open_calendar
+                (parsed, _) = evalNFormat(ed, ed.buffer, fieldW)
                 init_date = parsed isa Dates.Date ? parsed : Dates.today()
                 cal = newTwCalendar(o.screen.value, init_date; posy = :center, posx = :center)
                 activateTwObj(cal)
-                if cal.value isa Dates.Date
-                    data.editbuffer   = Dates.format(cal.value, "yyyy-mm-dd")
-                    data.cursorPos    = length(data.editbuffer) + 1
-                    data.fieldLeftPos = 1
-                    data.editDirty    = true
-                    data.editIncomplete = false
-                end
+                cal.value isa Dates.Date &&
+                    editor_set_buffer!(ed, Dates.format(cal.value, "yyyy-mm-dd"))
                 unregisterTwObj(o.screen.value, cal)
                 dorefresh = true
-            elseif vt <: Number && vt != Bool
-                allowed = isdigit(token[1]) ||
-                          (vt <: AbstractFloat && in(token, [".", "e", "+", "-"])) ||
-                          (vt <: Signed        && in(token, ["+", "-"]))
-                if allowed
-                    if token == "e"
-                        if occursin("e", data.editbuffer); beep()
-                        else insertchar(token); dorefresh = true
-                        end
-                    elseif token == "."
-                        dpos = findfirst(isequal('.'), data.editbuffer)
-                        if dpos !== nothing
-                            data.cursorPos = dpos + 1; dorefresh = true
-                        else
-                            insertchar(token); dorefresh = true
-                        end
-                    elseif token == "," # format with commas
-                        ed = TwEntryData(vt)
-                        (v, s) = evalNFormat(ed, data.editbuffer, fieldW)
-                        if v !== nothing
-                            data.editbuffer = s; checkcursor(); data.editIncomplete = false; dorefresh = true
-                        else
-                            data.editIncomplete = true; beep()
-                        end
-                    elseif token == "-" || token == "+"
-                        epos = findfirst(isequal('e'), data.editbuffer)
-                        at_start   = data.cursorPos == 1 &&
-                                     (startswith(data.editbuffer, "-") ||
-                                      startswith(data.editbuffer, "+"))
-                        after_e    = data.cursorPos != 1 &&
-                                     (epos === nothing || data.cursorPos != epos + 1)
-                        if at_start || after_e; beep()
-                        else insertchar(token); dorefresh = true
-                        end
-                    else
-                        insertchar(token); dorefresh = true
-                    end
-                else
-                    beep()
-                end
-            else
-                beep()
+            else  # :open_enum (no enums here) or :ignored
+                retcode = Ignored
             end
-
-        else
-            retcode = :pass
         end
 
     # ── navigation / structural mode ──────────────────────────────────────────
     else
         if token == :esc
-            retcode = :exit_nothing
+            retcode = Cancel
 
         elseif token == :F10
-            retcode = :exit_ok
+            retcode = Accept
 
         elseif token == " "
-            expandhint = data.datalist[data.currentLine][5]
-            stck = data.datalist[data.currentLine][4]
+            expandhint = data.datalist[data.currentLine].expandhint
+            stck = data.datalist[data.currentLine].stack
             val  = getvaluebypath(o.value, copy(stck))
             if isa(val, AbstractDict) || isa(val, AbstractVector)
                 data.openstatemap[stck] = !get(data.openstatemap, stck, false)
@@ -891,8 +670,8 @@ function inject(o::TwObj{TwDictTreeData}, token)
 
         elseif token == :enter || token == Symbol("return") || token == "e" || token == :F2
             row        = data.datalist[data.currentLine]
-            expandhint = row[5]
-            stck       = row[4]
+            expandhint = row.expandhint
+            stck       = row.stack
             val        = getvaluebypath(o.value, copy(stck))
             if isa(val, AbstractDict) || isa(val, AbstractVector)
                 # toggle expand/collapse for containers
@@ -928,11 +707,11 @@ function inject(o::TwObj{TwDictTreeData}, token)
             dorefresh = true
 
         elseif token == "+"
-            currentstack  = data.datalist[data.currentLine][4]
+            currentstack  = data.datalist[data.currentLine].stack
             somethingchanged = false
             for i = 1:data.datalistlen
-                if data.datalist[i][5] != :single
-                    stck = data.datalist[i][4]
+                if data.datalist[i].expandhint != :single
+                    stck = data.datalist[i].stack
                     if !get(data.openstatemap, stck, false)
                         data.openstatemap[stck] = true
                         somethingchanged = true
@@ -943,7 +722,7 @@ function inject(o::TwObj{TwDictTreeData}, token)
                 prevline = data.currentLine
                 update_data()
                 for i = data.currentLine:data.datalistlen
-                    if currentstack == data.datalist[i][4]
+                    if currentstack == data.datalist[i].stack
                         data.currentLine = i
                         abs(i - prevline) > viewH && (data.currentTop = i - round(Int, viewH / 2))
                         break
@@ -956,13 +735,13 @@ function inject(o::TwObj{TwDictTreeData}, token)
             end
 
         elseif token == "-"
-            currentstack  = copy(data.datalist[data.currentLine][4])
+            currentstack  = copy(data.datalist[data.currentLine].stack)
             maxdepth = maximum(map(x -> length(x[4]), data.datalist))
             somethingchanged = false
             if maxdepth > 1
                 for i = 1:data.datalistlen
-                    stck = data.datalist[i][4]
-                    if data.datalist[i][5] != :single && length(stck) == maxdepth - 1
+                    stck = data.datalist[i].stack
+                    if data.datalist[i].expandhint != :single && length(stck) == maxdepth - 1
                         if get(data.openstatemap, stck, false)
                             data.openstatemap[stck] = false
                             somethingchanged = true
@@ -974,7 +753,7 @@ function inject(o::TwObj{TwDictTreeData}, token)
                     length(currentstack) == maxdepth && pop!(currentstack)
                     prevline = data.currentLine; data.currentLine = 1
                     for i = 1:min(prevline, data.datalistlen)
-                        if currentstack == data.datalist[i][4]
+                        if currentstack == data.datalist[i].stack
                             data.currentLine = i
                             abs(i - prevline) > viewH && (data.currentTop = i - round(Int, viewH / 2))
                             break
@@ -988,14 +767,14 @@ function inject(o::TwObj{TwDictTreeData}, token)
             end
 
         elseif token == "_"
-            currentstack = copy(data.datalist[data.currentLine][4])
+            currentstack = copy(data.datalist[data.currentLine].stack)
             length(currentstack) > 1 && (currentstack = Any[currentstack[1]])
             data.openstatemap = Dict{Any,Bool}()
             data.openstatemap[Any[]] = true
             update_data()
             prevline = data.currentLine; data.currentLine = 1
             for i = 1:min(prevline, data.datalistlen)
-                if currentstack == data.datalist[i][4]
+                if currentstack == data.datalist[i].stack
                     data.currentLine = i
                     abs(i - prevline) > viewH && (data.currentTop = data.currentLine - round(Int, viewH / 2))
                     break
@@ -1047,59 +826,20 @@ function inject(o::TwObj{TwDictTreeData}, token)
                 beep()
             end
 
-        elseif token == :ctrl_left
-            currentstack = data.datalist[data.currentLine][4]
-            if isempty(currentstack)
-                beep()
+        elseif token == :ctrl_left || token == :ctrl_up || token == :ctrl_down
+            # Parent / prev-sibling / next-sibling, shared with the tree and file
+            # browser via the generic tree_nav primitive.
+            dir = token == :ctrl_left ? :parent :
+                  token == :ctrl_up   ? :prev_sibling : :next_sibling
+            (target, moved) = tree_nav(data.datalist, data.currentLine, dir)
+            if moved
+                data.currentLine = target; checkTop(); dorefresh = true
             else
-                parentstack = currentstack[1:end-1]
-                found = false
-                for i = data.currentLine-1:-1:1
-                    if data.datalist[i][4] == parentstack
-                        data.currentLine = i; checkTop(); dorefresh = true; found = true; break
-                    end
-                end
-                found || beep()
-            end
-
-        elseif token == :ctrl_up
-            currentstack = data.datalist[data.currentLine][4]
-            depth = length(currentstack)
-            if depth == 0
                 beep()
-            else
-                parentstack = currentstack[1:end-1]
-                found = false
-                for i = data.currentLine-1:-1:1
-                    rowstack = data.datalist[i][4]
-                    length(rowstack) < depth && break
-                    if length(rowstack) == depth && rowstack[1:end-1] == parentstack
-                        data.currentLine = i; checkTop(); dorefresh = true; found = true; break
-                    end
-                end
-                found || beep()
-            end
-
-        elseif token == :ctrl_down
-            currentstack = data.datalist[data.currentLine][4]
-            depth = length(currentstack)
-            if depth == 0
-                beep()
-            else
-                parentstack = currentstack[1:end-1]
-                found = false
-                for i = data.currentLine+1:data.datalistlen
-                    rowstack = data.datalist[i][4]
-                    length(rowstack) < depth && break
-                    if length(rowstack) == depth && rowstack[1:end-1] == parentstack
-                        data.currentLine = i; checkTop(); dorefresh = true; found = true; break
-                    end
-                end
-                found || beep()
             end
 
         elseif token == :F5
-            stck = copy(data.datalist[data.currentLine][4])
+            stck = copy(data.datalist[data.currentLine].stack)
             lastkey = isempty(stck) ? o.title : stck[end]
             v = getvaluebypath(o.value, copy(stck))
             if v isa Expr
@@ -1111,7 +851,7 @@ function inject(o::TwObj{TwDictTreeData}, token)
             dorefresh = true
 
         elseif token == :F6
-            stck = copy(data.datalist[data.currentLine][4])
+            stck = copy(data.datalist[data.currentLine].stack)
             lastkey = isempty(stck) ? o.title : stck[end]
             v = getvaluebypath(o.value, stck)
             if !in(v, [nothing, Nothing, Any])
@@ -1120,7 +860,7 @@ function inject(o::TwObj{TwDictTreeData}, token)
             end
 
         elseif token == :F7
-            stck = copy(data.datalist[data.currentLine][4])
+            stck = copy(data.datalist[data.currentLine].stack)
             lastkey = isempty(stck) ? o.title : stck[end]
             v = getvaluebypath(o.value, stck)
             helper = newTwEntry(
@@ -1179,12 +919,12 @@ function inject(o::TwObj{TwDictTreeData}, token)
                         data.currentLine = clicked; checkTop(); dorefresh = true
                     end
                 else
-                    retcode = :pass
+                    retcode = Ignored
                 end
             end
 
         else
-            retcode = :pass
+            retcode = Ignored
         end
     end
 

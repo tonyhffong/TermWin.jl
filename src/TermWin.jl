@@ -35,12 +35,19 @@ import Base.getindex
 # logstart()
 
 include("consts.jl")
+include("contracts.jl")    # InjectResult / Result contracts
+include("theme.jl")        # semantic theme tokens over COLOR_PAIR
+include("scroll.jl")       # ScrollState + clamp_view!
+include("rows.jl")         # AbstractRow / TreeRow / FileRow + tree_nav
+include("observable.jl")   # minimal reactive value
 include("strutils.jl")
 include("twtypes.jl")
 include("twobj.jl")
+include("bindings.jl")     # Binding table (needs TwObj from twtypes)
 include("twscreen.jl")
 include("ccall.jl")
 include("format.jl")
+include("editor.jl")       # InlineEditor: shared inline text editor (used by entry/edittable/dicttree)
 include("dfutils.jl")
 include("twprogress.jl")
 include("twviewer.jl")
@@ -154,6 +161,9 @@ function initsession()
         for (n, (fg, bg)) in pairs
             color_channel_table[n] = make_channel_pair(fg, bg)
         end
+        # Rebuild the active theme now that color_channel_table is populated, so
+        # COLOR_PAIR-based tokens capture real channels (see theme.jl).
+        refresh_theme!()
 
         dims = NC.term_dim_yx(nc_context)
         rootTwScreen = newTwScreen(rootplane, Int(dims.rows), Int(dims.cols))

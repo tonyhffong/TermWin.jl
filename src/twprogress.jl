@@ -109,10 +109,10 @@ function tick(o::TwObj{TwProgressData})
         end
         if o.data.workTask.state === :failed
             o.value = nothing
-            return :exit_nothing
+            return Cancel
         else
             o.value = o.data.workTask.result
-            return :exit_ok
+            return Accept
         end
     end
 
@@ -122,15 +122,15 @@ function tick(o::TwObj{TwProgressData})
         o.data.redrawTime = t
         refresh(o)
     end
-    return :got_it
+    return Handled
 end
 
 function inject(o::TwObj{TwProgressData}, token)
     if token == :esc || token == :ctrl_k
         o.data.cancelFlag[] = true
-        return :got_it
+        return Handled
     end
-    return :pass
+    return Ignored
 end
 
 helptext(o::TwObj{TwProgressData}) =

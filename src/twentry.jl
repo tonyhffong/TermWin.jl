@@ -1,4 +1,9 @@
 # hand-crafted numeric and string input field
+#
+# This widget is now a thin host over the shared InlineEditor (src/editor.jl):
+# `draw` delegates to `draw_editor!`, and `inject` delegates printable/edit keys
+# to `editor_handle`, keeping only the entry-specific keys (Enter/Esc/focus_off,
+# shift-↑/↓ tick, `m` ×1000, `?`→calendar).
 
 defaultEntryStringHelpText = """
 <-, -> : move cursor
@@ -39,42 +44,38 @@ Shft-up: If configured, increase value by a tick-size
 Shft-dn: If configured, decrease value by a tick-size
 """
 mutable struct TwEntryData
-    valueType::DataType
+    editor::InlineEditor       # the unified inline editor (state + parse/format)
     showHelp::Bool
     helpText::String
-    inputText::String
-    cursorPos::Int # where is the next char going to be
-    fieldLeftPos::Int # what is the position of the first char on the field
-    tickSize::Any
     titleLeft::Bool
     titlewidth::Int # -1 = natural title length; >=0 = fixed column width via ensure_length
-    overwriteMode::Bool
-    incomplete::Bool # is the input not yet done?
     limitToWidth::Bool # TODO: not implemented yet
-    precision::Int
-    commas::Bool
-    stripzeros::Bool
-    conversion::String
     function TwEntryData(dt::DataType)
-        o = new(dt, false, "", "", 1, 1, 0, true, -1, false, false, false, -1, true, true, "")
-        if dt <: AbstractString
-            o.helpText = defaultEntryStringHelpText
-            o.conversion = "s"
-        elseif dt <: Number
-            o.helpText = defaultEntryNumberHelpText
-            if dt <: Unsigned
-                o.conversion = "x"
-            elseif dt <: Integer
-                o.conversion = "d"
-            else
-                o.conversion = "f"
-            end
-        elseif dt <: Date
-            o.helpText = defaultEntryDateHelpText
-            o.conversion = ""
-        end
-        o
+        helpText =
+            dt <: AbstractString ? defaultEntryStringHelpText :
+            dt <: Number ? defaultEntryNumberHelpText :
+            (dt <: Date ? defaultEntryDateHelpText : "")
+        new(InlineEditor(dt), false, helpText, true, -1, false)
     end
+end
+
+# The editor-state fields moved into `editor`, but `inputText`/`cursorPos`/etc.
+# are a long-standing public surface (popup/multiselect searchboxes and helper
+# entries in the tree widgets read/write them directly). Forward those names to
+# the embedded editor so every existing call site keeps working unchanged.
+const _ENTRY_EDITOR_FIELDS = Dict{Symbol,Symbol}(
+    :inputText => :buffer, :cursorPos => :cursorPos, :fieldLeftPos => :fieldLeftPos,
+    :overwriteMode => :overwriteMode, :incomplete => :incomplete, :valueType => :valuetype,
+    :tickSize => :tickSize, :precision => :precision, :commas => :commas,
+    :stripzeros => :stripzeros, :conversion => :conversion,
+)
+function Base.getproperty(d::TwEntryData, s::Symbol)
+    f = get(_ENTRY_EDITOR_FIELDS, s, nothing)
+    f === nothing ? getfield(d, s) : getproperty(getfield(d, :editor), f)
+end
+function Base.setproperty!(d::TwEntryData, s::Symbol, v)
+    f = get(_ENTRY_EDITOR_FIELDS, s, nothing)
+    f === nothing ? setfield!(d, s, v) : setproperty!(getfield(d, :editor), f, v)
 end
 
 # the ways to use it:
@@ -107,10 +108,10 @@ function newTwEntry(
     data.showHelp = showHelp
     data.titleLeft = titleLeft
     data.titlewidth = titlewidth
-    data.precision = precision
-    data.stripzeros = stripzeros
+    data.precision = precision       # forwarded to editor.precision
+    data.stripzeros = stripzeros     # forwarded to editor.stripzeros
     if conversion != ""
-        data.conversion = conversion
+        data.conversion = conversion # forwarded to editor.conversion
     end
 
     obj = TwObj(data, Val{:Entry})
@@ -128,11 +129,9 @@ end
 
 function apply_default!(obj::TwObj{TwEntryData}, value)
     value === nothing && return
-    data = obj.data
     (fieldcount, _) = getFieldDimension(obj)
-    s = data.valueType <: AbstractString ? string(value) : myNumFormat(value, data, fieldcount)
-    data.inputText = s
-    data.cursorPos = textwidth(s) + 1
+    obj.data.editor.width = fieldcount
+    editor_load!(obj.data.editor, value)
     obj.value = value
 end
 
@@ -140,11 +139,10 @@ function getFieldDimension(o::TwObj)
     if o.data.titleLeft && !isempty(o.title)
         tw = o.data.titlewidth >= 0 ? o.data.titlewidth : length(o.title)
         fieldcount = o.width - tw - o.borderSizeH * 2
-        remainspacecount = fieldcount - textwidth(o.data.inputText)
     else
         fieldcount = o.width - (o.box ? 2 : 0)
-        remainspacecount = fieldcount - textwidth(o.data.inputText)
     end
+    remainspacecount = fieldcount - textwidth(o.data.inputText)
     (fieldcount, remainspacecount)
 end
 
@@ -159,7 +157,7 @@ function draw(o::TwObj{TwEntryData})
     starty = o.borderSizeV
     startx = o.borderSizeH
 
-    fieldcount, remainspacecount = getFieldDimension(o)
+    (fieldcount, _) = getFieldDimension(o)
     if o.data.titleLeft && !isempty(o.title)
         if o.data.titlewidth >= 0
             mvwprintw(o.window, starty, startx, "%s", ensure_length(o.title, o.data.titlewidth))
@@ -169,523 +167,96 @@ function draw(o::TwObj{TwEntryData})
             startx += length(o.title)
         end
     end
-    if o.data.valueType <: Number && o.data.valueType != Bool # right justifed
-        if remainspacecount <= 0
-            rcursPos = max(1, min(fieldcount, o.data.cursorPos))
-            outstr = repeat("#", fieldcount-1) * " "
-        else
-            rcursPos = max(1, min(remainspacecount + o.data.cursorPos-1, fieldcount))
-            outstr = repeat(" ", remainspacecount-1) * o.data.inputText * " "
-        end
-    elseif o.data.valueType <: Date
-        if remainspacecount <= 0
-            rcursPos = max(1, min(fieldcount, o.data.cursorPos))
-            outstr = repeat("#", fieldcount-1) * " "
-        else
-            rcursPos = max(1, min(o.data.cursorPos, fieldcount))
-            outstr = o.data.inputText * repeat(" ", remainspacecount)
-        end
-    else
-        if remainspacecount <= 0
-            rcursPos = min(fieldcount, max(1, o.data.cursorPos - o.data.fieldLeftPos+1))
-            outstr = substr_by_width(o.data.inputText, o.data.fieldLeftPos-1, fieldcount)
-            strw = textwidth(outstr)
-            if strw < fieldcount
-                outstr *= repeat(" ", fieldcount - strw)
-            end
-        else
-            outstr = o.data.inputText * repeat(" ", remainspacecount)
-            rcursPos = o.data.cursorPos
-        end
-    end
-    if o.hasFocus
-        inputflag = COLOR_PAIR(15)
-    elseif o.data.incomplete
-        inputflag = COLOR_PAIR(12)
-    else
-        inputflag = COLOR_PAIR(30)
-    end
-    wattron(o.window, inputflag)
-    mvwprintw(o.window, starty, startx, "%s", outstr)
-    # print the cursor
-    firstflag = inputflag
-    lastflag = inputflag
-    if o.hasFocus
-        c = substr_by_width(outstr, rcursPos-1, 1)
-        if o.data.overwriteMode
-            flag = inputflag | A_REVERSE
-        else
-            flag = inputflag | A_UNDERLINE
-        end
-        wattron(o.window, flag)
-        mvwprintw(o.window, starty, startx + rcursPos-1, "%s", string(c))
-        wattroff(o.window, flag)
-        if rcursPos == 1
-            firstflag = flag
-        end
-        if rcursPos == fieldcount
-            lastflag = flag
-        end
-    end
-    # visual way to show there are more content beyond the field boundaries
-    if o.data.valueType <: AbstractString
-        if o.data.fieldLeftPos > 1
-            c = substr_by_width(outstr, 0, 1)
-            wattron(o.window, firstflag | A_BOLD)
-            mvwprintw(o.window, starty, startx, "%s", string(c))
-            wattroff(o.window, firstflag | A_BOLD)
-        end
-        if o.data.fieldLeftPos + fieldcount <= textwidth(o.data.inputText)
-            c = substr_by_width(outstr, fieldcount-1, 1)
-            wattron(o.window, lastflag | A_BOLD)
-            mvwprintw(o.window, starty, startx+fieldcount-1, "%s", string(c))
-            wattroff(o.window, lastflag | A_BOLD)
-        end
-    end
-    wattroff(o.window, inputflag)
+    # Field rendering (right-justified numbers/dates, cursor, boundary
+    # indicators) is the shared InlineEditor renderer.
+    o.data.editor.width = fieldcount
+    draw_editor!(o.window, starty, startx, o.data.editor, o.hasFocus)
 end
 
 function inject(o::TwObj{TwEntryData}, token)
+    data = o.data
+    ed = data.editor
+    (fieldcount, _) = getFieldDimension(o)
+    ed.width = fieldcount
     dorefresh = false
-    retcode = :got_it # default behavior is that we know what to do with it
-
-    insertchar =
-        (c) -> begin
-            o.data.inputText = insertstring(
-                o.data.inputText,
-                c,
-                o.data.cursorPos,
-                o.data.overwriteMode,
-            )
-            o.data.cursorPos += textwidth(c)
-        end
-
-    checkcursor =
-        () -> begin
-            fieldcount, remainspacecount = getFieldDimension(o)
-            if o.data.inputText == ""
-                o.data.cursorPos = 1
-            else
-                o.data.cursorPos = max(1, min(length(o.data.inputText)+1, o.data.cursorPos))
-            end
-            if o.data.valueType <: AbstractString
-                if remainspacecount <= 0
-                    if o.data.cursorPos - o.data.fieldLeftPos > fieldcount - 1
-                        o.data.fieldLeftPos = o.data.cursorPos - fieldcount + 1
-                    elseif o.data.fieldLeftPos > o.data.cursorPos
-                        o.data.fieldLeftPos = o.data.cursorPos
-                    end
-                else
-                    o.data.fieldLeftPos = 1
-                end
-            end
-        end
+    retcode = Handled
 
     if token == :esc
-        retcode = :exit_nothing
-    elseif token == :shift_up && ( o.data.valueType <: Real || o.data.valueType <: Date ) && o.data.tickSize != 0
-        (fieldcount, remainspacecount) = getFieldDimension(o)
-        (v, s) = evalNFormat(o.data, o.data.inputText, fieldcount)
-        if v !== nothing
-	    if o.data.valueType <: Date  
-	    	v = v +Day(1)
-	    else
-                v += o.data.tickSize
-	    end
-            o.value = v
-            o.data.inputText = myNumFormat(o.value, o.data, fieldcount)
-            checkcursor()
-            o.data.incomplete = false
-            dorefresh = true
-        end
-    elseif token == :shift_down && ( o.data.valueType <: Real || o.data.valueType <: Date ) && o.data.tickSize != 0
-        (fieldcount, remainspacecount) = getFieldDimension(o)
-        (v, s) = evalNFormat(o.data, o.data.inputText, fieldcount)
-        if v !== nothing
-	    if o.data.valueType <: Date
-	        v = v - Day(1)
-            else
-	        v -= o.data.tickSize
-	    end
-	    o.value = v
-            o.data.inputText = myNumFormat(o.value, o.data, fieldcount)
-            checkcursor()
-            o.data.incomplete = false
-            dorefresh = true
-        end
-    elseif token == :left
-        if o.data.cursorPos > 1
-            o.data.cursorPos -= 1
-            checkcursor()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :ctrl_a
-        if o.data.cursorPos > 1
-            o.data.cursorPos = 1
-            checkcursor()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :right
-        if o.data.cursorPos < length(o.data.inputText)+1
-            o.data.cursorPos += 1
-            checkcursor()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :ctrl_e
-        if o.data.cursorPos < length(o.data.inputText)+1
-            o.data.cursorPos = length(o.data.inputText) + 1
-            checkcursor()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :delete
-        p = o.data.cursorPos
-        utfs = delete_char_at(o.data.inputText, o.data.cursorPos)
-        if utfs != o.data.inputText
-            o.data.inputText = utfs
-            checkcursor()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :backspace
-        p = o.data.cursorPos
-        utfs, newpos = delete_char_before(o.data.inputText, o.data.cursorPos)
-        if utfs != o.data.inputText
-            o.data.inputText = utfs
-            o.data.cursorPos = newpos
-            checkcursor()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :ctrl_r || token == :insert
-        o.data.overwriteMode = !o.data.overwriteMode
-        dorefresh = true
-    elseif token == :ctrl_k # kill the buffer
-        o.data.inputText = ""
-        o.data.cursorPos = 1
-        o.data.fieldLeftPos = 1
-        dorefresh = true
-    elseif token == "m" && o.data.valueType <: Real && o.data.valueType != Bool # add 000
-        (fieldcount, remainspacecount) = getFieldDimension(o)
-        (v, s) = evalNFormat(o.data, o.data.inputText, fieldcount)
-        if v !== nothing
-            o.value = v * 1000
-            o.data.inputText = myNumFormat(o.value, o.data, fieldcount)
-            checkcursor()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif o.data.valueType == Bool && typeof(token) <: AbstractString && !isempty(token) && isprint(first(token))
-        if token == "t"
-            o.data.inputText = "true"
-            o.data.cursorPos = 1
-            dorefresh = true
-        elseif token == "f"
-            o.data.inputText = "false"
-            o.data.cursorPos = 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif typeof(token) <: AbstractString &&
-           o.data.valueType <: Date &&
-           !in(token, ["?", ","])
-        insertchar(token)
-        dorefresh = true
-    elseif token == "?" && o.data.valueType <: Date
-        global rootTwScreen
-        (fieldcount, remainspacecount) = getFieldDimension(o)
-        (v, s) = evalNFormat(o.data, o.data.inputText, fieldcount)
-        if v === nothing
-            v = today()
-        end
-        w = newTwCalendar(rootTwScreen, v; posy = :center, posx = :center)
-        activateTwObj(w)
-        if typeof(w.value) <: Date
-            o.data.inputText = string(w.value)
-            checkcursor()
-            dorefresh = true
-        end
-        unregisterTwObj(rootTwScreen, w)
-    elseif token == "," && o.data.valueType <: Date
-        (fieldcount, remainspacecount) = getFieldDimension(o)
-        (v, s) = evalNFormat(o.data, o.data.inputText, fieldcount)
-        if v !== nothing
-            o.data.inputText = s
-            checkcursor()
-            o.data.incomplete = false
-            dorefresh = true
-        else
-            o.data.incomplete = true
-            beep()
-        end
-    elseif typeof(token) <: AbstractString &&
-           o.data.valueType <: Number &&
-           o.data.valueType != Bool &&
-           (
-               isdigit(token[1]) ||
-               token == "," ||
-               o.data.valueType <: AbstractFloat && in(token, [".", "e", "+", "-"]) ||
-               o.data.valueType <: Rational && in(token, [".", "+", "-"]) ||
-               o.data.valueType <: Signed && in(token, ["+", "-"])
-           )
-
-        if token == "e" # it may or may not be ok, just allow it if there is no e in the string
-            if occursin("e", o.data.inputText) # disallowed, do nothing
-                return :got_it
-            else
-                insertchar("e")
-                dorefresh = true
-            end
-        elseif token == "-" || token == "+" # only allowed at the beginning and just after an "e"
-            epos = findfirst(isequal('e'), o.data.inputText)
-            if o.data.cursorPos == 1 &&
-               (startswith(o.data.inputText, "-") || startswith(o.data.inputText, "+")) ||
-               o.data.cursorPos != 1 && (epos === nothing || o.data.cursorPos != epos+1)
-                return :got_it
-            else
-                insertchar(token)
-                dorefresh = true
-            end
-        elseif token == "." # add a decimal point, or if one exists, jump right to it
-            dpos = findfirst(isequal('.'), o.data.inputText)
-            if dpos !== nothing
-                o.data.cursorPos=dpos+1
-                dorefresh = true
-            else
-                insertchar(".")
-                dorefresh = true
-            end
-        elseif token == "," # try to add commas to all
-            (fieldcount, remainspacecount) = getFieldDimension(o)
-            (v, s) = evalNFormat(o.data, o.data.inputText, fieldcount)
-            if v !== nothing
-                o.data.inputText = s
-                checkcursor()
-                o.data.incomplete = false
-                dorefresh = true
-            else
-                o.data.incomplete = true
-                beep()
-            end
-        else
-            insertchar(token)
-            dorefresh = true
-        end
-    elseif typeof(token) <: AbstractString && o.data.valueType <: AbstractString #&& isprint( token )
-        insertchar(token)
-        checkcursor()
-        dorefresh = true
+        return Cancel
     elseif token == :enter || token == Symbol("return")
-        (fieldcount, remainspacecount) = getFieldDimension(o)
-        (v, s) = evalNFormat(o.data, o.data.inputText, fieldcount)
-        if v !== nothing
+        (v, ok) = editor_commit(ed)
+        if ok
             o.value = v
-            o.data.inputText = s
-            checkcursor()
-            o.data.incomplete = false
-            retcode = :exit_ok
+            retcode = Accept
         else
-            o.data.incomplete = true
             beep()
         end
     elseif token == :focus_off
-        (fieldcount, remainspacecount) = getFieldDimension(o)
-        (v, s) = evalNFormat(o.data, o.data.inputText, fieldcount)
-        if v !== nothing
+        (v, ok) = editor_commit(ed)
+        if ok
             o.value = v
-            o.data.inputText = s
-            o.data.incomplete = false
-            checkcursor()
-            retcode = :exit_ok
+            retcode = Accept
+        end
+        # invalid → editor_commit set `incomplete`; stay focused (retcode Handled)
+    elseif token == :shift_up &&
+           (ed.valuetype <: Real || ed.valuetype <: Date) && ed.tickSize != 0
+        if editor_tick!(ed, 1)
+            (v, ok) = editor_commit(ed)
+            ok && (o.value = v)
+            dorefresh = true
+        end
+    elseif token == :shift_down &&
+           (ed.valuetype <: Real || ed.valuetype <: Date) && ed.tickSize != 0
+        if editor_tick!(ed, -1)
+            (v, ok) = editor_commit(ed)
+            ok && (o.value = v)
+            dorefresh = true
+        end
+    elseif token == "m" && ed.valuetype <: Real && ed.valuetype != Bool  # ×1000
+        (v, ok) = editor_commit(ed)
+        if ok && v !== missing
+            o.value = v * 1000
+            ed.buffer = myNumFormat(o.value, ed, fieldcount)
+            editor_checkcursor!(ed)
+            dorefresh = true
         else
-            o.data.incomplete = true
+            beep()
         end
     else
-        retcode = :pass # I don't know what to do with it
+        r = editor_handle(ed, token)
+        if r === :handled
+            dorefresh = true
+        elseif r === :rejected || r === :at_left_edge || r === :at_right_edge
+            beep()                       # entry has no column nav; edges just beep
+        elseif r === :open_calendar
+            global rootTwScreen
+            (v0, _) = evalNFormat(ed, ed.buffer, fieldcount)
+            initd = v0 isa Date ? v0 : today()
+            w = newTwCalendar(rootTwScreen, initd; posy = :center, posx = :center)
+            activateTwObj(w)
+            if w.value isa Date
+                editor_set_buffer!(ed, string(w.value))
+                editor_checkcursor!(ed)
+            end
+            unregisterTwObj(rootTwScreen, w)
+            dorefresh = true
+        else  # :open_enum (entry has no enum) or :ignored → bubble to host
+            retcode = Ignored
+        end
     end
 
     if dorefresh
         refresh(o)
     end
-
     return retcode
 end
 
-function myNumFormat(v, data::TwEntryData, fieldcount::Int)
-    if typeof(v) <: Date
-	    s = Dates.format( v, "yyyy-mm-dd" )
-    else
-        s = format(
-            v,
-            precision = data.precision,
-            commas = data.commas,
-            stripzeros = data.stripzeros,
-            conversion = data.conversion,
-        )
-        if length(s) > fieldcount
-            s = replace(s, "," => "", count = length(s)-fieldcount)
-        end
-    end
-    s
-end
-
-function evalNFormat(data::TwEntryData, s::AbstractString, fieldcount::Int)
-    dt = data.valueType
-    if dt <: AbstractString
-        return (s, s)
-    elseif dt == Bool
-        if s == "true"
-            v = true
-        elseif s == "false"
-            v = false
-        else
-            v = nothing
-        end
-        return v, s
-    elseif dt <: AbstractFloat
-        v = nothing
-        stmp = replace(s, "," => "")
-        try
-            if length(stmp)==0
-                v = nothing
-            else
-                v = parse(dt, stmp)
-            end
-        catch
-        end
-        if v !== nothing
-            v = convert(dt, v)
-            return (v, myNumFormat(v, data, fieldcount))
-        end
-    elseif dt <: Rational
-        v = nothing
-        stmp = replace(s, "," => "")
-        dpos = findfirst(isequal('.'), stmp)
-        if dpos === nothing
-            try
-                if length(stmp) == 0
-                    v = nothing
-                else
-                    v = parse(dt.types[1], stmp)
-                end
-            catch
-            end
-            if v !== nothing
-                v = convert(dt, v)
-                return (v, myNumFormat(v, data, fieldcount))
-            end
-        else
-            iv = nothing
-            fv = nothing
-            try
-                if dpos == 1
-                    iv = 0
-                else
-                    iv = parse(dt.types[1], stmp[1:(dpos-1)])
-                end
-                if dpos == length(stmp)
-                    fv = 0 // 1
-                else
-                    tail = stmp[(dpos+1):end]
-                    fv = parse(dt.types[2], tail) // (10 ^ length(tail))
-                end
-            catch
-            end
-            if iv !== nothing && fv !== nothing
-                v = iv + (sign(iv) > 0 ? fv : -fv)
-                return (v, myNumFormat(v, data, fieldcount))
-            end
-        end
-    elseif dt <: Integer # assume int
-        v = nothing
-        stmp = replace(s, "," => "")
-        try
-            if length(stmp)==0
-                v = nothing
-            else
-                v = parse(dt, stmp)
-            end
-        catch
-        end
-        if v !== nothing
-            v = convert(dt, v)
-            return (v, myNumFormat(v, data, fieldcount))
-        end
-    elseif dt <: Date
-        v = nothing
-        s = strip(s)
-        res = Dict(
-            r"^[0-9]{2}[a-z]{3}[0-9]{4}$"i => "dduuuyyyy",
-            r"^[0-9][a-z]{3}[0-9]{4}$"i => "duuuyyyy",
-            r"^[0-9]{2}[a-z]{3}[0-9]{2}$"i => "dduuuyy",
-            r"^[0-9][a-z]{3}[0-9]{2}$"i => "duuuyy",
-            r"^[0-9]{2}[a-z]{3}$"i => "dduuu",
-            r"^[0-9][a-z]{3}$"i => "duuu",
-            r"^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$" => "yyyy-mm-dd",
-            r"^[0-9]{4} [0-9]{1,2} [0-9]{1,2}$" => "yyyy mm dd",
-            r"^[0-9]{4}.[0-9]{1,2}.[0-9]{1,2}$" => "yyyy.mm.dd",
-            r"^[0-9]{4}/[0-9]{1,2}/[0-9]{1,2}$" => "yyyy/mm/dd",
-            r"^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$" => "mm/dd/yyyy", # assume american
-            r"^[0-9]{1,2} +[a-z]{3} +[0-9]{4}$"i => "dd uuu yyyy",
-            r"^[0-9]{1,2} +[a-z]{4,} +[0-9]{4}$"i => "dd U yyyy",
-            r"^[0-9]{8}$" => "yyyymmdd",
-            r"^[0-9]{1,2} [0-9]{1,2}$" => "mm dd",
-        )
-        fmt = "yyyy-mm-dd"
-        for (r, f) in res
-            m = match(r, s)
-            if m !== nothing
-                try
-                    v = Date(s, f)
-                catch
-                end
-                if v !== nothing
-                    fmt = f
-                    if !occursin("yyyy", fmt) && occursin("yy", fmt) && year(v) < 100
-                        smally = year(v)
-                        thisy = year(today())
-                        cent = 100 * div(thisy, 100)
-                        if abs(cent+smally - thisy)<=50
-                            v = v + Year(cent)
-                        else
-                            v = v + Year(cent - 100)
-                        end
-                        fmt = replace(fmt, "yy" => "yyyy")
-                    end
-                    if !occursin("y", fmt) && year(v) < 100 # get to the nearest half year
-                        smally = year(v)
-                        thisy = year(today())
-                        if Dates.value(v + Year(thisy - smally + 1) - today()) < 182
-                            v = v + Year(thisy - smally + 1)
-                        else
-                            v = v + Year(thisy - smally)
-                        end
-                        fmt = "yyyy-mm-dd"
-                    end
-                    if fmt == "mm/dd/yyyy" || fmt == "yyyymmdd"  # the more ambiguous formats
-                        fmt = "yyyy-mm-dd"
-                    end
-                    break
-                end
-            end
-        end
-        if v !== nothing
-            return (v, Dates.format(v, fmt))
-        end
-    end
-    return (nothing, s)
-end
+# Parse/format engine lives in editor.jl. These shims keep the TwEntryData call
+# sites working (twedittable/twdicttree build a TwEntryData to drive parsing
+# until they migrate to InlineEditor).
+myNumFormat(v, data::TwEntryData, fieldcount::Int) = myNumFormat(v, data.editor, fieldcount)
+evalNFormat(data::TwEntryData, s::AbstractString, fieldcount::Int) =
+    evalNFormat(data.editor, s, fieldcount)
 
 function helptext(o::TwObj{TwEntryData})
     if !o.data.showHelp

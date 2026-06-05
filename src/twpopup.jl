@@ -47,14 +47,12 @@ mutable struct TwPopupData
     datalist::Array{Any,1}
     maxchoicelength::Int
     searchbox::Any
-    currentLine::Int
-    currentLeft::Int
-    currentTop::Int
+    scroll::ScrollState      # cursor=selected line, top=first visible, left=h-scroll (1-based)
     selectmode::Int
     helpText::String
     colorpair::Int
     TwPopupData(arr::Array{String,1}) =
-        new(arr, Any[], maximum(map(z->length(z), arr)), nothing, 1, 1, 1, 0, "", 0)
+        new(arr, Any[], maximum(map(z->length(z), arr)), nothing, ScrollState(), 0, "", 0)
 end
 TwPopupData(arr::Array{T,1}) where {T<:AbstractString} = TwPopupData(map(x->String(x), arr))
 
@@ -166,17 +164,29 @@ end
 function apply_default!(obj::TwObj{TwPopupData}, value)
     value === nothing && return
     if value isa Integer
-        obj.data.currentLine = clamp(Int(value), 1, length(obj.data.choices))
+        obj.data.scroll.cursor = clamp(Int(value), 1, length(obj.data.choices))
     else
         idx = findfirst(==(string(value)), obj.data.choices)
-        idx !== nothing && (obj.data.currentLine = idx)
+        idx !== nothing && (obj.data.scroll.cursor = idx)
     end
-    obj.value = obj.data.choices[obj.data.currentLine]
+    obj.value = obj.data.choices[obj.data.scroll.cursor]
 end
 
 function popup_use_datalist(o::TwObj)
     o.data.selectmode & POPUPHIDEUNMATCHED != 0 || o.data.selectmode & POPUPSORTMATCHED != 0
 end
+
+# Number of rows currently navigable (datalist when filtering/sorting, else choices).
+popup_count(o::TwObj{TwPopupData}) =
+    popup_use_datalist(o) ? length(o.data.datalist) : length(o.data.choices)
+
+# Visible row count inside the box.
+popup_viewport(o::TwObj{TwPopupData}) = o.height - 2 * o.borderSizeV
+
+# Keep the cursor visible when the viewport changes (e.g. terminal resize). The
+# framework's relayout! calls this; popup previously had no such handler.
+clamp_scroll!(o::TwObj{TwPopupData}) =
+    clamp_view!(o.data.scroll, popup_count(o), popup_viewport(o))
 
 function rebuild_popup_datalist(o::TwObj{TwPopupData})
     o.data.datalist = Any[]
@@ -190,7 +200,9 @@ function draw(o::TwObj{TwPopupData})
     werase(o.window)
     use_theme = o.data.colorpair != 0
     base_attr = COLOR_PAIR( use_theme ? o.data.colorpair : 0 )
-    sel_pair  = COLOR_PAIR( use_theme ? o.data.colorpair : (o.hasFocus ? 15 : 30) )
+    # Semantic tokens replace the old magic numbers (15 = focused, 30 = unfocused).
+    sel_pair  = use_theme ? COLOR_PAIR(o.data.colorpair) :
+                            theme(o.hasFocus ? :selection_focused : :selection_unfocused)
     wattron( o.window, base_attr )
     if o.box
         box(o.window, 0, 0)
@@ -207,8 +219,8 @@ function draw(o::TwObj{TwPopupData})
     else
         n = length(o.data.choices)
     end
-    for r = o.data.currentTop:min(o.data.currentTop+viewContentHeight-1, n)
-        if r == o.data.currentLine
+    for r = o.data.scroll.top:min(o.data.scroll.top+viewContentHeight-1, n)
+        if r == o.data.scroll.cursor
             flag = A_BOLD | sel_pair
             prefix = "→"
         else
@@ -220,13 +232,13 @@ function draw(o::TwObj{TwPopupData})
         else
             s = o.data.choices[r]
         end
-        s = prefix * substr_by_width(s, o.data.currentLeft - 1, viewContentWidth-1)
+        s = prefix * substr_by_width(s, o.data.scroll.left - 1, viewContentWidth-1)
         sw = textwidth(s)
         if sw < viewContentWidth
             s = s * repeat(" ", viewContentWidth - sw)
         end
         wattron(o.window, flag)
-        mvwprintw(o.window, r - o.data.currentTop + starty, o.borderSizeH, "%s", s)
+        mvwprintw(o.window, r - o.data.scroll.top + starty, o.borderSizeH, "%s", s)
         wattroff(o.window, flag)
     end
     if o.data.selectmode & POPUPQUICKSELECT != 0
@@ -235,7 +247,7 @@ function draw(o::TwObj{TwPopupData})
 end
 
 function popup_search_next(o::TwObj{TwPopupData}, step::Int, trivialstop::Bool)
-    st = o.data.currentLine
+    st = o.data.scroll.cursor
     tmpstr = lowercase(o.data.searchbox.data.inputText)
     if length(tmpstr) == 0
         TermWin.beep()
@@ -254,18 +266,18 @@ function popup_search_next(o::TwObj{TwPopupData}, step::Int, trivialstop::Bool)
         if o.data.selectmode & POPUPSUBSTR != 0
             if usedatalist
                 if occursin(tmpstr, o.data.datalist[i][1])
-                    o.data.currentLine = i
+                    o.data.scroll.cursor = i
                     return i
                 end
             else
                 if occursin(tmpstr, lowercase(o.data.choices[i]))
-                    o.data.currentLine = i
+                    o.data.scroll.cursor = i
                     return i
                 end
             end
         else
             if startswith(lowercase(o.data.choices[i]), tmpstr)
-                o.data.currentLine = i
+                o.data.scroll.cursor = i
                 return i
             end
         end
@@ -286,16 +298,16 @@ function update_popup_score(o::TwObj{TwPopupData})
 
     if usedatalist
         prevchoice = ""
-        if length(o.data.datalist) >= o.data.currentLine >= 1
-            prevchoice = o.data.datalist[o.data.currentLine][2]
+        if length(o.data.datalist) >= o.data.scroll.cursor >= 1
+            prevchoice = o.data.datalist[o.data.scroll.cursor][2]
         else
-            o.data.currentLine = 1
+            o.data.scroll.cursor = 1
         end
         if l1 == 0
             rebuild_popup_datalist(o)
             for (i, row) in enumerate(o.data.datalist)
                 if row[2] == prevchoice
-                    o.data.currentLine = i
+                    o.data.scroll.cursor = i
                 end
             end
         else
@@ -323,7 +335,7 @@ function update_popup_score(o::TwObj{TwPopupData})
                     sort!(o.data.datalist, lt = (x, y)->x[4] < y[4])
                     for (i, row) in o.data.datalist
                         if prevchoice == row[2]
-                            o.data.currentLine = i
+                            o.data.scroll.cursor = i
                         end
                     end
                 end
@@ -357,8 +369,8 @@ function update_popup_score(o::TwObj{TwPopupData})
                         end
                     end
                     sort!(o.data.datalist, lt = (x, y)->x[4] < y[4])
-                    o.data.currentLine = 1
-                    o.data.currentTop = 1
+                    o.data.scroll.cursor = 1
+                    o.data.scroll.top = 1
                 else # don't sort, but jump to the next match one
                     popup_search_next(o, 1, true)
                 end
@@ -371,7 +383,7 @@ end
 
 function inject(o::TwObj{TwPopupData}, token)
     dorefresh = false
-    retcode = :got_it # default behavior is that we know what to do with it
+    retcode = Handled # default behavior is that we know what to do with it
 
     viewContentWidth = o.width - o.borderSizeH * 2
     viewContentHeight = o.height - 2 * o.borderSizeV
@@ -381,31 +393,15 @@ function inject(o::TwObj{TwPopupData}, token)
         (o.data.selectmode & POPUPQUICKSELECT != 0) &&
         (o.data.selectmode & POPUPSUBSTR == 0)
 
-    checkTop =
-        () -> begin
-            if o.data.currentTop > o.data.currentLine
-                o.data.currentTop = o.data.currentLine
-            elseif o.data.currentLine - o.data.currentTop > viewContentHeight - 1
-                o.data.currentTop = o.data.currentLine - viewContentHeight + 1
-            end
-        end
-    moveby = n -> begin
-        if o.data.selectmode & POPUPHIDEUNMATCHED != 0
-            sz = length(o.data.datalist)
-        else
-            sz = length(o.data.choices)
-        end
-
-        o.data.currentLine = max(1, min(sz, o.data.currentLine + n))
-        checkTop()
-        return true
-    end
+    # Shared viewport helpers replace the hand-rolled checkTop/moveby math.
+    checkTop = () -> clamp_view!(o.data.scroll, popup_count(o), viewContentHeight)
+    moveby = n -> (move_cursor!(o.data.scroll, n, popup_count(o), viewContentHeight); true)
 
     if o.data.selectmode & POPUPQUICKSELECT != 0 && token != :F1
         inputText = o.data.searchbox.data.inputText
         result = inject(o.data.searchbox, token)
 
-        if result == :got_it
+        if result == Handled
             if inputText != o.data.searchbox.data.inputText
                 update_popup_score(o)
                 checkTop()
@@ -416,49 +412,49 @@ function inject(o::TwObj{TwPopupData}, token)
     end
 
     if token == :esc
-        retcode = :exit_nothing
+        retcode = Cancel
     elseif token == :up
         dorefresh = moveby(-1)
     elseif token == :down
         dorefresh = moveby(1)
     elseif token == :left
-        if o.data.currentLeft > 1
-            o.data.currentLeft -= 1
+        if o.data.scroll.left > 1
+            o.data.scroll.left -= 1
             dorefresh = true
         else
             beep()
         end
     elseif token == :right
-        if o.data.currentLeft + viewContentWidth < o.data.maxchoicelength
-            o.data.currentLeft += 1
+        if o.data.scroll.left + viewContentWidth < o.data.maxchoicelength
+            o.data.scroll.left += 1
             dorefresh = true
         else
             beep()
         end
     elseif token == :shift_left # TODO ctrl-left
-        if o.data.currentLeft > 1
-            o.data.currentLeft -= 1
+        if o.data.scroll.left > 1
+            o.data.scroll.left -= 1
             dorefresh = true
         else
             beep()
         end
     elseif token == :ctrlshift_left # TODO ctrl-left
-        if o.data.currentLeft > 1
-            o.data.currentLeft = 1
+        if o.data.scroll.left > 1
+            o.data.scroll.left = 1
             dorefresh = true
         else
             beep()
         end
     elseif token == :shift_right
-        if o.data.currentLeft + viewContentWidth < o.data.maxchoicelength
-            o.data.currentLeft += 1
+        if o.data.scroll.left + viewContentWidth < o.data.maxchoicelength
+            o.data.scroll.left += 1
             dorefresh = true
         else
             beep()
         end
     elseif token == :ctrlshift_right
-        if o.data.currentLeft + viewContentWidth < o.data.maxchoicelength
-            o.data.currentLeft = o.data.maxchoicelength - viewContentWidth
+        if o.data.scroll.left + viewContentWidth < o.data.maxchoicelength
+            o.data.scroll.left = o.data.maxchoicelength - viewContentWidth
             dorefresh = true
         else
             beep()
@@ -485,10 +481,10 @@ function inject(o::TwObj{TwPopupData}, token)
             (rely, relx) = screen_to_relative(o.window, y, x)
             if o.borderSizeV <= rely < o.height - o.borderSizeV && 0 <= relx < o.width
                 sz = popup_use_datalist(o) ? length(o.data.datalist) : length(o.data.choices)
-                o.data.currentLine = clamp(o.data.currentTop + rely - o.borderSizeV, 1, sz)
+                o.data.scroll.cursor = clamp(o.data.scroll.top + rely - o.borderSizeV, 1, sz)
                 dorefresh = true
             else
-                retcode = :pass
+                retcode = Ignored
             end
         end
     elseif token == :tab && tabcomplete
@@ -497,14 +493,14 @@ function inject(o::TwObj{TwPopupData}, token)
         nextstr = ""
         currstr = ""
         if usedatalist
-            if o.data.currentLine < length(o.data.datalist)
-                currstr = o.data.datalist[o.data.currentLine][2]
-                nextstr = o.data.datalist[o.data.currentLine+1][2]
+            if o.data.scroll.cursor < length(o.data.datalist)
+                currstr = o.data.datalist[o.data.scroll.cursor][2]
+                nextstr = o.data.datalist[o.data.scroll.cursor+1][2]
             end
         else
-            if o.data.currentLine < length(o.data.choices)
-                currstr = o.data.choices[o.data.currentLine]
-                nextstr = o.data.choices[o.data.currentLine+1]
+            if o.data.scroll.cursor < length(o.data.choices)
+                currstr = o.data.choices[o.data.scroll.cursor]
+                nextstr = o.data.choices[o.data.scroll.cursor+1]
             end
         end
         lcp = longest_common_prefix(currstr, nextstr)
@@ -516,10 +512,10 @@ function inject(o::TwObj{TwPopupData}, token)
             beep()
         end
     elseif token == :home
-        if o.data.currentTop != 1 || o.data.currentLeft != 1 || o.data.currentLine != 1
-            o.data.currentTop = 1
-            o.data.currentLeft = 1
-            o.data.currentLine = 1
+        if o.data.scroll.top != 1 || o.data.scroll.left != 1 || o.data.scroll.cursor != 1
+            o.data.scroll.top = 1
+            o.data.scroll.left = 1
+            o.data.scroll.cursor = 1
             dorefresh = true
         else
             beep()
@@ -530,8 +526,8 @@ function inject(o::TwObj{TwPopupData}, token)
         else
             n = length(o.data.choices)
         end
-        if o.data.currentLine != n
-            o.data.currentLine = n
+        if o.data.scroll.cursor != n
+            o.data.scroll.cursor = n
             checkTop()
             dorefresh = true
         else
@@ -539,21 +535,21 @@ function inject(o::TwObj{TwPopupData}, token)
         end
     elseif token == :enter || token == Symbol("return")
         if usedatalist
-            if o.data.currentLine <= length(o.data.datalist)
-                o.value = o.data.datalist[o.data.currentLine][2]
-                retcode = :exit_ok
+            if o.data.scroll.cursor <= length(o.data.datalist)
+                o.value = o.data.datalist[o.data.scroll.cursor][2]
+                retcode = Accept
             elseif o.data.selectmode & POPUPALLOWNEW != 0
                 o.value = strip(o.data.searchbox.data.inputText)
-                retcode = :exit_ok
+                retcode = Accept
             end
         else
-            if o.data.currentLine <= length(o.data.choices)
-                o.value = o.data.choices[o.data.currentLine]
-                retcode = :exit_ok
+            if o.data.scroll.cursor <= length(o.data.choices)
+                o.value = o.data.choices[o.data.scroll.cursor]
+                retcode = Accept
             end
         end
     else
-        retcode = :pass # I don't know what to do with it
+        retcode = Ignored # I don't know what to do with it
     end
 
     if dorefresh

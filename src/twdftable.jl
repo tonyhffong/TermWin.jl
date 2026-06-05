@@ -536,7 +536,7 @@ function draw(o::TwObj{TwDfTableData})
     updateTableDimensions(o)
 
     # header row(s)
-    wattron(o.window, COLOR_PAIR(3))
+    wattron(o.window, theme(:header))
     startx = 1+o.data.datatreewidth
     lastcol = 1
     lastwidth = 8
@@ -571,7 +571,7 @@ function draw(o::TwObj{TwDfTableData})
         end
         if o.data.currentCol == col
             wattroff(o.window, A_REVERSE)
-	    wattron(o.window, COLOR_PAIR(3))
+	    wattron(o.window, theme(:header))
         end
         if !islastcol
             for i = 1:o.data.headerlines
@@ -580,7 +580,7 @@ function draw(o::TwObj{TwDfTableData})
         end
         startx += width + 1
     end
-    wattroff(o.window, COLOR_PAIR(3))
+    wattroff(o.window, theme(:header))
     # reminder: (name, stack, exphints, skiplines, node )
     for r = o.data.currentTop:min(o.data.currentTop+viewContentHeight-1, o.data.datalistlen)
 
@@ -593,7 +593,7 @@ function draw(o::TwObj{TwDfTableData})
         )
 
         if r == o.data.currentLine
-            wattron(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+            wattron(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
         end
         mvwprintw(o.window, o.data.headerlines + 1 + r-o.data.currentTop, 2, "%s", s)
         for i = 1:(stacklen-1)
@@ -648,7 +648,7 @@ function draw(o::TwObj{TwDfTableData})
         end
 
         if r == o.data.currentLine
-            wattroff(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+            wattroff(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
         end
         mvwaddch(
             o.window,
@@ -692,13 +692,13 @@ function draw(o::TwObj{TwDfTableData})
                 if isred
                     flags |= COLOR_PAIR(o.hasFocus ? 9 : 31)
                 else
-                    flags |= COLOR_PAIR(o.hasFocus ? 15 : 30)
+                    flags |= theme(o.hasFocus ? :selection_focused : :selection_unfocused)
                 end
             elseif isnode
                 flags |= A_BOLD
                 if mod(length(o.data.datalist[r][2]), 2) == 0
                     if isred
-                        flags |= COLOR_PAIR(1)
+                        flags |= theme(:negative)
                     else
                         flags |= COLOR_PAIR(7)
                     end
@@ -706,12 +706,12 @@ function draw(o::TwObj{TwDfTableData})
                     if isred
                         flags |= COLOR_PAIR(29)
                     else
-                        flags |= COLOR_PAIR(13)
+                        flags |= theme(:divider)
                     end
                 end
             else
                 if isred
-                    flags |= COLOR_PAIR(1)
+                    flags |= theme(:negative)
                 else
                     flags |= COLOR_PAIR(7)
                 end
@@ -951,7 +951,7 @@ end
 
 function inject(o::TwObj{TwDfTableData}, token)
     dorefresh = false
-    retcode = :got_it # default behavior is that we know what to do with it
+    retcode = Handled # default behavior is that we know what to do with it
     viewContentHeight = o.height - 2 * o.borderSizeV - o.data.headerlines
     viewContentWidth = o.width - 2 * o.borderSizeH - o.data.datatreewidth
     widths = map(x->x.format.width, o.data.colInfo)
@@ -1170,7 +1170,7 @@ function inject(o::TwObj{TwDfTableData}, token)
 
     # reminder: (name, stack, exphints, skiplines, node )
     if token == :esc
-        retcode = :exit_nothing
+        retcode = Cancel
     elseif (token == " " || token == Symbol("return") || token == :enter) &&
            o.data.datalist[o.data.currentLine][3] != :single
         expandhint = o.data.datalist[o.data.currentLine][3]
@@ -1304,7 +1304,7 @@ function inject(o::TwObj{TwDfTableData}, token)
                 dorefresh = true
             end
             if !dorefresh
-                retcode = :pass
+                retcode = Ignored
             end
         end
     elseif in(token, Any[Symbol("end")])
@@ -1530,7 +1530,7 @@ function inject(o::TwObj{TwDfTableData}, token)
         )
         dorefresh = true
     else
-        retcode = :pass # I don't know what to do with it
+        retcode = Ignored # I don't know what to do with it
     end
 
     if dorefresh

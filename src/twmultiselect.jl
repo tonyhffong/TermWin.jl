@@ -29,13 +29,11 @@ mutable struct TwMultiSelectData
     datalist::Array{Any,1}
     maxchoicelength::Int
     searchbox::Any
-    currentLine::Int
-    currentLeft::Int
-    currentTop::Int
+    scroll::ScrollState      # cursor=current line, top=first visible, left=h-scroll
     selectmode::Int
     helpText::String
     TwMultiSelectData(arr::Array{String,1}, selected::Array{String,1}) =
-        new(arr, selected, Any[], 0, nothing, 1, 1, 1, 0, "")
+        new(arr, selected, Any[], 0, nothing, ScrollState(), 0, "")
 end
 TwMultiSelectData(
     arr::Array{T,1},
@@ -124,6 +122,11 @@ function rebuild_select_datalist(o::TwObj{TwMultiSelectData})
     end
 end
 
+# Keep the cursor visible when the viewport changes (terminal resize). The
+# framework's relayout! calls this; multiselect previously had no such handler.
+clamp_scroll!(o::TwObj{TwMultiSelectData}) =
+    clamp_view!(o.data.scroll, length(o.data.datalist), o.height - 2 * o.borderSizeV)
+
 function draw(o::TwObj{TwMultiSelectData})
     werase(o.window)
     if o.box
@@ -136,11 +139,11 @@ function draw(o::TwObj{TwMultiSelectData})
     viewContentHeight = o.height - o.borderSizeV * 2
     viewContentWidth = o.width - o.borderSizeH * 2
     n = length(o.data.datalist)
-    for r = o.data.currentTop:min(o.data.currentTop+viewContentHeight-1, n)
+    for r = o.data.scroll.top:min(o.data.scroll.top+viewContentHeight-1, n)
         flag = 0
         prefix = " "
-        if r == o.data.currentLine
-            flag = A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30)
+        if r == o.data.scroll.cursor
+            flag = A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused)
             prefix = "→"
         end
         s = o.data.datalist[r][1]
@@ -149,17 +152,17 @@ function draw(o::TwObj{TwMultiSelectData})
         else
             s = prefix * "□ " * s
         end
-        s = substr_by_width(s, o.data.currentLeft-1, viewContentWidth)
+        s = substr_by_width(s, o.data.scroll.left-1, viewContentWidth)
 
         wattron(o.window, flag)
-        mvwprintw(o.window, r - o.data.currentTop + starty, o.borderSizeH, "%s", s)
+        mvwprintw(o.window, r - o.data.scroll.top + starty, o.borderSizeH, "%s", s)
         wattroff(o.window, flag)
     end
     draw(o.data.searchbox)
 end
 
 function select_search_next(o::TwObj{TwMultiSelectData}, step::Int, trivialstop::Bool)
-    st = o.data.currentLine
+    st = o.data.scroll.cursor
     tmpstr = lowercase(o.data.searchbox.data.inputText)
     if length(tmpstr) == 0
         TermWin.beep()
@@ -173,12 +176,12 @@ function select_search_next(o::TwObj{TwMultiSelectData}, step::Int, trivialstop:
     while true
         if usesubstr
             if occursin(tmpstr, lowercase(o.data.datalist[i][1]))
-                o.data.currentLine = i
+                o.data.scroll.cursor = i
                 return i
             end
         else
             if startswith(lowercase(o.data.datalist[i][1]), tmpstr)
-                o.data.currentLine = i
+                o.data.scroll.cursor = i
                 return i
             end
         end
@@ -192,26 +195,14 @@ end
 
 function inject(o::TwObj{TwMultiSelectData}, token)
     dorefresh = false
-    retcode = :got_it # default behavior is that we know what to do with it
+    retcode = Handled # default behavior is that we know what to do with it
 
     viewContentWidth = o.width - o.borderSizeH * 2
     viewContentHeight = o.height - 2 * o.borderSizeV
 
-    checkTop =
-        () -> begin
-            if o.data.currentTop > o.data.currentLine
-                o.data.currentTop = o.data.currentLine
-            elseif o.data.currentLine - o.data.currentTop > viewContentHeight - 1
-                o.data.currentTop = o.data.currentLine - viewContentHeight + 1
-            end
-        end
-    moveby = n -> begin
-        sz = length(o.data.datalist)
-
-        o.data.currentLine = max(1, min(sz, o.data.currentLine + n))
-        checkTop()
-        return true
-    end
+    # Shared viewport helpers replace the hand-rolled checkTop/moveby math.
+    checkTop = () -> clamp_view!(o.data.scroll, length(o.data.datalist), viewContentHeight)
+    moveby = n -> (move_cursor!(o.data.scroll, n, length(o.data.datalist), viewContentHeight); true)
 
     if token != :F1 && token != " "
         inputText = o.data.searchbox.data.inputText
@@ -220,7 +211,7 @@ function inject(o::TwObj{TwMultiSelectData}, token)
         end
         result = inject(o.data.searchbox, token)
 
-        if result == :got_it
+        if result == Handled
             if inputText != o.data.searchbox.data.inputText
                 select_search_next(o, 1, true)
                 checkTop()
@@ -231,49 +222,49 @@ function inject(o::TwObj{TwMultiSelectData}, token)
     end
 
     if token == :esc
-        retcode = :exit_nothing
+        retcode = Cancel
     elseif token == :up
         dorefresh = moveby(-1)
     elseif token == :down
         dorefresh = moveby(1)
     elseif token == :left
-        if o.data.currentLeft > 1
-            o.data.currentLeft -= 1
+        if o.data.scroll.left > 1
+            o.data.scroll.left -= 1
             dorefresh = true
         else
             beep()
         end
     elseif token == :right
-        if o.data.currentLeft + viewContentWidth < o.data.maxchoicelength
-            o.data.currentLeft += 1
+        if o.data.scroll.left + viewContentWidth < o.data.maxchoicelength
+            o.data.scroll.left += 1
             dorefresh = true
         else
             beep()
         end
     elseif token == :shift_left # TODO ctrl-left
-        if o.data.currentLeft > 1
-            o.data.currentLeft -= 1
+        if o.data.scroll.left > 1
+            o.data.scroll.left -= 1
             dorefresh = true
         else
             beep()
         end
     elseif token == :ctrlshift_left # TODO ctrl-left
-        if o.data.currentLeft > 1
-            o.data.currentLeft = 1
+        if o.data.scroll.left > 1
+            o.data.scroll.left = 1
             dorefresh = true
         else
             beep()
         end
     elseif token == :shift_right
-        if o.data.currentLeft + viewContentWidth < o.data.maxchoicelength
-            o.data.currentLeft += 1
+        if o.data.scroll.left + viewContentWidth < o.data.maxchoicelength
+            o.data.scroll.left += 1
             dorefresh = true
         else
             beep()
         end
     elseif token == :ctrlshift_right
-        if o.data.currentLeft + viewContentWidth < o.data.maxchoicelength
-            o.data.currentLeft = o.data.maxchoicelength - viewContentWidth
+        if o.data.scroll.left + viewContentWidth < o.data.maxchoicelength
+            o.data.scroll.left = o.data.maxchoicelength - viewContentWidth
             dorefresh = true
         else
             beep()
@@ -299,38 +290,38 @@ function inject(o::TwObj{TwMultiSelectData}, token)
         elseif mstate == :button1_pressed && o.data.trackLine
             (rely, relx) = screen_to_relative(o.window, y, x)
             if 0<=relx<o.width && 0<=rely<o.height
-                o.data.currentLine = o.data.currentTop + rely - o.borderSizeH + 1
+                o.data.scroll.cursor = o.data.scroll.top + rely - o.borderSizeH + 1
                 dorefresh = true
             else
-                retcode = :pass
+                retcode = Ignored
             end
         end
     elseif token == :home
-        if o.data.currentTop != 1 || o.data.currentLeft != 1 || o.data.currentLine != 1
-            o.data.currentTop = 1
-            o.data.currentLeft = 1
-            o.data.currentLine = 1
+        if o.data.scroll.top != 1 || o.data.scroll.left != 1 || o.data.scroll.cursor != 1
+            o.data.scroll.top = 1
+            o.data.scroll.left = 1
+            o.data.scroll.cursor = 1
             dorefresh = true
         else
             beep()
         end
     elseif in(token, Any[Symbol("end")])
         n = length(o.data.datalist)
-        if o.data.currentLine != n
-            o.data.currentLine = n
+        if o.data.scroll.cursor != n
+            o.data.scroll.cursor = n
             checkTop()
             dorefresh = true
         else
             beep()
         end
     elseif o.data.selectmode & SELECTEDORDERABLE != 0 && token == :shift_up
-        currstatus = o.data.datalist[o.data.currentLine][2]
-        if currstatus && o.data.currentLine > 1
-            currstr = o.data.datalist[o.data.currentLine][1]
+        currstatus = o.data.datalist[o.data.scroll.cursor][2]
+        if currstatus && o.data.scroll.cursor > 1
+            currstr = o.data.datalist[o.data.scroll.cursor][1]
             idx = findfirst(isequal(currstr), o.data.selected)
             o.data.selected[idx-1], o.data.selected[idx] =
                 (o.data.selected[idx], o.data.selected[idx-1])
-            o.data.currentLine -= 1
+            o.data.scroll.cursor -= 1
             rebuild_select_datalist(o)
             checkTop()
             dorefresh = true
@@ -338,13 +329,13 @@ function inject(o::TwObj{TwMultiSelectData}, token)
             beep()
         end
     elseif o.data.selectmode & SELECTEDORDERABLE != 0 && token == :shift_down
-        currstatus = o.data.datalist[o.data.currentLine][2]
-        if currstatus && o.data.currentLine < length(o.data.selected)
-            currstr = o.data.datalist[o.data.currentLine][1]
+        currstatus = o.data.datalist[o.data.scroll.cursor][2]
+        if currstatus && o.data.scroll.cursor < length(o.data.selected)
+            currstr = o.data.datalist[o.data.scroll.cursor][1]
             idx = findfirst(isequal(currstr), o.data.selected)
             o.data.selected[idx+1], o.data.selected[idx] =
                 (o.data.selected[idx], o.data.selected[idx+1])
-            o.data.currentLine += 1
+            o.data.scroll.cursor += 1
             rebuild_select_datalist(o)
             checkTop()
             dorefresh = true
@@ -352,14 +343,14 @@ function inject(o::TwObj{TwMultiSelectData}, token)
             beep()
         end
     elseif token == " "
-        currstr = o.data.datalist[o.data.currentLine][1]
-        currstatus = o.data.datalist[o.data.currentLine][2]
+        currstr = o.data.datalist[o.data.scroll.cursor][1]
+        currstatus = o.data.datalist[o.data.scroll.cursor][2]
         if !currstatus # we are selecting it
             push!(o.data.selected, currstr)
             if o.data.selectmode & SELECTEDORDERABLE != 0
                 rebuild_select_datalist(o)
             else
-                o.data.datalist[o.data.currentLine][2] = true
+                o.data.datalist[o.data.scroll.cursor][2] = true
             end
         else # we are de-selecting it
             idx = findfirst(isequal(currstr), o.data.selected)
@@ -367,17 +358,17 @@ function inject(o::TwObj{TwMultiSelectData}, token)
             if o.data.selectmode & SELECTEDORDERABLE != 0
                 rebuild_select_datalist(o)
             else
-                o.data.datalist[o.data.currentLine][2] = false
+                o.data.datalist[o.data.scroll.cursor][2] = false
             end
         end
         dorefresh = true
     elseif token == :enter || token == Symbol("return")
         o.value = copy(o.data.selected)
-        retcode = :exit_ok
+        retcode = Accept
     elseif token == :focus_off
         o.value = copy(o.data.selected)
     else
-        retcode = :pass # I don't know what to do with it
+        retcode = Ignored # I don't know what to do with it
     end
 
     if dorefresh

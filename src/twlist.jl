@@ -312,16 +312,16 @@ function apply_defaults!(o::TwObj{TwListData}, defaults::Dict{Symbol,Any})
 end
 
 function inject(o::TwObj{TwListData}, token::Any)
-    retcode = :pass
+    retcode = Ignored
     dorefresh = false
     isrootlist = isa(o.window, NC.Plane)
     focus = o.data.focus
     if focus == 0
-        return :pass
+        return Ignored
     end
 
     if token == :esc
-        return :exit_nothing
+        return Cancel
     end
 
     function check_accept_focus(w::TwObj, stepsign::Int)
@@ -346,10 +346,10 @@ function inject(o::TwObj{TwListData}, token::Any)
 
     if !o.data.navigationmode
         result = inject(o.data.widgets[focus], token)
-        if result == :exit_nothing
+        if result == Cancel
             refresh(o)
-            return :exit_nothing
-        elseif result == :exit_ok && isrootlist && o.data.isForm
+            return Cancel
+        elseif result == Accept && isrootlist && o.data.isForm
             # Form mode: Enter advances focus to the next field instead of exiting.
             prevw = o.data.widgets[focus]
             i = mod1(focus + 1, length(o.data.widgets))
@@ -363,15 +363,15 @@ function inject(o::TwObj{TwListData}, token::Any)
                 i = mod1(i + 1, length(o.data.widgets))
             end
             dorefresh = true
-            retcode = :got_it
-        elseif result != :pass
+            retcode = Handled
+        elseif result != Ignored
             refresh(o)
             return result
         end
     end
 
     # TODO: what's the behavior of :esc
-    # TODO: what's the behavior of :exit_ok
+    # TODO: what's the behavior of Accept
     if !o.data.navigationmode && token in [:tab, :shift_tab]
         prevw = o.data.widgets[focus]
         # note that if the widget is a list and can take a tab/shift tab as, we
@@ -389,7 +389,7 @@ function inject(o::TwObj{TwListData}, token::Any)
                 if check_accept_focus(w, stp)
                     deep_unfocus(prevw)
                     deep_focus(w, stp == -1) # 2nd arg is reverse
-                    retcode = :got_it
+                    retcode = Handled
                     break
                 end
                 i = mod1(i + stp, length(o.data.widgets))
@@ -406,7 +406,7 @@ function inject(o::TwObj{TwListData}, token::Any)
                 if check_accept_focus(w, stp)
                     deep_unfocus(prevw)
                     deep_focus(w, stp == -1) # 2nd arg is reverse
-                    retcode = :got_it
+                    retcode = Handled
                     break
                 end
             end
@@ -448,7 +448,7 @@ function inject(o::TwObj{TwListData}, token::Any)
             deep_unfocus(w)
             deep_focus(candidate)
             dorefresh = true
-            retcode = :got_it
+            retcode = Handled
         end
     elseif o.data.navigationmode && token in [:left, :right]
         if token == :left
@@ -513,11 +513,11 @@ function inject(o::TwObj{TwListData}, token::Any)
                     deep_unfocus(w)
                     deep_focus(candidate)
                     dorefresh = true
-                    retcode = :got_it
+                    retcode = Handled
                     o.data.navigationmode = false
                 end
             else
-                retcode = :pass
+                retcode = Ignored
             end
         end
     elseif token == :ctrl_F4 && isrootlist
@@ -564,7 +564,7 @@ function inject(o::TwObj{TwListData}, token::Any)
             end
         end
         dorefresh = true
-        retcode = :got_it
+        retcode = Handled
     elseif token == :F10 && isrootlist && o.data.isForm
         # Flush any in-progress state from the currently focused widget
         # (e.g. multiselect Space-bar selections not yet committed via Enter)
@@ -573,7 +573,7 @@ function inject(o::TwObj{TwListData}, token::Any)
         end
         o.value = collect_form_values(o)
         dorefresh = true
-        retcode = :exit_ok
+        retcode = Accept
     elseif token == :F1 && isrootlist
         helper = newTwViewer(
             o.screen.value,
@@ -585,7 +585,7 @@ function inject(o::TwObj{TwListData}, token::Any)
             bottomText = "Esc to continue",
         )
         raiseTwObject(helper)
-        retcode = :got_it
+        retcode = Handled
     end
 
     if dorefresh

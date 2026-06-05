@@ -49,13 +49,13 @@ end
     put!(ch, TW.ProgressUpdate(nothing, "step 3")) # text only
 
     status = TW.tick(o)
-    @test status === :got_it
+    @test status === TW.Handled
     @test o.data.progress ≈ 0.5
     @test o.data.text == "step 3"
 
     # Tick with no updates should be a no-op returning :got_it
     status2 = TW.tick(o)
-    @test status2 === :got_it
+    @test status2 === TW.Handled
     @test o.data.progress ≈ 0.5
     @test o.data.text == "step 3"
 
@@ -76,7 +76,7 @@ end
 
     o = make_progress(task, ch, flag)
     status = TW.tick(o)
-    @test status === :exit_ok
+    @test status === TW.Accept
     @test o.value == "the answer"
     # Final updates should still be drained even though the task is done
     @test o.data.progress ≈ 1.0
@@ -98,7 +98,7 @@ end
 
     o = make_progress(task, ch, flag)
     status = TW.tick(o)
-    @test status === :exit_nothing
+    @test status === TW.Cancel
     @test o.value === nothing
 end
 
@@ -123,7 +123,7 @@ end
 
     # Let the worker run a bit, then inject :esc which sets the flag
     sleep(0.1)
-    @test TW.inject(o, :esc) === :got_it
+    @test TW.inject(o, :esc) === TW.Handled
     @test flag[] == true
 
     # Worker should observe the flag and finish promptly with :stopped_early
@@ -134,7 +134,7 @@ end
 
     # tick should now report :exit_ok with the early result
     status = TW.tick(o)
-    @test status === :exit_ok
+    @test status === TW.Accept
     @test o.value === :stopped_early
 end
 
@@ -144,13 +144,13 @@ end
     task = Threads.@spawn (sleep(60); nothing)
     o    = make_progress(task, ch, flag)
 
-    @test TW.inject(o, :up) === :pass
-    @test TW.inject(o, "a") === :pass
-    @test TW.inject(o, :F1) === :pass
+    @test TW.inject(o, :up) === TW.Ignored
+    @test TW.inject(o, "a") === TW.Ignored
+    @test TW.inject(o, :F1) === TW.Ignored
     @test flag[] == false   # flag not flipped
 
     # Ctrl-K is the documented alternative cancel key
-    @test TW.inject(o, :ctrl_k) === :got_it
+    @test TW.inject(o, :ctrl_k) === TW.Handled
     @test flag[] == true
 
     schedule(task, InterruptException(); error=true)
@@ -187,7 +187,7 @@ end
 @testset "generic tick fallback returns :pass for non-ticking widgets" begin
     scrdata = TW.TwScreenData()
     scr = TW.TwObj(scrdata, Val{:Screen})
-    @test TW.tick(scr) === :pass
+    @test TW.tick(scr) === TW.Ignored
 end
 
 println("\nAll progress unit tests passed.")

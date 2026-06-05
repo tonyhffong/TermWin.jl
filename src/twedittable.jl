@@ -12,6 +12,11 @@ struct TwEditTableCol
     missingok::Bool                            # missing is ok
 end
 
+# Convenience constructor: `missingok` defaults to false (it was added after the
+# original 6-field API, so this keeps older colspec definitions working).
+TwEditTableCol(name, title, width, editable, valuetype, enumvalues) =
+    TwEditTableCol(name, title, width, editable, valuetype, enumvalues, false)
+
 mutable struct TwEditTableData
     df::DataFrame
     colspecs::Vector{TwEditTableCol}
@@ -19,12 +24,7 @@ mutable struct TwEditTableData
     currentCol::Int        # 1-based index into colspecs
     currentTop::Int        # first visible row (vertical scroll)
     currentLeft::Int       # first visible column (horizontal scroll)
-    editbuffer::String     # working value for the active cell
-    cursorPos::Int         # 1-based width position (next char goes here)
-    fieldLeftPos::Int      # 1-based width position of leftmost visible char
-    overwriteMode::Bool
-    incomplete::Bool       # editbuffer failed validation
-    editDirty::Bool        # editbuffer differs from stored df value
+    editor::InlineEditor   # the active cell's inline editor (state + parse/format)
     bottomText::String
 end
 
@@ -45,8 +45,7 @@ function newTwEditTable(
         df,
         colspecs,
         1, 1, 1, 1,
-        "", 1, 1,
-        false, false, false,
+        InlineEditor(String; width = 1),   # placeholder; _et_load_cell! builds the real one
         bottomText,
     )
     obj = TwObj(data, Val{:EditTable})
@@ -84,79 +83,46 @@ end
 function _et_load_cell!(data::TwEditTableData)
     col = data.colspecs[data.currentCol]
     val = data.df[data.currentRow, col.name]
-    data.editbuffer = _et_cell_to_buf(val, col)
-    data.cursorPos = length(data.editbuffer) + 1
-    data.fieldLeftPos = 1
-    data.incomplete = false
-    data.editDirty = false
+    # Build a fresh editor for this cell from its column spec, then load the value.
+    data.editor = InlineEditor(
+        col.valuetype;
+        width = col.width,
+        enumvalues = col.enumvalues,
+        missingok = col.missingok,
+    )
+    editor_load!(data.editor, val)
 end
 
 function _et_commit_cell!(data::TwEditTableData)::Bool
     col = data.colspecs[data.currentCol]
     !col.editable && return true
+    ed = data.editor
 
-    col.enumvalues !== nothing && !col.missingok && return true  # enum written directly on selection
-    if col.enumvalues !== nothing && col.missingok
-        if in( data.editbuffer, col.enumvalues )
-            data.df[data.currentRow, col.name] = data.editbuffer
-            data.incomplete = false
-            data.editDirty = false
+    # Enum cells: the value is written on popup selection. With missingok we also
+    # accept an in-list value or an empty (→ missing) buffer.
+    if col.enumvalues !== nothing
+        !col.missingok && return true
+        if in(ed.buffer, col.enumvalues)
+            data.df[data.currentRow, col.name] = ed.buffer
+            ed.incomplete = false; ed.dirty = false
             return true
-        end
-        if data.editbuffer == ""
+        elseif ed.buffer == ""
             data.df[data.currentRow, col.name] = missing
-            data.incomplete = false
-            data.editDirty = false
-            return true
-        end
-        data.incomplete = true
-        return false
-    end
-
-    if col.valuetype <: AbstractString
-        data.df[data.currentRow, col.name] = data.editbuffer
-        data.incomplete = false
-        data.editDirty = false
-        return true
-    else
-        ed = TwEntryData(col.valuetype)
-        (v, s) = evalNFormat(ed, data.editbuffer, col.width)
-        if v !== nothing || col.missingok
-            if v === nothing
-                v = missing
-            end
-
-            data.df[data.currentRow, col.name] = v
-            data.editbuffer = s
-            data.incomplete = false
-            data.editDirty = false
+            ed.incomplete = false; ed.dirty = false
             return true
         else
-            data.incomplete = true
+            ed.incomplete = true
             return false
         end
     end
-end
 
-function _et_checkcursor!(data::TwEditTableData)
-    col = data.colspecs[data.currentCol]
-    if data.editbuffer == ""
-        data.cursorPos = 1
+    # Non-enum cells: parse via the shared editor (honors missingok → missing).
+    (v, ok) = editor_commit(ed)
+    if ok
+        data.df[data.currentRow, col.name] = v
+        return true
     else
-        data.cursorPos = max(1, min(length(data.editbuffer) + 1, data.cursorPos))
-    end
-    if col.valuetype <: AbstractString || col.enumvalues !== nothing
-        fieldcount = col.width
-        remainspacecount = fieldcount - textwidth(data.editbuffer)
-        if remainspacecount <= 0
-            if data.cursorPos - data.fieldLeftPos > fieldcount - 1
-                data.fieldLeftPos = data.cursorPos - fieldcount + 1
-            elseif data.fieldLeftPos > data.cursorPos
-                data.fieldLeftPos = data.cursorPos
-            end
-        else
-            data.fieldLeftPos = 1
-        end
+        return false   # editor_commit set ed.incomplete
     end
 end
 
@@ -196,6 +162,15 @@ function _et_checkLeft!(o::TwObj{TwEditTableData})
         data.currentLeft += 1
         data.currentLeft > data.currentCol && (data.currentLeft = data.currentCol; break)
     end
+end
+
+# Re-clamp scroll when the viewport changes (terminal resize). Reuses the
+# existing cursor-visible helpers; the edit table previously had no such handler,
+# so a resize could leave the selected row/column scrolled off-screen.
+function clamp_scroll!(o::TwObj{TwEditTableData})
+    o.height - 2 * o.borderSizeV - 1 < 1 && return
+    _et_checkTop!(o)
+    _et_checkLeft!(o)
 end
 
 # Compute visible column indices and their starting x offsets (within content area)
@@ -258,86 +233,13 @@ function _et_draw_active_cell!(
     startx::Int,
     col::TwEditTableCol,
 )
-    data = o.data
-    fieldcount = col.width
-    editbuffer = data.editbuffer
-    cursorPos = data.cursorPos
-    fieldLeftPos = data.fieldLeftPos
-    remainspacecount = fieldcount - textwidth(editbuffer)
-
-    # Build outstr and rcursPos (display cursor column, 1-based within field)
-    local outstr::String
-    local rcursPos::Int
-    if col.valuetype <: Number && col.valuetype != Bool && col.enumvalues === nothing
-        if remainspacecount <= 0
-            rcursPos = max(1, min(fieldcount, cursorPos))
-            outstr = repeat("#", fieldcount - 1) * " "
-        else
-            rcursPos = max(1, min(remainspacecount + cursorPos - 1, fieldcount))
-            outstr = repeat(" ", remainspacecount - 1) * editbuffer * " "
-        end
-    elseif col.valuetype <: Date && col.enumvalues === nothing
-        if remainspacecount <= 0
-            rcursPos = max(1, min(fieldcount, cursorPos))
-            outstr = repeat("#", fieldcount - 1) * " "
-        else
-            rcursPos = max(1, min(cursorPos, fieldcount))
-            outstr = editbuffer * repeat(" ", remainspacecount)
-        end
-    else  # String or enum
-        if remainspacecount <= 0
-            rcursPos = min(fieldcount, max(1, cursorPos - fieldLeftPos + 1))
-            outstr = substr_by_width(editbuffer, fieldLeftPos - 1, fieldcount)
-            strw = textwidth(outstr)
-            if strw < fieldcount
-                outstr *= repeat(" ", fieldcount - strw)
-            end
-        else
-            outstr = editbuffer * repeat(" ", remainspacecount)
-            rcursPos = cursorPos
-        end
-    end
-
-    if o.hasFocus
-        inputflag = COLOR_PAIR(15)
-    elseif data.incomplete
-        inputflag = COLOR_PAIR(12)
-    else
-        inputflag = COLOR_PAIR(30)
-    end
-
-    wattron(o.window, inputflag)
-    mvwprintw(o.window, y, startx, "%s", outstr)
-
-    firstflag = inputflag
-    lastflag = inputflag
-    if o.hasFocus && col.editable && col.enumvalues === nothing
-        c = substr_by_width(outstr, rcursPos - 1, 1)
-        flag = data.overwriteMode ? (inputflag | A_REVERSE) : (inputflag | A_UNDERLINE)
-        wattron(o.window, flag)
-        mvwprintw(o.window, y, startx + rcursPos - 1, "%s", string(c))
-        wattroff(o.window, flag)
-        rcursPos == 1 && (firstflag = flag)
-        rcursPos == fieldcount && (lastflag = flag)
-    end
-
-    # Boundary indicators for string/enum cells with overflow
-    if col.valuetype <: AbstractString || col.enumvalues !== nothing
-        if fieldLeftPos > 1
-            c = substr_by_width(outstr, 0, 1)
-            wattron(o.window, firstflag | A_BOLD)
-            mvwprintw(o.window, y, startx, "%s", string(c))
-            wattroff(o.window, firstflag | A_BOLD)
-        end
-        if fieldLeftPos + fieldcount <= textwidth(editbuffer)
-            c = substr_by_width(outstr, fieldcount - 1, 1)
-            wattron(o.window, lastflag | A_BOLD)
-            mvwprintw(o.window, y, startx + fieldcount - 1, "%s", string(c))
-            wattroff(o.window, lastflag | A_BOLD)
-        end
-    end
-
-    wattroff(o.window, inputflag)
+    # The active-cell renderer is now the shared InlineEditor renderer; the cursor
+    # shows only for editable, non-enum cells (enum cells pick via a popup).
+    o.data.editor.width = col.width
+    draw_editor!(
+        o.window, y, startx, o.data.editor, o.hasFocus;
+        showcursor = col.editable && col.enumvalues === nothing,
+    )
 end
 
 function _et_clipboard_write(s::String)
@@ -489,7 +391,7 @@ function draw(o::TwObj{TwEditTableData})
     visibleCols, colxStarts = _et_visible_cols(o)
 
     # Header row
-    wattron(o.window, COLOR_PAIR(3) | A_UNDERLINE)
+    wattron(o.window, theme(:header) | A_UNDERLINE)
     mvwprintw(o.window, bv, bh, "%s", repeat(" ", viewW))
     for (vi, c) in enumerate(visibleCols)
         col = data.colspecs[c]
@@ -504,7 +406,7 @@ function draw(o::TwObj{TwEditTableData})
             mvwprintw(o.window, bv, cx + col.width, "%s", "│")
         end
     end
-    wattroff(o.window, COLOR_PAIR(3) | A_UNDERLINE)
+    wattroff(o.window, theme(:header) | A_UNDERLINE)
 
     # Data rows
     for ri in 1:dataH
@@ -555,17 +457,11 @@ function inject(o::TwObj{TwEditTableData}, token)
     nrows = nrow(data.df)
     ncols = length(data.colspecs)
     dorefresh = false
-    retcode = :got_it
+    retcode = Handled
 
     col = data.colspecs[data.currentCol]
     is_editable = col.editable
     is_enum = col.enumvalues !== nothing
-
-    insertchar = (c) -> begin
-        data.editbuffer = insertstring(data.editbuffer, c, data.cursorPos, data.overwriteMode)
-        data.cursorPos += textwidth(c)
-        data.editDirty = true
-    end
 
     function move_next_editable()
         c = data.currentCol; r = data.currentRow
@@ -592,16 +488,16 @@ function inject(o::TwObj{TwEditTableData}, token)
     if token == :F10
         if _et_commit_cell!(data)
             o.value = data.df
-            retcode = :exit_ok
+            retcode = Accept
         else
             beep()
         end
     elseif token == :esc
-        if data.editDirty
+        if data.editor.dirty
             _et_load_cell!(data)
             dorefresh = true
         else
-            retcode = :exit_nothing
+            retcode = Cancel
         end
     elseif token == :up
         if _et_commit_cell!(data)
@@ -664,168 +560,57 @@ function inject(o::TwObj{TwEditTableData}, token)
             beep()
         end
     elseif token == :left
-        if !is_editable || is_enum || data.cursorPos <= 1
-            # Move to previous column
-            if _et_commit_cell!(data)
-                if data.currentCol > 1
-                    data.currentCol -= 1
-                else
-                    beep()
-                end
-                _et_load_cell!(data)
-                _et_checkLeft!(o)
-                dorefresh = true
-            else
-                beep()
-            end
-        else
-            data.cursorPos -= 1
-            _et_checkcursor!(data)
+        # cursor move inside an editable, non-enum cell; otherwise switch column
+        if is_editable && !is_enum && data.editor.cursorPos > 1
+            data.editor.cursorPos -= 1
+            editor_checkcursor!(data.editor)
             dorefresh = true
+        elseif _et_commit_cell!(data)
+            data.currentCol > 1 ? (data.currentCol -= 1) : beep()
+            _et_load_cell!(data); _et_checkLeft!(o); dorefresh = true
+        else
+            beep()
         end
     elseif token == :right
-        if !is_editable || is_enum || data.cursorPos > length(data.editbuffer)
-            # Move to next column
-            if _et_commit_cell!(data)
-                if data.currentCol < ncols
-                    data.currentCol += 1
-                else
-                    beep()
-                end
-                _et_load_cell!(data)
-                _et_checkLeft!(o)
-                dorefresh = true
-            else
-                beep()
-            end
-        else
-            data.cursorPos += 1
-            _et_checkcursor!(data)
+        if is_editable && !is_enum && data.editor.cursorPos <= length(data.editor.buffer)
+            data.editor.cursorPos += 1
+            editor_checkcursor!(data.editor)
             dorefresh = true
-        end
-    elseif token == :home || token == :ctrl_a
-        if data.cursorPos > 1
-            data.cursorPos = 1
-            _et_checkcursor!(data)
-            dorefresh = true
-        end
-    elseif token == :end || token == :ctrl_e
-        newpos = length(data.editbuffer) + 1
-        if data.cursorPos < newpos
-            data.cursorPos = newpos
-            _et_checkcursor!(data)
-            dorefresh = true
-        end
-    elseif token == :ctrl_k && is_editable && ( !is_enum || col.missingok )
-        data.editbuffer = ""
-        data.cursorPos = 1
-        data.fieldLeftPos = 1
-        data.editDirty = true
-        dorefresh = true
-    elseif (token == :ctrl_r || token == :insert)
-        data.overwriteMode = !data.overwriteMode
-        dorefresh = true
-    elseif token == :delete && is_editable && !is_enum
-        utfs = delete_char_at(data.editbuffer, data.cursorPos)
-        if utfs != data.editbuffer
-            data.editbuffer = utfs
-            _et_checkcursor!(data)
-            data.editDirty = true
-            dorefresh = true
+        elseif _et_commit_cell!(data)
+            data.currentCol < ncols ? (data.currentCol += 1) : beep()
+            _et_load_cell!(data); _et_checkLeft!(o); dorefresh = true
         else
             beep()
         end
-    elseif token == :backspace && is_editable && !is_enum
-        utfs, newpos = delete_char_before(data.editbuffer, data.cursorPos)
-        if utfs != data.editbuffer
-            data.editbuffer = utfs
-            data.cursorPos = newpos
-            _et_checkcursor!(data)
-            data.editDirty = true
-            dorefresh = true
-        else
-            beep()
-        end
+    elseif token == :home || token == :ctrl_a || token == Symbol("end") ||
+           token == :ctrl_e || token == :ctrl_r || token == :insert
+        # pure cursor / overwrite-mode keys: always allowed, delegate to editor
+        editor_handle(data.editor, token) === :handled && (dorefresh = true)
+    elseif token == :ctrl_k && is_editable && (!is_enum || col.missingok)
+        editor_handle(data.editor, token) === :handled && (dorefresh = true)
+    elseif (token == :delete || token == :backspace) && is_editable && !is_enum
+        editor_handle(data.editor, token) === :handled ? (dorefresh = true) : beep()
     elseif is_editable && is_enum &&
            (typeof(token) <: AbstractString || token == :enter || token == Symbol("return"))
         _et_open_enum_popup!(o)
         dorefresh = true
     elseif typeof(token) <: AbstractString && is_editable && !is_enum
-        if col.valuetype <: AbstractString
-            insertchar(token)
-            _et_checkcursor!(data)
+        # printable character into an editable cell: the shared editor applies the
+        # per-type rules (string/number/date) and signals the date calendar.
+        r = editor_handle(data.editor, token)
+        if r === :handled
             dorefresh = true
-        elseif col.valuetype <: Date && !in(token, ["?", ","])
-            insertchar(token)
-            dorefresh = true
-        elseif col.valuetype <: Date && token == "?"
-            ed = TwEntryData(Date)
-            (parsed, _) = evalNFormat(ed, data.editbuffer, col.width)
+        elseif r === :open_calendar
+            (parsed, _) = evalNFormat(data.editor, data.editor.buffer, col.width)
             init_date = parsed isa Dates.Date ? parsed : Dates.today()
             cal = newTwCalendar(o.screen.value, init_date; posy = :center, posx = :center)
             activateTwObj(cal)
-            if cal.value isa Dates.Date
-                data.editbuffer   = Dates.format(cal.value, "yyyy-mm-dd")
-                data.cursorPos    = length(data.editbuffer) + 1
-                data.fieldLeftPos = 1
-            end
+            cal.value isa Dates.Date &&
+                editor_set_buffer!(data.editor, Dates.format(cal.value, "yyyy-mm-dd"))
             unregisterTwObj(o.screen.value, cal)
             dorefresh = true
-        elseif col.valuetype <: Number && col.valuetype != Bool
-            allowed =
-                isdigit(token[1]) ||
-                token == "," ||
-                (col.valuetype <: AbstractFloat && in(token, [".", "e", "+", "-"])) ||
-                (col.valuetype <: Signed && in(token, ["+", "-"]))
-            if allowed
-                if token == "e"
-                    if occursin("e", data.editbuffer)
-                        beep()
-                    else
-                        insertchar(token)
-                        dorefresh = true
-                    end
-                elseif token == "."
-                    dpos = findfirst(isequal('.'), data.editbuffer)
-                    if dpos !== nothing
-                        data.cursorPos = dpos + 1
-                        dorefresh = true
-                    else
-                        insertchar(token)
-                        dorefresh = true
-                    end
-                elseif token == "," # format with commas
-                    ed = TwEntryData(col.valuetype)
-                    (v, s) = evalNFormat(ed, data.editbuffer, col.width)
-                    if v !== nothing
-                        data.editbuffer = s
-                        _et_checkcursor!(data)
-                        data.incomplete = false
-                        dorefresh = true
-                    else
-                        data.incomplete = true
-                        beep()
-                    end
-                elseif token == "-" || token == "+"
-                    epos = findfirst(isequal('e'), data.editbuffer)
-                    at_start = data.cursorPos == 1 &&
-                               (startswith(data.editbuffer, "-") ||
-                                startswith(data.editbuffer, "+"))
-                    after_e = data.cursorPos != 1 &&
-                              (epos === nothing || data.cursorPos != epos + 1)
-                    if at_start || after_e
-                        beep()
-                    else
-                        insertchar(token)
-                        dorefresh = true
-                    end
-                else
-                    insertchar(token)
-                    dorefresh = true
-                end
-            else
-                beep()
-            end
+        else  # :rejected and friends
+            beep()
         end
     elseif token == :ctrl_n
         if _et_commit_cell!(data)
@@ -932,14 +717,14 @@ function inject(o::TwObj{TwEditTableData}, token)
                     dorefresh = true  # refresh to show focus
                 end
             else
-                retcode = :pass
+                retcode = Ignored
             end
         end
     elseif token == :focus_off
         _et_commit_cell!(data)
-        retcode = :exit_ok
+        retcode = Accept
     else
-        retcode = :pass
+        retcode = Ignored
     end
 
     if dorefresh

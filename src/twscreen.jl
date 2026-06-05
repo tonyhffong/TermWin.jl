@@ -194,8 +194,8 @@ function activateTwObj(scr::TwObj{TwScreenData}, tokens::Any = nothing)
             else
                 focusObj = nothing
             end
-            if st == :exit_ok || st == :exit_nothing
-                if st == :exit_ok
+            if st == Accept || st == Cancel
+                if st == Accept
                     retvalue = scr.value
                 end
                 if focusObj !== nothing
@@ -217,17 +217,17 @@ function activateTwObj(scr::TwObj{TwScreenData}, tokens::Any = nothing)
                 if focusObj === nothing
                     return :really_exit
                 end
-            elseif st == :pass
+            elseif st == Ignored
                 if focusObj !== nothing
                     i = length(scr.data.objects)
-                    while (st == :pass && i >= 1)
+                    while (st == Ignored && i >= 1)
                         o = scr.data.objects[i]
                         if o!=focusObj && o.isVisible && o.grabUnusedKey
                             st = inject(o, tok)
                         end
                         i -= 1
                     end
-                    if st == :exit_ok || st == :exit_nothing
+                    if st == Accept || st == Cancel
                         return :really_exit
                     end
                 end
@@ -249,8 +249,8 @@ function activateTwObj(scr::TwObj{TwScreenData}, tokens::Any = nothing)
             # Iterate over a copy because tick() may unregister.
             for o in copy(scr.data.tickables)
                 tickstatus = tick(o)
-                if tickstatus == :exit_ok || tickstatus == :exit_nothing
-                    if tickstatus == :exit_ok
+                if tickstatus == Accept || tickstatus == Cancel
+                    if tickstatus == Accept
                         retvalue = o.value
                     end
                     unregister_tickable!(scr, o)
@@ -302,17 +302,17 @@ end
 
 function inject(scr::TwObj{TwScreenData}, token)
     global rootTwScreen
-    result = :pass
+    result = Ignored
     if token == :KEY_RESIZE
         handle_resize!(scr)
-        return :got_it
+        return Handled
     end
     if token == :KEY_MOUSE
         (mstate, x, y, bs) = getmouse()
     end
     if scr.data.focus != 0
         result = Base.invokelatest(inject, scr.data.objects[scr.data.focus], token)
-        if result != :pass
+        if result != Ignored
             return result
         end
         if token == :F1
@@ -328,7 +328,7 @@ function inject(scr::TwObj{TwScreenData}, token)
                     bottomText = "Esc to continue",
                 )
                 raiseTwObject(helper)
-                return :got_it
+                return Handled
             end
         elseif token == :tab
             lowerTwObject(scr.data.objects[scr.data.focus])
@@ -346,12 +346,12 @@ function inject(scr::TwObj{TwScreenData}, token)
             if 0<=relx<o.width && 0<=rely<o.height
                 log("  raising it")
                 raiseTwObject(o)
-                result = :got_it
+                result = Handled
                 break
             end
         elseif o.isVisible && !o.hasFocus && o.grabUnusedKey
             result = Base.invokelatest(inject, scr.data.objects[i], token)
-            if result != :pass
+            if result != Ignored
                 break
             end
         end

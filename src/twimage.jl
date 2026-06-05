@@ -199,9 +199,9 @@ end
 
 function inject(o::TwObj{TwImageData}, token)
     if token == :esc
-        return :exit_nothing
+        return Cancel
     end
-    return :pass
+    return Ignored
 end
 
 helptext(o::TwObj{TwImageData}) = _IMAGE_HELP

@@ -289,12 +289,12 @@ function activateTwObj(o::TwObj, tokens::Any = nothing)
                 sleep(0.05)   # avoid 100% CPU spin when no input is ready
                 continue
             end
-            status = Base.invokelatest(inject, o, token) # note that it could be :nochar
-            if status == :exit_ok
+            status = Base.invokelatest(inject, o, token)
+            if status == Accept
                 return o.value
-            elseif status == :exit_nothing # most likely a cancel
+            elseif status == Cancel # most likely a cancel
                 return nothing
-            elseif status == :pass && token == :F1
+            elseif status == Ignored && token == :F1
                 h = helptext(o)
                 if h != ""
                     helper = newTwViewer(
@@ -313,9 +313,9 @@ function activateTwObj(o::TwObj, tokens::Any = nothing)
         for token in tokens
             NC.render(nc_context)
             status = Base.invokelatest(inject, o, token)
-            if status == :exit_ok
+            if status == Accept
                 return o.value
-            elseif status == :exit_nothing # most likely a cancel
+            elseif status == Cancel # most likely a cancel
                 return nothing
             end
         end
@@ -327,9 +327,9 @@ end
 
 function inject(_::TwObj, k::Any)
     if k == :esc
-        return :exit_nothing
+        return Cancel
     else
-        return :pass
+        return Ignored
     end
 end
 
@@ -510,7 +510,7 @@ end
 # Widgets that need periodic updates (e.g. progress driven by a worker thread)
 # override `tick(o)` and register themselves via `register_tickable!`. The
 # screen event loop calls `tick` on each registered widget once per loop pass.
-tick(o::TwObj) = :pass
+tick(o::TwObj) = Ignored
 
 function register_tickable!(scr::TwObj{TwScreenData}, o::TwObj)
     o in scr.data.tickables || push!(scr.data.tickables, o)

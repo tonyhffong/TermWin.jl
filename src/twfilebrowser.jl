@@ -30,8 +30,7 @@ fileMtimeWidth = 6
 mutable struct TwFileBrowserData
     rootpath::String
     openstatemap::Dict{String,Bool}
-    datalist::Vector{Any}
-    # each row: (name, typestr, sizestr, mtimestr, stack, expandhint, skiplines, abspath, isdir)
+    datalist::Vector{FileRow}    # typed rows (was an anonymous 9-tuple)
     datalistlen::Int
     datatreewidth::Int
     datatypewidth::Int
@@ -58,7 +57,7 @@ mutable struct TwFileBrowserData
         ret = new(
             "",
             Dict{String,Bool}(),
-            Any[],
+            FileRow[],
             0,
             0,
             0,
@@ -194,7 +193,7 @@ end
 
 function file_tree_data(
     rootpath::String,
-    list::Vector{Any},
+    list::Vector{FileRow},
     openstatemap::Dict{String,Bool},
     stack::Vector{Any},
     skiplines::Vector{Int},
@@ -205,7 +204,7 @@ function file_tree_data(
     if isempty(stack)
         parentpath = dirname(rootpath)
         if parentpath != rootpath  # not already at filesystem root
-            push!(list, ("../", "<dir>", "", "", Any[], :single, Int[], parentpath, true))
+            push!(list, FileRow("../", "<dir>", "", "", Any[], :single, Int[], parentpath, true))
         end
     end
 
@@ -287,9 +286,9 @@ function file_tree_data(
         if islast
             newskip = copy(skiplines)
             push!(newskip, length(stack) + 1)
-            push!(list, (s, typestr, sizestr, mtimestr, newstack, expandhint, newskip, fullpath, is_dir))
+            push!(list, FileRow(s, typestr, sizestr, mtimestr, newstack, expandhint, newskip, fullpath, is_dir))
         else
-            push!(list, (s, typestr, sizestr, mtimestr, newstack, expandhint, skiplines, fullpath, is_dir))
+            push!(list, FileRow(s, typestr, sizestr, mtimestr, newstack, expandhint, skiplines, fullpath, is_dir))
         end
 
         # recurse into expanded directories
@@ -315,11 +314,11 @@ function updateFileBrowserDimensions(o::TwObj)
     end
     o.data.datalistlen = length(o.data.datalist)
     o.data.datatreewidth =
-        maximum(map(r -> length(r[1]) + 1 + 2 * length(r[5]), o.data.datalist))
+        maximum(map(r -> length(r.name) + 1 + 2 * length(r.stack), o.data.datalist))
     o.data.datatypewidth =
-        min(fileTypeMaxWidth, max(4, maximum(map(r -> length(r[2]), o.data.datalist))))
+        min(fileTypeMaxWidth, max(4, maximum(map(r -> length(r.typestr), o.data.datalist))))
     o.data.datasizewidth =
-        max(6, maximum(map(r -> length(r[3]), o.data.datalist)))
+        max(6, maximum(map(r -> length(r.sizestr), o.data.datalist)))
     nothing
 end
 
@@ -456,28 +455,28 @@ function draw(o::TwObj{TwFileBrowserData})
 
     for r = o.data.currentTop:min(o.data.currentTop + viewContentHeight - 1, o.data.datalistlen)
         row = 1 + r - o.data.currentTop
-        stacklen = length(o.data.datalist[r][5])
-        is_dir = o.data.datalist[r][9]
+        stacklen = length(o.data.datalist[r].stack)
+        is_dir = o.data.datalist[r].isdir
 
         s = ensure_length(
-            repeat(" ", 2 * stacklen + 1) * o.data.datalist[r][1],
+            repeat(" ", 2 * stacklen + 1) * o.data.datalist[r].name,
             treeW,
         )
-        t = ensure_length(o.data.datalist[r][2], typeW)
-        sz = ensure_length(o.data.datalist[r][3], sizeW, false)
+        t = ensure_length(o.data.datalist[r].typestr, typeW)
+        sz = ensure_length(o.data.datalist[r].sizestr, sizeW, false)
         # right-align size: pad with spaces on the left
         szpad = sizeW - length(sz)
         if szpad > 0
             sz = repeat(" ", szpad) * sz
         end
-        mt = ensure_length(o.data.datalist[r][4], mtimeW, false)
+        mt = ensure_length(o.data.datalist[r].mtimestr, mtimeW, false)
         mtpad = mtimeW - length(mt)
         if mtpad > 0
             mt = repeat(" ", mtpad) * mt
         end
 
         if r == o.data.currentLine
-            wattron(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+            wattron(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
         end
 
         mvwprintw(o.window, row, col_tree, "%s", s)
@@ -490,17 +489,17 @@ function draw(o::TwObj{TwFileBrowserData})
 
         # tree lines (absolute positions, matching twtree convention)
         for i = 1:(stacklen - 1)
-            if !in(i, o.data.datalist[r][7])  # skiplines
+            if !in(i, o.data.datalist[r].skiplines)  # skiplines
                 mvwaddch(o.window, row, 2 * i, get_acs_val('x'))
             end
         end
         if stacklen != 0
             contchar = get_acs_val('t')  # tee pointing right ├
             if r == o.data.datalistlen ||
-               length(o.data.datalist[r+1][5]) < stacklen ||
+               length(o.data.datalist[r+1].stack) < stacklen ||
                (
-                   length(o.data.datalist[r+1][5]) > stacklen &&
-                   in(stacklen, o.data.datalist[r+1][7])
+                   length(o.data.datalist[r+1].stack) > stacklen &&
+                   in(stacklen, o.data.datalist[r+1].skiplines)
                )
                 contchar = get_acs_val('m')  # LL corner └
             end
@@ -509,14 +508,14 @@ function draw(o::TwObj{TwFileBrowserData})
         end
 
         # expand/collapse indicator
-        if o.data.datalist[r][6] == :close
+        if o.data.datalist[r].expandhint == :close
             mvwprintw(o.window, row, 2 * stacklen + 2, "%s", string(Char(0x25b8)))
-        elseif o.data.datalist[r][6] == :open
+        elseif o.data.datalist[r].expandhint == :open
             mvwprintw(o.window, row, 2 * stacklen + 2, "%s", string(Char(0x25be)))
         end
 
         if r == o.data.currentLine
-            wattroff(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+            wattroff(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
         end
     end
 
@@ -526,7 +525,7 @@ function draw(o::TwObj{TwFileBrowserData})
 
         # update preview for current selection
         if o.data.datalistlen > 0
-            curpath = o.data.datalist[o.data.currentLine][8]
+            curpath = o.data.datalist[o.data.currentLine].abspath
             if curpath != o.data.previewPath
                 o.data.previewPath = curpath
                 o.data.previewTop = 1
@@ -544,7 +543,7 @@ function draw(o::TwObj{TwFileBrowserData})
         # cached visual onto the preview pane and skip the text-preview path.
         is_image_path = o.data.previewPath != "" &&
                         !(o.data.datalistlen > 0 &&
-                          o.data.datalist[o.data.currentLine][9]) &&
+                          o.data.datalist[o.data.currentLine].isdir) &&
                         is_image_preview(o.data.previewPath)
 
         if is_image_path
@@ -591,7 +590,7 @@ function draw(o::TwObj{TwFileBrowserData})
             local lines::Vector{String}
             if o.data.previewPath == ""
                 lines = String[]
-            elseif o.data.datalistlen > 0 && o.data.datalist[o.data.currentLine][9]
+            elseif o.data.datalistlen > 0 && o.data.datalist[o.data.currentLine].isdir
                 lines = ["(directory)"]
             else
                 current_mtime = try; Float64(stat(o.data.previewPath).mtime); catch; 0.0; end
@@ -680,12 +679,12 @@ end
 
 function inject(o::TwObj{TwFileBrowserData}, token)
     dorefresh = false
-    retcode = :got_it
+    retcode = Handled
     viewContentHeight = o.height - 2 * o.borderSizeV
 
     update_file_data =
         () -> begin
-            o.data.datalist = Any[]
+            o.data.datalist = FileRow[]
             file_tree_data(
                 o.data.rootpath,
                 o.data.datalist,
@@ -709,7 +708,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             o.title = parentpath
             o.data.openstatemap = Dict{String,Bool}()
             o.data.openstatemap[o.data.rootpath] = true
-            o.data.datalist = Any[]
+            o.data.datalist = FileRow[]
             file_tree_data(
                 o.data.rootpath,
                 o.data.datalist,
@@ -769,7 +768,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             o.data.searchText = lowercase(o.data.searchText)
             i = trivialstop ? st : (mod(st - 1 + step, o.data.datalistlen) + 1)
             while true
-                if occursin(o.data.searchText, lowercase(o.data.datalist[i][1]))
+                if occursin(o.data.searchText, lowercase(o.data.datalist[i].name))
                     o.data.currentLine = i
                     if abs(i - st) > viewContentHeight
                         o.data.currentTop = o.data.currentLine - (viewContentHeight >> 1)
@@ -786,15 +785,15 @@ function inject(o::TwObj{TwFileBrowserData}, token)
         end
 
     if token == :esc
-        retcode = :exit_nothing
+        retcode = Cancel
     elseif token == " " || token == Symbol("return") || token == :enter
         if o.data.datalistlen == 0
             beep()
         else
-            expandhint = o.data.datalist[o.data.currentLine][6]
-            is_dir = o.data.datalist[o.data.currentLine][9]
-            fullpath = o.data.datalist[o.data.currentLine][8]
-            if fullpath == dirname(o.data.rootpath) && o.data.datalist[o.data.currentLine][1] == "../"
+            expandhint = o.data.datalist[o.data.currentLine].expandhint
+            is_dir = o.data.datalist[o.data.currentLine].isdir
+            fullpath = o.data.datalist[o.data.currentLine].abspath
+            if fullpath == dirname(o.data.rootpath) && o.data.datalist[o.data.currentLine].name == "../"
                 # ".." entry — navigate to parent directory
                 navigate_up()
                 dorefresh = true
@@ -815,7 +814,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
                 # select file
                 if token == Symbol("return") || token == :enter
                     o.value = fullpath
-                    retcode = :exit_ok
+                    retcode = Accept
                 else
                     # space on a file — just beep or do nothing
                     beep()
@@ -827,12 +826,12 @@ function inject(o::TwObj{TwFileBrowserData}, token)
         if o.data.datalistlen == 0
             beep()
         else
-            currentstack = o.data.datalist[o.data.currentLine][5]
+            currentstack = o.data.datalist[o.data.currentLine].stack
             somethingchanged = false
             for i = 1:o.data.datalistlen
-                expandhint = o.data.datalist[i][6]
+                expandhint = o.data.datalist[i].expandhint
                 if expandhint == :close
-                    fullpath = o.data.datalist[i][8]
+                    fullpath = o.data.datalist[i].abspath
                     o.data.openstatemap[fullpath] = true
                     somethingchanged = true
                 end
@@ -841,7 +840,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
                 prevline = o.data.currentLine
                 update_file_data()
                 for i = o.data.currentLine:o.data.datalistlen
-                    if currentstack == o.data.datalist[i][5]
+                    if currentstack == o.data.datalist[i].stack
                         o.data.currentLine = i
                         if abs(i - prevline) > viewContentHeight
                             o.data.currentTop = i - round(Int, viewContentHeight / 2)
@@ -860,15 +859,15 @@ function inject(o::TwObj{TwFileBrowserData}, token)
         if o.data.datalistlen == 0
             beep()
         else
-            currentstack = copy(o.data.datalist[o.data.currentLine][5])
-            maxstackdepth = maximum(map(r -> length(r[5]), o.data.datalist))
+            currentstack = copy(o.data.datalist[o.data.currentLine].stack)
+            maxstackdepth = maximum(map(r -> length(r.stack), o.data.datalist))
             if maxstackdepth > 1
                 somethingchanged = false
                 for i = 1:o.data.datalistlen
-                    expandhint = o.data.datalist[i][6]
-                    stck = o.data.datalist[i][5]
+                    expandhint = o.data.datalist[i].expandhint
+                    stck = o.data.datalist[i].stack
                     if expandhint != :single && length(stck) == maxstackdepth - 1
-                        fullpath = o.data.datalist[i][8]
+                        fullpath = o.data.datalist[i].abspath
                         if haskey(o.data.openstatemap, fullpath) && o.data.openstatemap[fullpath]
                             o.data.openstatemap[fullpath] = false
                             somethingchanged = true
@@ -883,7 +882,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
                     prevline = o.data.currentLine
                     o.data.currentLine = 1
                     for i = 1:min(prevline, o.data.datalistlen)
-                        if currentstack == o.data.datalist[i][5]
+                        if currentstack == o.data.datalist[i].stack
                             o.data.currentLine = i
                             if abs(i - prevline) > viewContentHeight
                                 o.data.currentTop = i - round(Int, viewContentHeight / 2)
@@ -905,7 +904,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
         if o.data.datalistlen == 0
             beep()
         else
-            currentstack = copy(o.data.datalist[o.data.currentLine][5])
+            currentstack = copy(o.data.datalist[o.data.currentLine].stack)
             if length(currentstack) > 1
                 currentstack = Any[currentstack[1]]
             end
@@ -915,7 +914,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             prevline = o.data.currentLine
             o.data.currentLine = 1
             for i = 1:min(prevline, o.data.datalistlen)
-                if currentstack == o.data.datalist[i][5]
+                if currentstack == o.data.datalist[i].stack
                     o.data.currentLine = i
                     if abs(i - prevline) > viewContentHeight
                         o.data.currentTop =
@@ -930,12 +929,12 @@ function inject(o::TwObj{TwFileBrowserData}, token)
     elseif token == "."
         # toggle hidden files
         o.data.showHidden = !o.data.showHidden
-        prevstack = o.data.datalistlen > 0 ? copy(o.data.datalist[o.data.currentLine][5]) : Any[]
+        prevstack = o.data.datalistlen > 0 ? copy(o.data.datalist[o.data.currentLine].stack) : Any[]
         update_file_data()
         # try to restore position
         o.data.currentLine = 1
         for i = 1:o.data.datalistlen
-            if o.data.datalist[i][5] == prevstack
+            if o.data.datalist[i].stack == prevstack
                 o.data.currentLine = i
                 break
             end
@@ -951,11 +950,11 @@ function inject(o::TwObj{TwFileBrowserData}, token)
         else
             o.data.sortBy = :name
         end
-        prevstack = o.data.datalistlen > 0 ? copy(o.data.datalist[o.data.currentLine][5]) : Any[]
+        prevstack = o.data.datalistlen > 0 ? copy(o.data.datalist[o.data.currentLine].stack) : Any[]
         update_file_data()
         o.data.currentLine = 1
         for i = 1:o.data.datalistlen
-            if o.data.datalist[i][5] == prevstack
+            if o.data.datalist[i].stack == prevstack
                 o.data.currentLine = i
                 break
             end
@@ -966,10 +965,10 @@ function inject(o::TwObj{TwFileBrowserData}, token)
         if o.data.datalistlen == 0
             beep()
         else
-            fullpath = o.data.datalist[o.data.currentLine][8]
-            is_dir = o.data.datalist[o.data.currentLine][9]
+            fullpath = o.data.datalist[o.data.currentLine].abspath
+            is_dir = o.data.datalist[o.data.currentLine].isdir
             if !is_dir && isfile(fullpath)
-                ext = o.data.datalist[o.data.currentLine][2]
+                ext = o.data.datalist[o.data.currentLine].typestr
                 sz = filesize(fullpath)
                 if sz == 0
                     text = "(empty file)"
@@ -995,7 +994,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
         if o.data.datalistlen == 0
             beep()
         else
-            fullpath = o.data.datalist[o.data.currentLine][8]
+            fullpath = o.data.datalist[o.data.currentLine].abspath
             local info
             try
                 st = stat(fullpath)
@@ -1017,65 +1016,17 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             tshow(info, title = "stat: " * basename(fullpath))
             dorefresh = true
         end
-    elseif token == :ctrl_up
-        # Move to the previous sibling (same depth, same parent directory)
-        if o.data.datalistlen == 0
-            beep()
+    elseif token == :ctrl_up || token == :ctrl_down
+        # Prev/next sibling (same depth + parent dir), shared with the tree and
+        # dict tree via the generic tree_nav primitive.
+        dir = token == :ctrl_up ? :prev_sibling : :next_sibling
+        (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, dir)
+        if moved
+            o.data.currentLine = target
+            checkTop()
+            dorefresh = true
         else
-            currentstack = o.data.datalist[o.data.currentLine][5]
-            depth = length(currentstack)
-            if depth == 0
-                beep()
-            else
-                parentstack = currentstack[1:end-1]
-                found = false
-                for i = o.data.currentLine-1:-1:1
-                    rowstack = o.data.datalist[i][5]
-                    if length(rowstack) < depth
-                        break
-                    end
-                    if length(rowstack) == depth && rowstack[1:end-1] == parentstack
-                        o.data.currentLine = i
-                        checkTop()
-                        dorefresh = true
-                        found = true
-                        break
-                    end
-                end
-                if !found
-                    beep()
-                end
-            end
-        end
-    elseif token == :ctrl_down
-        # Move to the next sibling (same depth, same parent directory)
-        if o.data.datalistlen == 0
             beep()
-        else
-            currentstack = o.data.datalist[o.data.currentLine][5]
-            depth = length(currentstack)
-            if depth == 0
-                beep()
-            else
-                parentstack = currentstack[1:end-1]
-                found = false
-                for i = o.data.currentLine+1:o.data.datalistlen
-                    rowstack = o.data.datalist[i][5]
-                    if length(rowstack) < depth
-                        break
-                    end
-                    if length(rowstack) == depth && rowstack[1:end-1] == parentstack
-                        o.data.currentLine = i
-                        checkTop()
-                        dorefresh = true
-                        found = true
-                        break
-                    end
-                end
-                if !found
-                    beep()
-                end
-            end
         end
     elseif token == :ctrl_pageup
         # page up in preview pane
@@ -1087,7 +1038,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
         end
     elseif token == :ctrl_pagedown
         # page down in preview pane
-        curpath = o.data.datalistlen > 0 ? o.data.datalist[o.data.currentLine][8] : ""
+        curpath = o.data.datalistlen > 0 ? o.data.datalist[o.data.currentLine].abspath : ""
         if curpath != "" && haskey(o.data.previewCache, curpath)
             maxTop = max(1, length(o.data.previewCache[curpath]) - viewContentHeight + 1)
             if o.data.previewTop < maxTop
@@ -1111,29 +1062,14 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             beep()
         end
     elseif token == :ctrl_left
-        # Move to the parent directory node
-        if o.data.datalistlen == 0
-            beep()
+        # Move to the parent directory node, shared via tree_nav.
+        (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, :parent)
+        if moved
+            o.data.currentLine = target
+            checkTop()
+            dorefresh = true
         else
-            currentstack = o.data.datalist[o.data.currentLine][5]
-            if isempty(currentstack)
-                beep()
-            else
-                parentstack = currentstack[1:end-1]
-                found = false
-                for i = o.data.currentLine-1:-1:1
-                    if o.data.datalist[i][5] == parentstack
-                        o.data.currentLine = i
-                        checkTop()
-                        dorefresh = true
-                        found = true
-                        break
-                    end
-                end
-                if !found
-                    beep()
-                end
-            end
+            beep()
         end
     elseif token == :right
         o.data.currentLeft += 1
@@ -1161,7 +1097,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             end
         elseif mstate == :ctrl_scroll_down
             # scroll preview pane down by one line
-            curpath = o.data.datalistlen > 0 ? o.data.datalist[o.data.currentLine][8] : ""
+            curpath = o.data.datalistlen > 0 ? o.data.datalist[o.data.currentLine].abspath : ""
             if curpath != "" && haskey(o.data.previewCache, curpath)
                 maxTop = max(1, length(o.data.previewCache[curpath]) - viewContentHeight + 1)
                 if o.data.previewTop < maxTop
@@ -1184,7 +1120,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
                     dorefresh = true
                 end
             else
-                retcode = :pass
+                retcode = Ignored
             end
         end
     elseif token == :home
@@ -1262,7 +1198,7 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             end
         end
     else
-        retcode = :pass
+        retcode = Ignored
     end
 
     if dorefresh

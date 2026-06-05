@@ -1,11 +1,5 @@
-
-defaultViewerHelpText = """
-PgUp/PgDn,←/→/↑/↓ : standard navigation
-l          : move halfway toward the start
-L          : move halfway to the end
-Home       : jump to the start
-End        : jump to the end
-"""
+# NB: the F1 help screen is generated from the `bindings(o)` table below — there
+# is no hand-maintained help constant (see bindings.jl).
 
 mutable struct TwViewerData
     messages::Array
@@ -18,13 +12,12 @@ mutable struct TwViewerData
     bottomText::String
     trackLine::Bool
     showHelp::Bool
-    helpText::String
     tabWidth::Int
     colorspans::Union{Nothing, Vector{Vector{Tuple{Int,Int,TwAttr}}}}
     filename::String #if we want to introduce a shortcut to edit the file
     fileloc::Int     #if we want to introduce a shortcut to edit the file
     TwViewerData() =
-        new(String[], 0, 0, 1, 1, 1, true, "", false, true, defaultViewerHelpText, 4, nothing, "", 0 )
+        new(String[], 0, 0, 1, 1, 1, true, "", false, true, 4, nothing, "", 0 )
 end
 
 # the ways to use it:
@@ -336,12 +329,12 @@ function draw(o::TwObj{TwViewerData})
                 s = s[o.data.currentLeft:end]
             end
             if o.data.trackLine && r == o.data.currentLine
-                wattron(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+                wattron(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
                 s *= repeat(" ", max(0, viewContentWidth - length(s)))
             end
             mvwprintw(o.window, row_y, o.borderSizeH, "%s", s)
             if o.data.trackLine && r == o.data.currentLine
-                wattroff(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+                wattroff(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
             end
         end
     end
@@ -357,157 +350,137 @@ function draw(o::TwObj{TwViewerData})
     end
 end
 
+# ── navigation helpers (module-level so the binding table can reference them) ──
+_viewer_vh(o::TwObj{TwViewerData}) = viewContentDimensions(o)[1]
+
+function _viewer_checktop!(o::TwObj{TwViewerData})
+    vh = _viewer_vh(o)
+    if o.data.currentTop > o.data.currentLine
+        o.data.currentTop = o.data.currentLine
+    elseif o.data.currentLine - o.data.currentTop > vh - 1
+        o.data.currentTop = o.data.currentLine - vh + 1
+    end
+end
+
+# Dual-mode scroll: trackLine moves a cursor (kept visible); otherwise the top.
+function _viewer_moveby!(o::TwObj{TwViewerData}, n::Int)
+    vh = _viewer_vh(o)
+    if o.data.trackLine
+        o.data.currentLine = max(1, min(o.data.msglen, o.data.currentLine + n))
+        _viewer_checktop!(o)
+    else
+        o.data.currentTop = max(1, min(o.data.msglen - vh, o.data.currentTop + n))
+    end
+    return Handled
+end
+
+function _viewer_left!(o::TwObj{TwViewerData})
+    o.data.currentLeft > 1 ? (o.data.currentLeft -= 1) : beep()
+    return Handled
+end
+
+function _viewer_right!(o::TwObj{TwViewerData})
+    vw = viewContentDimensions(o)[2]
+    o.data.currentLeft + vw < o.data.msgwidth ? (o.data.currentLeft += 1) : beep()
+    return Handled
+end
+
+function _viewer_home!(o::TwObj{TwViewerData})
+    if o.data.currentTop != 1 || o.data.currentLeft != 1 || o.data.currentLine != 1
+        o.data.currentTop = 1; o.data.currentLeft = 1; o.data.currentLine = 1
+    else
+        beep()
+    end
+    return Handled
+end
+
+function _viewer_end!(o::TwObj{TwViewerData})
+    if o.data.currentTop + o.height - 2 < o.data.msglen
+        o.data.currentTop = o.data.msglen - o.height + 2
+    else
+        beep()
+    end
+    return Handled
+end
+
+# l/L: jump halfway toward the start / end (mode-dependent, mirrors the original).
+function _viewer_half!(o::TwObj{TwViewerData}, towardEnd::Bool)
+    if o.data.trackLine
+        target = towardEnd ?
+            min(round(Int, ceil((o.data.currentLine + o.data.msglen)/2)), o.data.msglen) :
+            max(round(Int, floor(o.data.currentLine / 2)), 1)
+        target != o.data.currentLine ? (o.data.currentLine = target; _viewer_checktop!(o)) : beep()
+    else
+        target = towardEnd ?
+            min(round(Int, ceil((o.data.currentTop + o.data.msglen - o.height+2)/2)),
+                o.data.msglen - o.height + 2) :
+            max(round(Int, floor(o.data.currentTop / 2)), 1)
+        target != o.data.currentTop ? (o.data.currentTop = target) : beep()
+    end
+    return Handled
+end
+
+# Enter on a tracking viewer fires :select listeners; a listener may request exit.
+function _viewer_select!(o::TwObj{TwViewerData})
+    rc = Handled
+    if haskey(o.listeners, :select)
+        for f in o.listeners[:select]
+            res = f(:select, o)
+            res == :exit_ok && (rc = Accept)
+            res == :exit_nothing && (rc = Cancel)
+        end
+    end
+    return rc
+end
+
+function _viewer_mouse!(o::TwObj{TwViewerData})
+    (mstate, x, y, bs) = getmouse()
+    vh = _viewer_vh(o)
+    if mstate == :scroll_up
+        return _viewer_moveby!(o, -(round(Int, vh/10)))
+    elseif mstate == :scroll_down
+        return _viewer_moveby!(o, round(Int, vh/10))
+    elseif mstate == :button1_pressed && o.data.trackLine
+        (rely, relx) = screen_to_relative(o.window, y, x)
+        if 0 <= relx < o.width && 0 <= rely < o.height
+            o.data.currentLine = o.data.currentTop + rely - o.borderSizeH + 1
+            return Handled
+        else
+            return Ignored                 # click outside → bubble (was :pass)
+        end
+    end
+    return Handled                          # other mouse states consumed (was :got_it)
+end
+
+# The viewer keymap, declared once. F1 help is generated from this table.
+function bindings(o::TwObj{TwViewerData})
+    Binding[
+        Binding([:up],       "up",         action = w -> _viewer_moveby!(w, -1)),
+        Binding([:down],     "down",       action = w -> _viewer_moveby!(w, 1)),
+        Binding([:pageup],   "page up",    action = w -> _viewer_moveby!(w, -_viewer_vh(w))),
+        Binding([:pagedown], "page down",  action = w -> _viewer_moveby!(w, _viewer_vh(w))),
+        Binding([:left],     "scroll left",  action = _viewer_left!),
+        Binding([:right],    "scroll right", action = _viewer_right!),
+        Binding([:home],          "start", action = _viewer_home!),
+        Binding([Symbol("end")],  "end",   action = _viewer_end!),
+        Binding(["l"], "halfway toward start", action = w -> _viewer_half!(w, false)),
+        Binding(["L"], "halfway toward end",   action = w -> _viewer_half!(w, true)),
+        Binding([:F11], "edit in vim", when = w -> w.data.filename != "",
+                action = w -> (open_in_vim(w.data.filename, w.data.fileloc); Handled)),
+        Binding([:enter, Symbol("return")], "select", when = w -> w.data.trackLine,
+                action = _viewer_select!),
+        Binding([:KEY_MOUSE], "mouse scroll/click", action = _viewer_mouse!),
+        Binding([:esc], "close", action = _ -> Cancel),
+    ]
+end
+
 function inject(o::TwObj{TwViewerData}, token)
-    dorefresh = false
-    retcode = :got_it # default behavior is that we know what to do with it
-    viewContentHeight, viewContentWidth, viewStartRow = viewContentDimensions(o)
-
-    checkTop =
-        () -> begin
-            if o.data.currentTop > o.data.currentLine
-                o.data.currentTop = o.data.currentLine
-            elseif o.data.currentLine - o.data.currentTop > viewContentHeight - 1
-                o.data.currentTop = o.data.currentLine - viewContentHeight + 1
-            end
-        end
-    moveby =
-        n -> begin
-            if o.data.trackLine
-                o.data.currentLine = max(1, min(o.data.msglen, o.data.currentLine + n))
-                checkTop()
-            else
-                o.data.currentTop = max(
-                    1,
-                    min(o.data.msglen - viewContentHeight, o.data.currentTop + n),
-                )
-            end
-            true
-        end
-
-    if token == :esc
-        retcode = :exit_nothing
-    elseif token == :up
-        dorefresh = moveby(-1)
-    elseif token == :down
-        dorefresh = moveby(1)
-    elseif token == :left
-        if o.data.currentLeft > 1
-            o.data.currentLeft -= 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :right
-        if o.data.currentLeft + viewContentWidth < o.data.msgwidth
-            o.data.currentLeft += 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :pageup
-        dorefresh = moveby(-viewContentHeight)
-    elseif token == :pagedown
-        dorefresh = moveby(viewContentHeight)
-    elseif token == :KEY_MOUSE
-        (mstate, x, y, bs) = getmouse()
-        if mstate == :scroll_up
-            dorefresh = moveby(-(round(Int, viewContentHeight/10)))
-        elseif mstate == :scroll_down
-            dorefresh = moveby(round(Int, viewContentHeight/10))
-        elseif mstate == :button1_pressed && o.data.trackLine
-            (rely, relx) = screen_to_relative(o.window, y, x)
-            if 0<=relx<o.width && 0<=rely<o.height
-                o.data.currentLine = o.data.currentTop + rely - o.borderSizeH + 1
-                dorefresh = true
-            else
-                retcode = :pass
-            end
-        end
-    elseif token == :home
-        if o.data.currentTop != 1 || o.data.currentLeft != 1 || o.data.currentLine != 1
-            o.data.currentTop = 1
-            o.data.currentLeft = 1
-            o.data.currentLine = 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif in(token, Any[Symbol("end")])
-        if o.data.currentTop + o.height-2 < o.data.msglen
-            o.data.currentTop = o.data.msglen - o.height + 2
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif (token == :enter || token == Symbol("return")) && o.data.trackLine
-        if haskey(o.listeners, :select)
-            for f in o.listeners[:select]
-                retcode = f(:select, o)
-            end
-        end
-        dorefresh = true
-    elseif token == :F11 && o.data.filename != ""
-        open_in_vim( o.data.filename, o.data.fileloc )
-    elseif token == "L" # move half-way toward the end
-        if o.data.trackLine
-            target =
-                min(round(Int, ceil((o.data.currentLine + o.data.msglen)/2)), o.data.msglen)
-            if target != o.data.currentLine
-                o.data.currentLine = target
-                checkTop()
-                dorefresh = true
-            else
-                beep()
-            end
-        else
-            target = min(
-                round(Int, ceil((o.data.currentTop + o.data.msglen - o.height+2)/2)),
-                o.data.msglen - o.height + 2,
-            )
-            if target != o.data.currentTop
-                o.data.currentTop = target
-                dorefresh = true
-            else
-                beep()
-            end
-        end
-    elseif token == "l" # move half-way toward the beginning
-        if o.data.trackLine
-            target = max(round(Int, floor(o.data.currentLine / 2)), 1)
-            if target != o.data.currentLine
-                o.data.currentLine = target
-                checkTop()
-                dorefresh = true
-            else
-                beep()
-            end
-        else
-            target = max(round(Int, floor(o.data.currentTop / 2)), 1)
-            if target != o.data.currentTop
-                o.data.currentTop = target
-                dorefresh = true
-            else
-                beep()
-            end
-        end
-    else
-        retcode = :pass # I don't know what to do with it
-    end
-
-    if dorefresh
-        refresh(o)
-    end
-
-    return retcode
+    r = inject_via_table(o, token)
+    r === Handled && refresh(o)
+    return r
 end
 
-function helptext(o::TwObj{TwViewerData})
-    if o.data.showHelp
-        o.data.helpText
-    else
-        ""
-    end
-end
+helptext(o::TwObj{TwViewerData}) = o.data.showHelp ? helptext_from_bindings(o) : ""
 
 function setTwViewerMsgs(o::TwObj{TwViewerData}, msgs::Array)
     o.data.messages = msgs

@@ -33,7 +33,7 @@ treeValueMaxWidth = 400
 
 mutable struct TwTreeData
     openstatemap::Dict{Any,Bool}
-    datalist::Array{Any,1}
+    datalist::Vector{TreeRow}    # typed rows (was an anonymous 6-tuple)
     datalistlen::Int
     datatreewidth::Int
     datatypewidth::Int
@@ -51,7 +51,7 @@ mutable struct TwTreeData
         log("TwTreeData 0")
         rv = new(
             Dict{Any,Bool}(),
-            Any[],
+            TreeRow[],
             0,
             0,
             0,
@@ -158,12 +158,12 @@ function tree_data(
         else
             v = string(x)
         end
-        push!(list, (s, t, v, stack, :single, skiplines))
+        push!(list, TreeRow(s, t, v, stack, :single, skiplines))
     elseif typx == WeakRef
         s = string(name)
         t = string(typx)
         v = x.value === nothing ? "<nothing>" : @sprintf("id:0x%x", object_id(x.value))
-        push!(list, (s, t, v, stack, :single, skiplines))
+        push!(list, TreeRow(s, t, v, stack, :single, skiplines))
     elseif typx <: Array || typx <: Tuple || typx <: Core.SimpleVector
         s = string(name)
         len = length(x)
@@ -179,7 +179,7 @@ function tree_data(
         szstr = string(len)
         v = "size=" * szstr
         expandhint = isempty(x) ? :single : (isexp ? :open : :close)
-        push!(list, (s, t, v, stack, expandhint, skiplines))
+        push!(list, TreeRow(s, t, v, stack, expandhint, skiplines))
         if isexp
             szdigits = length(szstr)
             for (i, a) in enumerate(x)
@@ -197,7 +197,7 @@ function tree_data(
         szstr = string(len)
         v = "size=" * szstr
         expandhint = isempty(x) ? :single : (isexp ? :open : :close)
-        push!(list, (s, t, v, stack, expandhint, skiplines))
+        push!(list, TreeRow(s, t, v, stack, expandhint, skiplines))
         if isexp
             ktype = keytype(x)
             ks = collect(keys(x))
@@ -225,7 +225,7 @@ function tree_data(
         v = "num methods=" * szstr
         #v = "*"
         expandhint = len==0 ? :single : (isexp ? :open : :close)
-        push!(list, (s, t, v, stack, expandhint, skiplines))
+        push!(list, TreeRow(s, t, v, stack, expandhint, skiplines))
         if isexp
             szdigits = length(szstr)
             for (i, m) in enumerate(mt)
@@ -240,7 +240,7 @@ function tree_data(
         s = string(name)
         t = string(typx)
         v = string(x)
-        push!(list, (s, t, v, stack, :single, skiplines))
+        push!(list, TreeRow(s, t, v, stack, :single, skiplines))
     else
         log("  " * string(typx))
         ns = Symbol[]
@@ -281,7 +281,7 @@ function tree_data(
         t = string(typx)
         v = string(x)
         len = length(ns)
-        push!(list, (s, t, v, stack, expandhint, skiplines))
+        push!(list, TreeRow(s, t, v, stack, expandhint, skiplines))
         if isexp && !isempty(ns)
             for (i, n) in enumerate(ns)
                 subname = string(n)
@@ -335,11 +335,11 @@ function updateTreeDimensions(o::TwObj)
 
     o.data.datalistlen = length(o.data.datalist)
     o.data.datatreewidth =
-        maximum(map(x->length(x[1]) + 1 + 2 * length(x[4]), o.data.datalist))
+        maximum(map(x->length(x.name) + 1 + 2 * length(x.stack), o.data.datalist))
     o.data.datatypewidth =
-        min(treeTypeMaxWidth, max(15, maximum(map(x->length(x[2]), o.data.datalist))))
+        min(treeTypeMaxWidth, max(15, maximum(map(x->length(x.typestr), o.data.datalist))))
     o.data.datavaluewidth =
-        maximum(map(x->length(x[3]), o.data.datalist))
+        maximum(map(x->length(x.valuestr), o.data.datalist))
     nothing
 end
 
@@ -377,22 +377,22 @@ function draw(o::TwObj{TwTreeData})
     end
     for r = o.data.currentTop:min(o.data.currentTop+viewContentHeight-1, o.data.datalistlen)
 
-        stacklen = length(o.data.datalist[r][4])
+        stacklen = length(o.data.datalist[r].stack)
         s = ensure_length(
-            repeat(" ", 2*stacklen + 1) * o.data.datalist[r][1],
+            repeat(" ", 2*stacklen + 1) * o.data.datalist[r].name,
             o.data.datatreewidth,
         )
-        t = ensure_length(o.data.datalist[r][2], o.data.datatypewidth)
-        log(o.data.datalist[r][1])
-        log(o.data.datalist[r][3])
+        t = ensure_length(o.data.datalist[r].typestr, o.data.datatypewidth)
+        log(o.data.datalist[r].name)
+        log(o.data.datalist[r].valuestr)
         v = ensure_length(
-            o.data.datalist[r][3],
+            o.data.datalist[r].valuestr,
             viewContentWidth-o.data.datatreewidth - o.data.datatypewidth-3,
             false,
         )
 
         if r == o.data.currentLine
-            wattron(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+            wattron(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
         end
         mvwprintw(o.window, 1+r-o.data.currentTop, 2, "%s", s)
         mvwaddch(o.window, 1+r-o.data.currentTop, 2+o.data.datatreewidth, get_acs_val('x'))
@@ -412,24 +412,24 @@ function draw(o::TwObj{TwTreeData})
         )
 
         for i = 1:(stacklen-1)
-            if !in(i, o.data.datalist[r][6]) # skiplines
+            if !in(i, o.data.datalist[r].skiplines) # skiplines
                 mvwaddch(o.window, 1+r-o.data.currentTop, 2*i, get_acs_val('x')) # vertical line
             end
         end
         if stacklen != 0
             contchar = get_acs_val('t') # tee pointing right
             if r == o.data.datalistlen ||  # end of the whole thing
-               length(o.data.datalist[r+1][4]) < stacklen || # next one is going back in level
+               length(o.data.datalist[r+1].stack) < stacklen || # next one is going back in level
                (
-                   length(o.data.datalist[r+1][4]) > stacklen &&
-                   in(stacklen, o.data.datalist[r+1][6])
+                   length(o.data.datalist[r+1].stack) > stacklen &&
+                   in(stacklen, o.data.datalist[r+1].skiplines)
                ) # going deeping in level
                 contchar = get_acs_val('m') # LL corner
             end
             mvwaddch(o.window, 1+r-o.data.currentTop, 2*stacklen, contchar)
             mvwaddch(o.window, 1+r-o.data.currentTop, 2*stacklen+1, get_acs_val('q')) # horizontal line
         end
-        if o.data.datalist[r][5] == :close
+        if o.data.datalist[r].expandhint == :close
             mvwprintw(
                 o.window,
                 1+r-o.data.currentTop,
@@ -437,7 +437,7 @@ function draw(o::TwObj{TwTreeData})
                 "%s",
                 string(Char(0x25b8)),
             ) # right-pointing small triangle
-        elseif o.data.datalist[r][5] == :open
+        elseif o.data.datalist[r].expandhint == :open
             mvwprintw(
                 o.window,
                 1+r-o.data.currentTop,
@@ -448,7 +448,7 @@ function draw(o::TwObj{TwTreeData})
         end
 
         if r == o.data.currentLine
-            wattroff(o.window, A_BOLD | COLOR_PAIR(o.hasFocus ? 15 : 30))
+            wattroff(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
         end
     end
     if length(o.data.bottomText) != 0 && o.box
@@ -464,14 +464,14 @@ end
 
 function inject(o::TwObj{TwTreeData}, token)
     dorefresh = false
-    retcode = :got_it # default behavior is that we know what to do with it
+    retcode = Handled # default behavior is that we know what to do with it
     viewContentHeight = o.height - 2 * o.borderSizeV
     viewContentWidth =
         o.data.datatreewidth + o.data.datatypewidth + o.data.datavaluewidth + 2
 
     update_tree_data =
         ()->begin
-            o.data.datalist = Any[]
+            o.data.datalist = TreeRow[]
             tree_data(
                 o.value,
                 o.title,
@@ -521,8 +521,8 @@ function inject(o::TwObj{TwTreeData}, token)
             o.data.searchText = lowercase(o.data.searchText)
             i = trivialstop ? st : (mod(st-1+step, o.data.datalistlen) + 1)
             while true
-                if occursin(o.data.searchText, lowercase(o.data.datalist[i][1])) ||
-                   occursin(o.data.searchText, lowercase(o.data.datalist[i][3]))
+                if occursin(o.data.searchText, lowercase(o.data.datalist[i].name)) ||
+                   occursin(o.data.searchText, lowercase(o.data.datalist[i].valuestr))
                     o.data.currentLine = i
                     if abs(i-st) > viewContentHeight
                         o.data.currentTop = o.data.currentLine - (viewContentHeight>>1)
@@ -539,11 +539,11 @@ function inject(o::TwObj{TwTreeData}, token)
         end
 
     if token == :esc
-        retcode = :exit_nothing
+        retcode = Cancel
     elseif token == " " || token == Symbol("return") || token == :enter
-        expandhint = o.data.datalist[o.data.currentLine][5]
+        expandhint = o.data.datalist[o.data.currentLine].expandhint
         if expandhint != :single
-            stck = o.data.datalist[o.data.currentLine][4]
+            stck = o.data.datalist[o.data.currentLine].stack
             if !haskey(o.data.openstatemap, stck) || !o.data.openstatemap[stck]
                 o.data.openstatemap[stck] = true
             else
@@ -553,12 +553,12 @@ function inject(o::TwObj{TwTreeData}, token)
             dorefresh = true
         end
     elseif token == "+" # the tricky part is to preserve the currentLine
-        currentstack = o.data.datalist[o.data.currentLine][4]
+        currentstack = o.data.datalist[o.data.currentLine].stack
         somethingchanged = false
         for i = 1:o.data.datalistlen
-            expandhint = o.data.datalist[i][5]
+            expandhint = o.data.datalist[i].expandhint
             if expandhint != :single
-                stck = o.data.datalist[i][4]
+                stck = o.data.datalist[i].stack
                 if !haskey(o.data.openstatemap, stck) || !o.data.openstatemap[stck]
                     o.data.openstatemap[stck] = true
                     somethingchanged = true
@@ -569,7 +569,7 @@ function inject(o::TwObj{TwTreeData}, token)
             prevline = o.data.currentLine
             update_tree_data()
             for i = o.data.currentLine:o.data.datalistlen
-                if currentstack == o.data.datalist[i][4]
+                if currentstack == o.data.datalist[i].stack
                     o.data.currentLine = i
                     if abs(i - prevline) > viewContentHeight
                         o.data.currentTop = i - round(Int, viewContentHeight/2)
@@ -583,13 +583,13 @@ function inject(o::TwObj{TwTreeData}, token)
             beep()
         end
     elseif token == "-" # the tricky part is to preserve the currentLine
-        currentstack = copy(o.data.datalist[o.data.currentLine][4])
+        currentstack = copy(o.data.datalist[o.data.currentLine].stack)
         somethingchanged = false
-        maxstackdepth = maximum(map(x->length(x[4]), o.data.datalist))
+        maxstackdepth = maximum(map(x->length(x.stack), o.data.datalist))
         if maxstackdepth > 1
             for i = 1:o.data.datalistlen
-                expandhint = o.data.datalist[i][5]
-                stck = o.data.datalist[i][4]
+                expandhint = o.data.datalist[i].expandhint
+                stck = o.data.datalist[i].stack
                 if expandhint != :single && length(stck) == maxstackdepth-1
                     if haskey(o.data.openstatemap, stck) && o.data.openstatemap[stck]
                         o.data.openstatemap[stck] = false
@@ -605,7 +605,7 @@ function inject(o::TwObj{TwTreeData}, token)
                 prevline = o.data.currentLine
                 o.data.currentLine = 1
                 for i = 1:min(prevline, o.data.datalistlen)
-                    if currentstack == o.data.datalist[i][4]
+                    if currentstack == o.data.datalist[i].stack
                         o.data.currentLine = i
                         if abs(i-prevline) > viewContentHeight
                             o.data.currentTop = i - round(Int, viewContentHeight / 2)
@@ -620,7 +620,7 @@ function inject(o::TwObj{TwTreeData}, token)
             beep()
         end
     elseif token == "_"
-        currentstack = copy(o.data.datalist[o.data.currentLine][4])
+        currentstack = copy(o.data.datalist[o.data.currentLine].stack)
         if length(currentstack) > 1
             currentstack = Any[currentstack[1]]
         end
@@ -630,7 +630,7 @@ function inject(o::TwObj{TwTreeData}, token)
         prevline = o.data.currentLine
         o.data.currentLine = 1
         for i = 1:min(prevline, o.data.datalistlen)
-            if currentstack == o.data.datalist[i][4]
+            if currentstack == o.data.datalist[i].stack
                 o.data.currentLine = i
                 if abs(i-prevline) > viewContentHeight
                     o.data.currentTop =
@@ -643,12 +643,12 @@ function inject(o::TwObj{TwTreeData}, token)
         dorefresh = true
     elseif token == "m" && typeof(o.value) == Module
         o.data.moduleall = !o.data.moduleall
-        prevstack = copy(o.data.datalist[o.data.currentLine][4])
+        prevstack = copy(o.data.datalist[o.data.currentLine].stack)
         update_tree_data()
         maxmatch = 0
         bestline = 0
         for i = 1:o.data.datalistlen
-            stck = o.data.datalist[i][4]
+            stck = o.data.datalist[i].stack
             if length(prevstack) > maxmatch &&
                length(stck) > maxmatch &&
                isequal(prevstack[1:(maxmatch+1)], stck[1:(maxmatch+1)])
@@ -667,7 +667,7 @@ function inject(o::TwObj{TwTreeData}, token)
         checkTop()
         dorefresh = true
     elseif token == :F5
-        stck = copy(o.data.datalist[o.data.currentLine][4])
+        stck = copy(o.data.datalist[o.data.currentLine].stack)
         lastkey = isempty(stck) ? o.title : stck[end]
         v = getvaluebypath(o.value, copy(stck))
         if v isa Expr
@@ -678,7 +678,7 @@ function inject(o::TwObj{TwTreeData}, token)
         end
         dorefresh = true
     elseif token == :F6
-        stck = copy(o.data.datalist[o.data.currentLine][4])
+        stck = copy(o.data.datalist[o.data.currentLine].stack)
         if !isempty(stck)
             lastkey = stck[end]
         else
@@ -697,7 +697,7 @@ function inject(o::TwObj{TwTreeData}, token)
         end
         dorefresh = true
     elseif token == :shift_F6
-        stck = copy(o.data.datalist[o.data.currentLine][4])
+        stck = copy(o.data.datalist[o.data.currentLine].stack)
         if !isempty(stck)
             lastkey = stck[end]
         else
@@ -710,7 +710,7 @@ function inject(o::TwObj{TwTreeData}, token)
             dorefresh = true
         end
     elseif token == :F7
-        stck = copy(o.data.datalist[o.data.currentLine][4])
+        stck = copy(o.data.datalist[o.data.currentLine].stack)
         lastkey = isempty(stck) ? o.title : stck[end]
         v = getvaluebypath(o.value, stck)
         helper = newTwEntry(
@@ -744,78 +744,18 @@ function inject(o::TwObj{TwTreeData}, token)
         else
             beep()
         end
-    elseif token == :ctrl_left
-        # Move to the parent node (one level up in the tree)
-        currentstack = o.data.datalist[o.data.currentLine][4]
-        if isempty(currentstack)
-            beep()
+    elseif token == :ctrl_left || token == :ctrl_up || token == :ctrl_down
+        # Parent / prev-sibling / next-sibling navigation, shared with the file
+        # browser and dict tree via the generic tree_nav primitive.
+        dir = token == :ctrl_left ? :parent :
+              token == :ctrl_up   ? :prev_sibling : :next_sibling
+        (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, dir)
+        if moved
+            o.data.currentLine = target
+            checkTop()
+            dorefresh = true
         else
-            parentstack = currentstack[1:end-1]
-            found = false
-            for i = o.data.currentLine-1:-1:1
-                if o.data.datalist[i][4] == parentstack
-                    o.data.currentLine = i
-                    checkTop()
-                    dorefresh = true
-                    found = true
-                    break
-                end
-            end
-            if !found
-                beep()
-            end
-        end
-    elseif token == :ctrl_up
-        # Move to the previous sibling (same depth, same parent)
-        currentstack = o.data.datalist[o.data.currentLine][4]
-        depth = length(currentstack)
-        if depth == 0
             beep()
-        else
-            parentstack = currentstack[1:end-1]
-            found = false
-            for i = o.data.currentLine-1:-1:1
-                rowstack = o.data.datalist[i][4]
-                if length(rowstack) < depth
-                    break  # passed the parent level, no more siblings above
-                end
-                if length(rowstack) == depth && rowstack[1:end-1] == parentstack
-                    o.data.currentLine = i
-                    checkTop()
-                    dorefresh = true
-                    found = true
-                    break
-                end
-            end
-            if !found
-                beep()
-            end
-        end
-    elseif token == :ctrl_down
-        # Move to the next sibling (same depth, same parent)
-        currentstack = o.data.datalist[o.data.currentLine][4]
-        depth = length(currentstack)
-        if depth == 0
-            beep()
-        else
-            parentstack = currentstack[1:end-1]
-            found = false
-            for i = o.data.currentLine+1:o.data.datalistlen
-                rowstack = o.data.datalist[i][4]
-                if length(rowstack) < depth
-                    break  # passed the end of the parent's children
-                end
-                if length(rowstack) == depth && rowstack[1:end-1] == parentstack
-                    o.data.currentLine = i
-                    checkTop()
-                    dorefresh = true
-                    found = true
-                    break
-                end
-            end
-            if !found
-                beep()
-            end
         end
     elseif token == :right
         if o.data.currentLeft + o.width - 2*o.borderSizeH < viewContentWidth
@@ -842,7 +782,7 @@ function inject(o::TwObj{TwTreeData}, token)
                 o.data.currentLine = o.data.currentTop + rely - o.borderSizeH + 1
                 dorefresh = true
             else
-                retcode = :pass
+                retcode = Ignored
             end
         end
     elseif token == :home
@@ -912,7 +852,7 @@ function inject(o::TwObj{TwTreeData}, token)
             beep()
         end
     else
-        retcode = :pass # I don't know what to do with it
+        retcode = Ignored # I don't know what to do with it
     end
 
     if dorefresh
