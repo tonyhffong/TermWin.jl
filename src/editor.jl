@@ -523,7 +523,7 @@ function draw_editor!(
 
     firstflag = inputflag
     lastflag = inputflag
-    if hasFocus && showcursor
+    if showcursor
         c = substr_by_width(outstr, rcursPos - 1, 1)
         flag = ie.overwriteMode ? (inputflag | A_REVERSE) : (inputflag | A_UNDERLINE)
         wattron(win, flag)
