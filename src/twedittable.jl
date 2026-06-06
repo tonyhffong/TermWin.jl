@@ -359,6 +359,7 @@ function _et_open_enum_popup!(o::TwObj{TwEditTableData})
         maxheight = min(length(col.enumvalues) + 2, 12),
         maxwidth = max(col.width + 4, 20),
     )
+    apply_default!(popup, data.df[data.currentRow, col.name])
     result = activateTwObj(popup)
     unregisterTwObj(rootTwScreen, popup)
     if result !== nothing
