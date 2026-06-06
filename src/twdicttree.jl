@@ -1,28 +1,5 @@
 # twdicttree.jl — editable tree viewer for Dict/Vector structures
 
-defaultDictTreeHelpText = """
-PgUp/PgDn,
-Arrow keys : navigation
-<spc>      : toggle expand/collapse
-<rtn>      : expand/collapse (container) or edit (leaf)
-e, F2      : edit current leaf value inline
-Ctrl-N     : add entry (child if on container, sibling if on leaf)
-Ctrl-D     : delete current entry
-r          : rename current Dict key
-Alt-Up/Dn  : move Vector element up / down
-ctrl_left  : jump to parent node
-ctrl_up    : jump to previous sibling
-ctrl_down  : jump to next sibling
-+, -       : expand/collapse one level
-_          : collapse all
-/          : search dialog
-n, p       : next / previous match
-F5         : show string(value) — with Julia syntax color if Expr
-F6         : popup viewer for value
-F7         : store value into a Main global variable
-F10        : submit changes and return
-Esc        : cancel edit / exit without saving
-"""
 
 defaultDictTreeBottomText = "F1:help e:edit Ctrl-N:add Ctrl-D:del r:rename Alt-↑↓:move F10:submit"
 
@@ -70,7 +47,6 @@ mutable struct TwDictTreeData
     showLineInfo::Bool
     bottomText::String
     showHelp::Bool
-    helpText::String
     searchText::String
     # inline edit state
     isEditing::Bool
@@ -95,7 +71,7 @@ function newTwDictTree(
         Dict{Any,Bool}(), TreeRow[],
         0, 0, 0, 0,
         1, 1, 1,
-        showLineInfo, bottomText, showHelp, defaultDictTreeHelpText, "",
+        showLineInfo, bottomText, showHelp, "",
         false, InlineEditor(String; width = 1),
     )
     obj = TwObj(data, Val{:DictTree})
@@ -465,6 +441,126 @@ function _dt_swap_vector_element!(o::TwObj{TwDictTreeData}, direction::Int)
     return true
 end
 
+# ─── nav helpers ─────────────────────────────────────────────────────────────
+
+function _dt_moveby!(o::TwObj{TwDictTreeData}, n::Int)
+    old = o.data.currentLine
+    o.data.currentLine = max(1, min(o.data.datalistlen, o.data.currentLine + n))
+    if old != o.data.currentLine
+        _dt_checkTop!(o)
+        return true
+    else
+        beep()
+        return false
+    end
+end
+
+function _dt_search_next!(o::TwObj{TwDictTreeData}, step::Int, trivialstop::Bool)
+    data = o.data
+    data.datalistlen == 0 && return 0
+    (vh, _, _) = _dt_view_dims(o)
+    st = data.currentLine
+    data.searchText = lowercase(data.searchText)
+    i = trivialstop ? st : (mod(st - 1 + step, data.datalistlen) + 1)
+    while true
+        if occursin(data.searchText, lowercase(data.datalist[i].name)) ||
+           occursin(data.searchText, lowercase(data.datalist[i].valuestr))
+            data.currentLine = i
+            abs(i - st) > vh && (data.currentTop = data.currentLine - (vh >> 1))
+            _dt_checkTop!(o)
+            return i
+        end
+        i = mod(i - 1 + step, data.datalistlen) + 1
+        i == st && (beep(); return 0)
+    end
+end
+
+function _dt_expand_all!(o::TwObj{TwDictTreeData})
+    data = o.data
+    (vh, _, _) = _dt_view_dims(o)
+    currentstack = data.datalist[data.currentLine].stack
+    somethingchanged = false
+    for i = 1:data.datalistlen
+        if data.datalist[i].expandhint != :single
+            stck = data.datalist[i].stack
+            if !get(data.openstatemap, stck, false)
+                data.openstatemap[stck] = true
+                somethingchanged = true
+            end
+        end
+    end
+    if somethingchanged
+        prevline = data.currentLine
+        _dt_update_data!(o)
+        for i = data.currentLine:data.datalistlen
+            if currentstack == data.datalist[i].stack
+                data.currentLine = i
+                abs(i - prevline) > vh && (data.currentTop = i - round(Int, vh / 2))
+                break
+            end
+        end
+        _dt_checkTop!(o)
+        return true
+    else
+        beep()
+        return false
+    end
+end
+
+function _dt_collapse_deepest!(o::TwObj{TwDictTreeData})
+    data = o.data
+    (vh, _, _) = _dt_view_dims(o)
+    data.datalistlen == 0 && (beep(); return)
+    currentstack = copy(data.datalist[data.currentLine].stack)
+    maxdepth = maximum(map(x -> length(x.stack), data.datalist))
+    maxdepth <= 1 && (beep(); return)
+    somethingchanged = false
+    for i = 1:data.datalistlen
+        stck = data.datalist[i].stack
+        if data.datalist[i].expandhint != :single && length(stck) == maxdepth - 1
+            if get(data.openstatemap, stck, false)
+                data.openstatemap[stck] = false
+                somethingchanged = true
+            end
+        end
+    end
+    if somethingchanged
+        _dt_update_data!(o)
+        length(currentstack) == maxdepth && pop!(currentstack)
+        prevline = data.currentLine; data.currentLine = 1
+        for i = 1:min(prevline, data.datalistlen)
+            if currentstack == data.datalist[i].stack
+                data.currentLine = i
+                abs(i - prevline) > vh && (data.currentTop = i - round(Int, vh / 2))
+                break
+            end
+        end
+        _dt_checkTop!(o)
+    else
+        beep()
+    end
+end
+
+function _dt_collapse_all!(o::TwObj{TwDictTreeData})
+    data = o.data
+    (vh, _, _) = _dt_view_dims(o)
+    data.datalistlen == 0 && return
+    currentstack = copy(data.datalist[data.currentLine].stack)
+    length(currentstack) > 1 && (currentstack = Any[currentstack[1]])
+    data.openstatemap = Dict{Any,Bool}()
+    data.openstatemap[Any[]] = true
+    _dt_update_data!(o)
+    prevline = data.currentLine; data.currentLine = 1
+    for i = 1:min(prevline, data.datalistlen)
+        if currentstack == data.datalist[i].stack
+            data.currentLine = i
+            abs(i - prevline) > vh && (data.currentTop = data.currentLine - round(Int, vh / 2))
+            break
+        end
+    end
+    _dt_checkTop!(o)
+end
+
 # ─── draw ─────────────────────────────────────────────────────────────────────
 
 function _dt_draw_edit_cell!(
@@ -568,72 +664,166 @@ function draw(o::TwObj{TwDictTreeData})
     end
 end
 
-# ─── inject ───────────────────────────────────────────────────────────────────
+# ─── bindings + inject ────────────────────────────────────────────────────────
+
+function bindings(o::TwObj{TwDictTreeData})
+    vh = () -> o.height - 2 * o.borderSizeV
+    [
+        Binding(:esc,  "cancel", action = _->Cancel),
+        Binding(:F10,  "submit", action = _->Accept),
+        Binding(" ", "toggle expand",
+                action = _->begin
+                    stck = o.data.datalist[o.data.currentLine].stack
+                    val  = getvaluebypath(o.value, copy(stck))
+                    if isa(val, AbstractDict) || isa(val, AbstractVector)
+                        o.data.openstatemap[stck] = !get(o.data.openstatemap, stck, false)
+                        _dt_update_data!(o)
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+        Binding([:enter, Symbol("return"), "e", :F2], "expand / edit",
+                action = _->begin
+                    stck = o.data.datalist[o.data.currentLine].stack
+                    val  = getvaluebypath(o.value, copy(stck))
+                    if isa(val, AbstractDict) || isa(val, AbstractVector)
+                        o.data.openstatemap[stck] = !get(o.data.openstatemap, stck, false)
+                        _dt_update_data!(o)
+                    else
+                        _dt_begin_edit!(o) || beep()
+                    end
+                    Handled
+                end),
+        Binding(:ctrl_n, "add entry",   action = _->(_dt_add_entry!(o); Handled)),
+        Binding(:ctrl_d, "delete",      action = _->(_dt_delete_entry!(o); Handled)),
+        Binding("r",     "rename key",  action = _->(_dt_rename_key!(o); Handled)),
+        Binding(:alt_up,   "move up",   action = _->(_dt_swap_vector_element!(o, -1); Handled)),
+        Binding(:alt_down, "move down", action = _->(_dt_swap_vector_element!(o,  1); Handled)),
+        Binding("+", "expand all",     action = _->(_dt_expand_all!(o); Handled)),
+        Binding("-", "collapse level", action = _->(_dt_collapse_deepest!(o); Handled)),
+        Binding("_", "collapse all",   action = _->(_dt_collapse_all!(o); Handled)),
+        Binding(:F5, "show as string",
+                action = _->begin
+                    stck = copy(o.data.datalist[o.data.currentLine].stack)
+                    lastkey = isempty(stck) ? o.title : stck[end]
+                    v = getvaluebypath(o.value, copy(stck))
+                    v isa Expr ? tshow(exprstring(v), "julia"; title = string(lastkey)) :
+                                 tshow(string(v); title = string(lastkey))
+                    Handled
+                end),
+        Binding(:F6, "popup value",
+                action = _->begin
+                    stck = copy(o.data.datalist[o.data.currentLine].stack)
+                    lastkey = isempty(stck) ? o.title : stck[end]
+                    v = getvaluebypath(o.value, stck)
+                    !in(v, [nothing, Nothing, Any]) && tshow(v, title = string(lastkey))
+                    Handled
+                end),
+        Binding(:F7, "save to global",
+                action = _->begin
+                    stck = copy(o.data.datalist[o.data.currentLine].stack)
+                    lastkey = isempty(stck) ? o.title : stck[end]
+                    v = getvaluebypath(o.value, stck)
+                    helper = newTwEntry(o.screen.value, String;
+                                       width = 34, posy = :center, posx = :center,
+                                       title = "Store as global: ")
+                    helper.data.inputText = string(lastkey)
+                    helper.data.cursorPos = length(helper.data.inputText) + 1
+                    varname = activateTwObj(helper)
+                    unregisterTwObj(o.screen.value, helper)
+                    if varname !== nothing && !isempty(strip(varname))
+                        try
+                            Core.eval(Main, Expr(:(=), Symbol(strip(varname)), QuoteNode(v)))
+                        catch err
+                            tshow("Error storing variable:\n" * string(err), title = "F7 error")
+                        end
+                    end
+                    Handled
+                end),
+        Binding(:up,   "up",   action = _->(_dt_moveby!(o, -1); Handled)),
+        Binding(:down, "down", action = _->(_dt_moveby!(o,  1); Handled)),
+        Binding(:ctrl_left, "parent",
+                action = _->begin
+                    (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, :parent)
+                    moved ? (o.data.currentLine = target; _dt_checkTop!(o)) : beep()
+                    Handled
+                end),
+        Binding(:ctrl_up, "prev sibling",
+                action = _->begin
+                    (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, :prev_sibling)
+                    moved ? (o.data.currentLine = target; _dt_checkTop!(o)) : beep()
+                    Handled
+                end),
+        Binding(:ctrl_down, "next sibling",
+                action = _->begin
+                    (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, :next_sibling)
+                    moved ? (o.data.currentLine = target; _dt_checkTop!(o)) : beep()
+                    Handled
+                end),
+        Binding(:pageup,   "page up",   action = _->(_dt_moveby!(o, -vh()); Handled)),
+        Binding(:pagedown, "page down", action = _->(_dt_moveby!(o,  vh()); Handled)),
+        Binding(:home, "go to start",
+                action = _->begin
+                    if o.data.currentTop != 1 || o.data.currentLine != 1
+                        o.data.currentTop = 1; o.data.currentLine = 1
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+        Binding(Symbol("end"), "go to end",
+                action = _->begin
+                    if o.data.currentLine < o.data.datalistlen
+                        o.data.currentLine = o.data.datalistlen; _dt_checkTop!(o)
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+        Binding("/", "search",
+                action = _->begin
+                    helper = newTwEntry(o.screen.value, String;
+                                       width = 30, posy = :center, posx = :center,
+                                       title = "Search: ")
+                    helper.data.inputText = o.data.searchText
+                    s = activateTwObj(helper)
+                    unregisterTwObj(o.screen.value, helper)
+                    if s !== nothing && s != "" && o.data.searchText != s
+                        o.data.searchText = s
+                        _dt_search_next!(o, 1, true)
+                    end
+                    Handled
+                end),
+        Binding(["n", "N"], "next match",
+                action = _->(o.data.searchText != "" && o.data.datalistlen > 0 &&
+                              _dt_search_next!(o,  1, false); Handled)),
+        Binding(["p", :ctrl_p], "prev match",
+                action = _->(o.data.searchText != "" && o.data.datalistlen > 0 &&
+                              _dt_search_next!(o, -1, false); Handled)),
+    ]
+end
 
 function inject(o::TwObj{TwDictTreeData}, token)
-    data      = o.data
-    dorefresh = false
-    retcode   = Handled
+    data = o.data
 
-    (viewH, viewW, fieldW) = _dt_view_dims(o)
-
-    update_data = () -> begin
-        data.datalist = TreeRow[]
-        tree_data(o.value, o.title, data.datalist, data.openstatemap, Any[], Int[], true)
-        _dt_update_dimensions!(o)
-    end
-
-    checkTop = () -> _dt_checkTop!(o)
-
-    moveby = n -> begin
-        old = data.currentLine
-        data.currentLine = max(1, min(data.datalistlen, data.currentLine + n))
-        if old != data.currentLine
-            checkTop()
-            return true
-        else
-            beep()
-            return false
-        end
-    end
-
-    searchNext = (step, trivialstop) -> begin
-        data.datalistlen == 0 && return 0
-        local st = data.currentLine
-        data.searchText = lowercase(data.searchText)
-        i = trivialstop ? st : (mod(st - 1 + step, data.datalistlen) + 1)
-        while true
-            if occursin(data.searchText, lowercase(data.datalist[i].name)) ||
-               occursin(data.searchText, lowercase(data.datalist[i].valuestr))
-                data.currentLine = i
-                abs(i - st) > viewH && (data.currentTop = data.currentLine - (viewH >> 1))
-                checkTop()
-                return i
-            end
-            i = mod(i - 1 + step, data.datalistlen) + 1
-            i == st && (beep(); return 0)
-        end
-    end
-
-    # ── edit mode ─────────────────────────────────────────────────────────────
+    # 1. Edit mode pre-empts all tokens
     if data.isEditing
+        (_, _, fieldW) = _dt_view_dims(o)
         ed = data.editor
         ed.width = fieldW
 
         if token == :esc
             data.isEditing = false
             ed.incomplete = false
-            dorefresh = true
         elseif token == :enter || token == Symbol("return")
             _dt_commit_edit!(o) || beep()
-            dorefresh = true
         else
-            # All editing keys delegate to the shared InlineEditor.
             r = editor_handle(ed, token)
             if r === :handled
-                dorefresh = true
+                # nothing extra
             elseif r === :rejected || r === :at_left_edge || r === :at_right_edge
-                beep()                 # dict tree leaves have no columns; edges beep
+                beep()
             elseif r === :open_calendar
                 (parsed, _) = evalNFormat(ed, ed.buffer, fieldW)
                 init_date = parsed isa Dates.Date ? parsed : Dates.today()
@@ -642,303 +832,55 @@ function inject(o::TwObj{TwDictTreeData}, token)
                 cal.value isa Dates.Date &&
                     editor_set_buffer!(ed, Dates.format(cal.value, "yyyy-mm-dd"))
                 unregisterTwObj(o.screen.value, cal)
-                dorefresh = true
-            else  # :open_enum (no enums here) or :ignored
-                retcode = Ignored
+            else
+                return Ignored
             end
         end
-
-    # ── navigation / structural mode ──────────────────────────────────────────
-    else
-        if token == :esc
-            retcode = Cancel
-
-        elseif token == :F10
-            retcode = Accept
-
-        elseif token == " "
-            expandhint = data.datalist[data.currentLine].expandhint
-            stck = data.datalist[data.currentLine].stack
-            val  = getvaluebypath(o.value, copy(stck))
-            if isa(val, AbstractDict) || isa(val, AbstractVector)
-                data.openstatemap[stck] = !get(data.openstatemap, stck, false)
-                update_data()
-                dorefresh = true
-            else
-                beep()
-            end
-
-        elseif token == :enter || token == Symbol("return") || token == "e" || token == :F2
-            row        = data.datalist[data.currentLine]
-            expandhint = row.expandhint
-            stck       = row.stack
-            val        = getvaluebypath(o.value, copy(stck))
-            if isa(val, AbstractDict) || isa(val, AbstractVector)
-                # toggle expand/collapse for containers
-                data.openstatemap[stck] = !get(data.openstatemap, stck, false)
-                update_data()
-                dorefresh = true
-            else
-                if _dt_begin_edit!(o)
-                    dorefresh = true
-                else
-                    beep()
-                end
-            end
-
-        elseif token == :ctrl_n
-            _dt_add_entry!(o)
-            dorefresh = true
-
-        elseif token == :ctrl_d
-            _dt_delete_entry!(o)
-            dorefresh = true
-
-        elseif token == "r"
-            _dt_rename_key!(o)
-            dorefresh = true
-
-        elseif token == :alt_up
-            _dt_swap_vector_element!(o, -1)
-            dorefresh = true
-
-        elseif token == :alt_down
-            _dt_swap_vector_element!(o, 1)
-            dorefresh = true
-
-        elseif token == "+"
-            currentstack  = data.datalist[data.currentLine].stack
-            somethingchanged = false
-            for i = 1:data.datalistlen
-                if data.datalist[i].expandhint != :single
-                    stck = data.datalist[i].stack
-                    if !get(data.openstatemap, stck, false)
-                        data.openstatemap[stck] = true
-                        somethingchanged = true
-                    end
-                end
-            end
-            if somethingchanged
-                prevline = data.currentLine
-                update_data()
-                for i = data.currentLine:data.datalistlen
-                    if currentstack == data.datalist[i].stack
-                        data.currentLine = i
-                        abs(i - prevline) > viewH && (data.currentTop = i - round(Int, viewH / 2))
-                        break
-                    end
-                end
-                checkTop()
-                dorefresh = true
-            else
-                beep()
-            end
-
-        elseif token == "-"
-            currentstack  = copy(data.datalist[data.currentLine].stack)
-            maxdepth = maximum(map(x -> length(x[4]), data.datalist))
-            somethingchanged = false
-            if maxdepth > 1
-                for i = 1:data.datalistlen
-                    stck = data.datalist[i].stack
-                    if data.datalist[i].expandhint != :single && length(stck) == maxdepth - 1
-                        if get(data.openstatemap, stck, false)
-                            data.openstatemap[stck] = false
-                            somethingchanged = true
-                        end
-                    end
-                end
-                if somethingchanged
-                    update_data()
-                    length(currentstack) == maxdepth && pop!(currentstack)
-                    prevline = data.currentLine; data.currentLine = 1
-                    for i = 1:min(prevline, data.datalistlen)
-                        if currentstack == data.datalist[i].stack
-                            data.currentLine = i
-                            abs(i - prevline) > viewH && (data.currentTop = i - round(Int, viewH / 2))
-                            break
-                        end
-                    end
-                    checkTop()
-                    dorefresh = true
-                end
-            else
-                beep()
-            end
-
-        elseif token == "_"
-            currentstack = copy(data.datalist[data.currentLine].stack)
-            length(currentstack) > 1 && (currentstack = Any[currentstack[1]])
-            data.openstatemap = Dict{Any,Bool}()
-            data.openstatemap[Any[]] = true
-            update_data()
-            prevline = data.currentLine; data.currentLine = 1
-            for i = 1:min(prevline, data.datalistlen)
-                if currentstack == data.datalist[i].stack
-                    data.currentLine = i
-                    abs(i - prevline) > viewH && (data.currentTop = data.currentLine - round(Int, viewH / 2))
-                    break
-                end
-            end
-            checkTop()
-            dorefresh = true
-
-        elseif token == :up
-            dorefresh = moveby(-1)
-
-        elseif token == :down
-            dorefresh = moveby(1)
-
-        elseif token == :pageup
-            dorefresh = moveby(-viewH)
-
-        elseif token == :pagedown
-            dorefresh = moveby(viewH)
-
-        elseif token == :home
-            if data.currentTop != 1 || data.currentLine != 1
-                data.currentTop = 1; data.currentLine = 1
-                dorefresh = true
-            else
-                beep()
-            end
-
-        elseif in(token, Any[Symbol("end")])
-            if data.currentLine < data.datalistlen
-                data.currentLine = data.datalistlen
-                checkTop()
-                dorefresh = true
-            else
-                beep()
-            end
-
-        elseif token == :left
-            if data.currentLeft > 1
-                data.currentLeft -= 1; dorefresh = true
-            else
-                beep()
-            end
-
-        elseif token == :right
-            if data.currentLeft + o.width - 2 * o.borderSizeH < viewW
-                data.currentLeft += 1; dorefresh = true
-            else
-                beep()
-            end
-
-        elseif token == :ctrl_left || token == :ctrl_up || token == :ctrl_down
-            # Parent / prev-sibling / next-sibling, shared with the tree and file
-            # browser via the generic tree_nav primitive.
-            dir = token == :ctrl_left ? :parent :
-                  token == :ctrl_up   ? :prev_sibling : :next_sibling
-            (target, moved) = tree_nav(data.datalist, data.currentLine, dir)
-            if moved
-                data.currentLine = target; checkTop(); dorefresh = true
-            else
-                beep()
-            end
-
-        elseif token == :F5
-            stck = copy(data.datalist[data.currentLine].stack)
-            lastkey = isempty(stck) ? o.title : stck[end]
-            v = getvaluebypath(o.value, copy(stck))
-            if v isa Expr
-                tshow(exprstring( v ), "julia"; title = string(lastkey))
-            else
-                s = string(v)
-                tshow(s; title = string(lastkey))
-            end
-            dorefresh = true
-
-        elseif token == :F6
-            stck = copy(data.datalist[data.currentLine].stack)
-            lastkey = isempty(stck) ? o.title : stck[end]
-            v = getvaluebypath(o.value, stck)
-            if !in(v, [nothing, Nothing, Any])
-                tshow(v, title = string(lastkey))
-                dorefresh = true
-            end
-
-        elseif token == :F7
-            stck = copy(data.datalist[data.currentLine].stack)
-            lastkey = isempty(stck) ? o.title : stck[end]
-            v = getvaluebypath(o.value, stck)
-            helper = newTwEntry(
-                o.screen.value,
-                String;
-                width = 34,
-                posy = :center,
-                posx = :center,
-                title = "Store as global: ",
-            )
-            helper.data.inputText = string(lastkey)
-            helper.data.cursorPos = length(helper.data.inputText) + 1
-            varname = activateTwObj(helper)
-            unregisterTwObj(o.screen.value, helper)
-            if varname !== nothing && !isempty(strip(varname))
-                try
-                    Core.eval(Main, Expr(:(=), Symbol(strip(varname)), QuoteNode(v)))
-                catch err
-                    tshow("Error storing variable:\n" * string(err), title = "F7 error")
-                end
-            end
-            dorefresh = true
-
-        elseif token == "/"
-            helper = newTwEntry(
-                o.screen.value, String;
-                width = 30, posy = :center, posx = :center, title = "Search: ",
-            )
-            helper.data.inputText = data.searchText
-            s = activateTwObj(helper)
-            unregisterTwObj(o.screen.value, helper)
-            if s !== nothing && s != "" && data.searchText != s
-                data.searchText = s
-                searchNext(1, true)
-            end
-            dorefresh = true
-
-        elseif token == "n" || token == "p" || token == "N" || token == :ctrl_p
-            if data.searchText != "" && data.datalistlen > 0
-                searchNext(((token == "n" || token == "N") ? 1 : -1), false)
-            end
-            dorefresh = true
-
-        elseif token == :KEY_MOUSE
-            (mstate, x, y, _) = getmouse()
-            if mstate == :scroll_up
-                dorefresh = moveby(-(round(Int, viewH / 5)))
-            elseif mstate == :scroll_down
-                dorefresh = moveby(round(Int, viewH / 5))
-            elseif mstate == :button1_pressed
-                begy, begx = getwinbegyx(o.window)
-                relx = x - begx; rely = y - begy
-                if 0 <= relx < o.width && 0 <= rely < o.height
-                    clicked = data.currentTop + rely - o.borderSizeV
-                    if 1 <= clicked <= data.datalistlen
-                        data.currentLine = clicked; checkTop(); dorefresh = true
-                    end
-                else
-                    retcode = Ignored
-                end
-            end
-
-        else
-            retcode = Ignored
-        end
-    end
-
-    if dorefresh
         refresh(o)
+        return Handled
     end
-    retcode
+
+    # 2. Bindings table (nav + structural ops)
+    r = inject_via_table(o, token)
+    r === Handled && refresh(o)
+    r !== Ignored && return r
+
+    # 3. h-scroll and mouse (undocumented)
+    (viewH, viewW, _) = _dt_view_dims(o)
+    if token == :left
+        data.currentLeft > 1 ? (data.currentLeft -= 1; refresh(o)) : beep()
+        return Handled
+    elseif token == :right
+        data.currentLeft + o.width - 2 * o.borderSizeH < viewW ?
+            (data.currentLeft += 1; refresh(o)) : beep()
+        return Handled
+    elseif token == :KEY_MOUSE
+        (mstate, x, y, _) = getmouse()
+        if mstate == :scroll_up
+            _dt_moveby!(o, -(round(Int, viewH / 5))); refresh(o)
+        elseif mstate == :scroll_down
+            _dt_moveby!(o,  round(Int, viewH / 5));  refresh(o)
+        elseif mstate == :button1_pressed
+            begy, begx = getwinbegyx(o.window)
+            relx = x - begx; rely = y - begy
+            if 0 <= relx < o.width && 0 <= rely < o.height
+                clicked = data.currentTop + rely - o.borderSizeV
+                if 1 <= clicked <= data.datalistlen
+                    data.currentLine = clicked; _dt_checkTop!(o); refresh(o)
+                end
+            else
+                return Ignored
+            end
+        end
+        return Handled
+    end
+
+    return Ignored
 end
 
 # ─── helptext ─────────────────────────────────────────────────────────────────
 
-function helptext(o::TwObj{TwDictTreeData})
-    o.data.showHelp ? o.data.helpText : ""
-end
+helptext(o::TwObj{TwDictTreeData}) = o.data.showHelp ? helptext_from_bindings(o) : ""
 
 function clamp_scroll!(o::TwObj{TwDictTreeData})
     _dt_update_dimensions!(o)

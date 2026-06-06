@@ -1,23 +1,4 @@
-defaultFileBrowserHelpText = """
-PgUp/PgDn, Up/Dn  : standard navigation
-<spc>,<rtn>: toggle dir / select file
-..         : go up one directory level
-Home       : jump to the start
-End        : jump to the end
-ctrl_left  : jump to parent directory
-ctrl_up    : jump to previous sibling
-ctrl_down  : jump to next sibling
-ctrl-PgUp/Dn      : pageup/down in preview pane
-ctrl-scroll up/dn : scroll up/down in preview pane
-+, -       : expand/collapse one level
-_          : collapse all
-/          : search dialog
-F6         : preview file in popup
-Shift-F6   : show file stat details
-.          : toggle hidden files
-s          : cycle sort (name/size/mtime)
-n, p       : next/previous search match
-"""
+
 defaultFileBrowserBottomText = "F1:help <spc><rtn>:toggle F6:view /:search .:hidden s:sort"
 
 const PREVIEW_EXTENSIONS = Set([".txt", ".md", ".jl", ".log", ".toml", ".csv", ".json", ".yaml", ".yml", ".xml", ".cfg", ".ini", ".conf", ".sh", ".py", ".c", ".h", ".rs", ".go"])
@@ -41,7 +22,6 @@ mutable struct TwFileBrowserData
     showLineInfo::Bool
     bottomText::String
     showHelp::Bool
-    helpText::String
     searchText::String
     showHidden::Bool
     sortBy::Symbol  # :name, :size, :mtime
@@ -68,7 +48,6 @@ mutable struct TwFileBrowserData
             true,
             "",
             true,
-            defaultFileBrowserHelpText,
             "",
             false,
             :name,
@@ -364,6 +343,364 @@ function newTwFileBrowser(
 
     link_parent_child(scr, obj, height, width, posy, posx)
     obj
+end
+
+# ─── nav + data helpers ───────────────────────────────────────────────────────
+
+function _fb_update_data!(o::TwObj{TwFileBrowserData})
+    o.data.datalist = FileRow[]
+    file_tree_data(o.data.rootpath, o.data.datalist, o.data.openstatemap,
+                   Any[], Int[], o.data.showHidden, o.data.sortBy)
+    updateFileBrowserDimensions(o)
+end
+
+function _fb_checkTop!(o::TwObj{TwFileBrowserData})
+    vh = o.height - 2 * o.borderSizeV
+    if o.data.currentTop < 1; o.data.currentTop = 1; end
+    if o.data.currentTop > o.data.datalistlen - vh + 1
+        o.data.currentTop = max(1, o.data.datalistlen - vh + 1)
+    end
+    if o.data.currentTop > o.data.currentLine
+        o.data.currentTop = o.data.currentLine
+    elseif o.data.currentLine - o.data.currentTop > vh - 1
+        o.data.currentTop = o.data.currentLine - vh + 1
+    end
+end
+
+function _fb_moveby!(o::TwObj{TwFileBrowserData}, n::Int)
+    o.data.datalistlen == 0 && (beep(); return false)
+    old = o.data.currentLine
+    o.data.currentLine = max(1, min(o.data.datalistlen, o.data.currentLine + n))
+    if old != o.data.currentLine
+        _fb_checkTop!(o)
+        return true
+    else
+        beep()
+        return false
+    end
+end
+
+function _fb_search_next!(o::TwObj{TwFileBrowserData}, step::Int, trivialstop::Bool)
+    vh = o.height - 2 * o.borderSizeV
+    o.data.datalistlen == 0 && (beep(); return 0)
+    st = o.data.currentLine
+    o.data.searchText = lowercase(o.data.searchText)
+    i = trivialstop ? st : (mod(st - 1 + step, o.data.datalistlen) + 1)
+    while true
+        if occursin(o.data.searchText, lowercase(o.data.datalist[i].name))
+            o.data.currentLine = i
+            abs(i - st) > vh && (o.data.currentTop = o.data.currentLine - (vh >> 1))
+            _fb_checkTop!(o)
+            return i
+        end
+        i = mod(i - 1 + step, o.data.datalistlen) + 1
+        i == st && (beep(); return 0)
+    end
+end
+
+function _fb_navigate_up!(o::TwObj{TwFileBrowserData})
+    parentpath = dirname(o.data.rootpath)
+    parentpath == o.data.rootpath && (beep(); return false)
+    o.data.rootpath = parentpath
+    o.title = parentpath
+    o.data.openstatemap = Dict{String,Bool}()
+    o.data.openstatemap[o.data.rootpath] = true
+    o.data.datalist = FileRow[]
+    file_tree_data(o.data.rootpath, o.data.datalist, o.data.openstatemap,
+                   Any[], Int[], o.data.showHidden, o.data.sortBy)
+    updateFileBrowserDimensions(o)
+    o.data.currentLine = 1; o.data.currentTop = 1; o.data.currentLeft = 1
+    o.data.previewPath = ""; o.data.previewTop = 1
+    return true
+end
+
+function _fb_expand_all!(o::TwObj{TwFileBrowserData})
+    o.data.datalistlen == 0 && (beep(); return false)
+    vh = o.height - 2 * o.borderSizeV
+    currentstack = o.data.datalist[o.data.currentLine].stack
+    somethingchanged = false
+    for i = 1:o.data.datalistlen
+        if o.data.datalist[i].expandhint == :close
+            o.data.openstatemap[o.data.datalist[i].abspath] = true
+            somethingchanged = true
+        end
+    end
+    if somethingchanged
+        prevline = o.data.currentLine
+        _fb_update_data!(o)
+        for i = o.data.currentLine:o.data.datalistlen
+            if currentstack == o.data.datalist[i].stack
+                o.data.currentLine = i
+                abs(i - prevline) > vh && (o.data.currentTop = i - round(Int, vh / 2))
+                break
+            end
+        end
+        _fb_checkTop!(o)
+        return true
+    else
+        beep()
+        return false
+    end
+end
+
+function _fb_collapse_deepest!(o::TwObj{TwFileBrowserData})
+    o.data.datalistlen == 0 && (beep(); return)
+    vh = o.height - 2 * o.borderSizeV
+    currentstack = copy(o.data.datalist[o.data.currentLine].stack)
+    maxdepth = maximum(map(r -> length(r.stack), o.data.datalist))
+    maxdepth <= 1 && (beep(); return)
+    somethingchanged = false
+    for i = 1:o.data.datalistlen
+        stck = o.data.datalist[i].stack
+        if o.data.datalist[i].expandhint != :single && length(stck) == maxdepth - 1
+            fullpath = o.data.datalist[i].abspath
+            if get(o.data.openstatemap, fullpath, false)
+                o.data.openstatemap[fullpath] = false
+                somethingchanged = true
+            end
+        end
+    end
+    if somethingchanged
+        _fb_update_data!(o)
+        length(currentstack) == maxdepth && pop!(currentstack)
+        prevline = o.data.currentLine; o.data.currentLine = 1
+        for i = 1:min(prevline, o.data.datalistlen)
+            if currentstack == o.data.datalist[i].stack
+                o.data.currentLine = i
+                abs(i - prevline) > vh && (o.data.currentTop = i - round(Int, vh / 2))
+                break
+            end
+        end
+        _fb_checkTop!(o)
+    else
+        beep()
+    end
+end
+
+function _fb_collapse_all!(o::TwObj{TwFileBrowserData})
+    o.data.datalistlen == 0 && (beep(); return)
+    vh = o.height - 2 * o.borderSizeV
+    currentstack = copy(o.data.datalist[o.data.currentLine].stack)
+    length(currentstack) > 1 && (currentstack = Any[currentstack[1]])
+    o.data.openstatemap = Dict{String,Bool}()
+    o.data.openstatemap[o.data.rootpath] = true
+    _fb_update_data!(o)
+    prevline = o.data.currentLine; o.data.currentLine = 1
+    for i = 1:min(prevline, o.data.datalistlen)
+        if currentstack == o.data.datalist[i].stack
+            o.data.currentLine = i
+            abs(i - prevline) > vh && (o.data.currentTop = o.data.currentLine - round(Int, vh / 2))
+            break
+        end
+    end
+    _fb_checkTop!(o)
+end
+
+function _fb_toggle_hidden!(o::TwObj{TwFileBrowserData})
+    o.data.showHidden = !o.data.showHidden
+    prevstack = o.data.datalistlen > 0 ? copy(o.data.datalist[o.data.currentLine].stack) : Any[]
+    _fb_update_data!(o)
+    o.data.currentLine = 1
+    for i = 1:o.data.datalistlen
+        o.data.datalist[i].stack == prevstack && (o.data.currentLine = i; break)
+    end
+    _fb_checkTop!(o)
+end
+
+function _fb_cycle_sort!(o::TwObj{TwFileBrowserData})
+    o.data.sortBy = o.data.sortBy == :name ? :size : o.data.sortBy == :size ? :mtime : :name
+    prevstack = o.data.datalistlen > 0 ? copy(o.data.datalist[o.data.currentLine].stack) : Any[]
+    _fb_update_data!(o)
+    o.data.currentLine = 1
+    for i = 1:o.data.datalistlen
+        o.data.datalist[i].stack == prevstack && (o.data.currentLine = i; break)
+    end
+    _fb_checkTop!(o)
+end
+
+# ─── bindings ─────────────────────────────────────────────────────────────────
+
+function bindings(o::TwObj{TwFileBrowserData})
+    vh = () -> o.height - 2 * o.borderSizeV
+    [
+        Binding(:esc, "cancel", action = _->Cancel),
+        Binding(" ", "toggle dir",
+                action = _->begin
+                    o.data.datalistlen == 0 && (beep(); return Handled)
+                    fullpath = o.data.datalist[o.data.currentLine].abspath
+                    is_dir   = o.data.datalist[o.data.currentLine].isdir
+                    if fullpath == dirname(o.data.rootpath) &&
+                            o.data.datalist[o.data.currentLine].name == "../"
+                        _fb_navigate_up!(o)
+                    elseif is_dir
+                        o.data.datalist[o.data.currentLine].expandhint == :single ?
+                            beep() :
+                            (o.data.openstatemap[fullpath] = !get(o.data.openstatemap, fullpath, false);
+                             _fb_update_data!(o))
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+        Binding([:enter, Symbol("return")], "select / toggle",
+                action = _->begin
+                    o.data.datalistlen == 0 && (beep(); return Handled)
+                    fullpath = o.data.datalist[o.data.currentLine].abspath
+                    is_dir   = o.data.datalist[o.data.currentLine].isdir
+                    if fullpath == dirname(o.data.rootpath) &&
+                            o.data.datalist[o.data.currentLine].name == "../"
+                        _fb_navigate_up!(o)
+                        return Handled
+                    elseif is_dir
+                        o.data.datalist[o.data.currentLine].expandhint == :single ?
+                            beep() :
+                            (o.data.openstatemap[fullpath] = !get(o.data.openstatemap, fullpath, false);
+                             _fb_update_data!(o))
+                        return Handled
+                    else
+                        o.value = fullpath
+                        return Accept
+                    end
+                end),
+        Binding("+", "expand all",     action = _->(_fb_expand_all!(o); Handled)),
+        Binding("-", "collapse level", action = _->(_fb_collapse_deepest!(o); Handled)),
+        Binding("_", "collapse all",   action = _->(_fb_collapse_all!(o); Handled)),
+        Binding(".", "toggle hidden",  action = _->(_fb_toggle_hidden!(o); Handled)),
+        Binding("s", "cycle sort",     action = _->(_fb_cycle_sort!(o); Handled)),
+        Binding(:F6, "popup viewer",
+                action = _->begin
+                    o.data.datalistlen == 0 && (beep(); return Handled)
+                    fullpath = o.data.datalist[o.data.currentLine].abspath
+                    is_dir   = o.data.datalist[o.data.currentLine].isdir
+                    if !is_dir && isfile(fullpath)
+                        ext = o.data.datalist[o.data.currentLine].typestr
+                        sz = filesize(fullpath)
+                        if sz == 0
+                            text = "(empty file)"
+                        else
+                            bytes = read(fullpath, min(sz, 256_000))
+                            text = any(==(0x00), bytes) ?
+                                "(binary file, " * human_readable_size(Int64(sz)) * ")" :
+                                String(bytes)
+                        end
+                        ext == ".jl" ? tshow(text, "julia:" * fullpath; title = basename(fullpath)) :
+                                       tshow(text, title = basename(fullpath))
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+        Binding(:shift_F6, "file stat",
+                action = _->begin
+                    o.data.datalistlen == 0 && (beep(); return Handled)
+                    fullpath = o.data.datalist[o.data.currentLine].abspath
+                    local info
+                    try
+                        st = stat(fullpath)
+                        info = "Path: " * fullpath * "\n"
+                        info *= "Size: " * human_readable_size(Int64(st.size)) *
+                                " (" * string(st.size) * " bytes)\n"
+                        info *= "Modified: " * string(unix2datetime(st.mtime)) * "\n"
+                        info *= "Mode: " * string(st.mode, base = 8) * "\n"
+                        islink(fullpath) && (info *= "Link target: " * readlink(fullpath) * "\n")
+                        info *= isdir(fullpath) ? "Type: directory\n" :
+                                isfile(fullpath) ? "Type: file\n" : ""
+                    catch err
+                        info = "Error reading stat: " * string(err)
+                    end
+                    tshow(info, title = "stat: " * basename(fullpath))
+                    Handled
+                end),
+        Binding(:ctrl_up, "prev sibling",
+                action = _->begin
+                    (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, :prev_sibling)
+                    moved ? (o.data.currentLine = target; _fb_checkTop!(o)) : beep()
+                    Handled
+                end),
+        Binding(:ctrl_down, "next sibling",
+                action = _->begin
+                    (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, :next_sibling)
+                    moved ? (o.data.currentLine = target; _fb_checkTop!(o)) : beep()
+                    Handled
+                end),
+        Binding(:ctrl_pageup, "preview page up",
+                action = _->begin
+                    o.data.previewTop > 1 ?
+                        (o.data.previewTop = max(1, o.data.previewTop - vh())) : beep()
+                    Handled
+                end),
+        Binding(:ctrl_pagedown, "preview page down",
+                action = _->begin
+                    curpath = o.data.datalistlen > 0 ?
+                        o.data.datalist[o.data.currentLine].abspath : ""
+                    if curpath != "" && haskey(o.data.previewCache, curpath)
+                        maxTop = max(1, length(o.data.previewCache[curpath]) - vh() + 1)
+                        o.data.previewTop < maxTop ?
+                            (o.data.previewTop = min(maxTop, o.data.previewTop + vh())) : beep()
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+        Binding(:up,       "up",        action = _->(_fb_moveby!(o, -1); Handled)),
+        Binding(:down,     "down",      action = _->(_fb_moveby!(o,  1); Handled)),
+        Binding(:pageup,   "page up",   action = _->(_fb_moveby!(o, -vh()); Handled)),
+        Binding(:pagedown, "page down", action = _->(_fb_moveby!(o,  vh()); Handled)),
+        Binding(:home, "go to start",
+                action = _->begin
+                    if o.data.currentTop != 1 || o.data.currentLeft != 1 || o.data.currentLine != 1
+                        o.data.currentTop = 1; o.data.currentLeft = 1; o.data.currentLine = 1
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+        Binding(Symbol("end"), "go to end",
+                action = _->begin
+                    if o.data.datalistlen > 0 && o.data.currentLine != o.data.datalistlen
+                        o.data.currentTop = max(1, o.data.datalistlen - vh() + 1)
+                        o.data.currentLine = o.data.datalistlen
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+        Binding("/", "search",
+                action = _->begin
+                    helper = newTwEntry(o.screen.value, String;
+                                       width = 30, posy = :center, posx = :center,
+                                       title = "Search: ")
+                    helper.data.inputText = o.data.searchText
+                    s = activateTwObj(helper)
+                    unregisterTwObj(o.screen.value, helper)
+                    if s !== nothing && s != "" && o.data.searchText != s
+                        o.data.searchText = s
+                        _fb_search_next!(o, 1, true)
+                    end
+                    Handled
+                end),
+        Binding(["n", :ctrl_n], "next match",
+                action = _->(o.data.searchText != "" && _fb_search_next!(o,  1, false); Handled)),
+        Binding(["p", "N", :ctrl_p], "prev match",
+                action = _->(o.data.searchText != "" && _fb_search_next!(o, -1, false); Handled)),
+        Binding("L", "mid → end",
+                action = _->begin
+                    o.data.datalistlen == 0 && (beep(); return Handled)
+                    target = min(round(Int, ceil((o.data.currentLine + o.data.datalistlen) / 2)),
+                                 o.data.datalistlen)
+                    target != o.data.currentLine ?
+                        (o.data.currentLine = target; _fb_checkTop!(o)) : beep()
+                    Handled
+                end),
+        Binding("l", "mid → start",
+                action = _->begin
+                    o.data.datalistlen == 0 && (beep(); return Handled)
+                    target = max(round(Int, floor(o.data.currentLine / 2)), 1)
+                    target != o.data.currentLine ?
+                        (o.data.currentLine = target; _fb_checkTop!(o)) : beep()
+                    Handled
+                end),
+    ]
 end
 
 function draw(o::TwObj{TwFileBrowserData})
@@ -678,543 +1015,65 @@ function draw(o::TwObj{TwFileBrowserData})
 end
 
 function inject(o::TwObj{TwFileBrowserData}, token)
-    dorefresh = false
-    retcode = Handled
-    viewContentHeight = o.height - 2 * o.borderSizeV
+    r = inject_via_table(o, token)
+    r === Handled && refresh(o)
+    r !== Ignored && return r
 
-    update_file_data =
-        () -> begin
-            o.data.datalist = FileRow[]
-            file_tree_data(
-                o.data.rootpath,
-                o.data.datalist,
-                o.data.openstatemap,
-                Any[],
-                Int[],
-                o.data.showHidden,
-                o.data.sortBy,
-            )
-            updateFileBrowserDimensions(o)
-        end
-
-    navigate_up =
-        () -> begin
-            parentpath = dirname(o.data.rootpath)
-            if parentpath == o.data.rootpath
-                beep()
-                return false
-            end
-            o.data.rootpath = parentpath
-            o.title = parentpath
-            o.data.openstatemap = Dict{String,Bool}()
-            o.data.openstatemap[o.data.rootpath] = true
-            o.data.datalist = FileRow[]
-            file_tree_data(
-                o.data.rootpath,
-                o.data.datalist,
-                o.data.openstatemap,
-                Any[],
-                Int[],
-                o.data.showHidden,
-                o.data.sortBy,
-            )
-            updateFileBrowserDimensions(o)
-            o.data.currentLine = 1
-            o.data.currentTop = 1
-            o.data.currentLeft = 1
-            o.data.previewPath = ""
-            o.data.previewTop = 1
-            return true
-        end
-
-    checkTop =
-        () -> begin
-            if o.data.currentTop < 1
-                o.data.currentTop = 1
-            elseif o.data.currentTop > o.data.datalistlen - viewContentHeight + 1
-                o.data.currentTop = max(1, o.data.datalistlen - viewContentHeight + 1)
-            end
-            if o.data.currentTop > o.data.currentLine
-                o.data.currentTop = o.data.currentLine
-            elseif o.data.currentLine - o.data.currentTop > viewContentHeight - 1
-                o.data.currentTop = o.data.currentLine - viewContentHeight + 1
-            end
-        end
-
-    moveby =
-        n -> begin
-            if o.data.datalistlen == 0
-                beep()
-                return false
-            end
-            oldline = o.data.currentLine
-            o.data.currentLine = max(1, min(o.data.datalistlen, o.data.currentLine + n))
-            if oldline != o.data.currentLine
-                checkTop()
-                return true
-            else
-                beep()
-                return false
-            end
-        end
-
-    searchNext =
-        (step, trivialstop) -> begin
-            if o.data.datalistlen == 0
-                beep()
-                return 0
-            end
-            local st = o.data.currentLine
-            o.data.searchText = lowercase(o.data.searchText)
-            i = trivialstop ? st : (mod(st - 1 + step, o.data.datalistlen) + 1)
-            while true
-                if occursin(o.data.searchText, lowercase(o.data.datalist[i].name))
-                    o.data.currentLine = i
-                    if abs(i - st) > viewContentHeight
-                        o.data.currentTop = o.data.currentLine - (viewContentHeight >> 1)
-                    end
-                    checkTop()
-                    return i
-                end
-                i = mod(i - 1 + step, o.data.datalistlen) + 1
-                if i == st
-                    beep()
-                    return 0
-                end
-            end
-        end
-
-    if token == :esc
-        retcode = Cancel
-    elseif token == " " || token == Symbol("return") || token == :enter
-        if o.data.datalistlen == 0
-            beep()
-        else
-            expandhint = o.data.datalist[o.data.currentLine].expandhint
-            is_dir = o.data.datalist[o.data.currentLine].isdir
-            fullpath = o.data.datalist[o.data.currentLine].abspath
-            if fullpath == dirname(o.data.rootpath) && o.data.datalist[o.data.currentLine].name == "../"
-                # ".." entry — navigate to parent directory
-                navigate_up()
-                dorefresh = true
-            elseif is_dir
-                # toggle expand/collapse
-                if expandhint == :single
-                    beep()
-                else
-                    if haskey(o.data.openstatemap, fullpath) && o.data.openstatemap[fullpath]
-                        o.data.openstatemap[fullpath] = false
-                    else
-                        o.data.openstatemap[fullpath] = true
-                    end
-                    update_file_data()
-                    dorefresh = true
-                end
-            else
-                # select file
-                if token == Symbol("return") || token == :enter
-                    o.value = fullpath
-                    retcode = Accept
-                else
-                    # space on a file — just beep or do nothing
-                    beep()
-                end
-            end
-        end
-    elseif token == "+"
-        # expand all currently visible collapsed directories by one level
-        if o.data.datalistlen == 0
-            beep()
-        else
-            currentstack = o.data.datalist[o.data.currentLine].stack
-            somethingchanged = false
-            for i = 1:o.data.datalistlen
-                expandhint = o.data.datalist[i].expandhint
-                if expandhint == :close
-                    fullpath = o.data.datalist[i].abspath
-                    o.data.openstatemap[fullpath] = true
-                    somethingchanged = true
-                end
-            end
-            if somethingchanged
-                prevline = o.data.currentLine
-                update_file_data()
-                for i = o.data.currentLine:o.data.datalistlen
-                    if currentstack == o.data.datalist[i].stack
-                        o.data.currentLine = i
-                        if abs(i - prevline) > viewContentHeight
-                            o.data.currentTop = i - round(Int, viewContentHeight / 2)
-                        end
-                        break
-                    end
-                end
-                checkTop()
-                dorefresh = true
-            else
-                beep()
-            end
-        end
-    elseif token == "-"
-        # collapse deepest expanded level
-        if o.data.datalistlen == 0
-            beep()
-        else
-            currentstack = copy(o.data.datalist[o.data.currentLine].stack)
-            maxstackdepth = maximum(map(r -> length(r.stack), o.data.datalist))
-            if maxstackdepth > 1
-                somethingchanged = false
-                for i = 1:o.data.datalistlen
-                    expandhint = o.data.datalist[i].expandhint
-                    stck = o.data.datalist[i].stack
-                    if expandhint != :single && length(stck) == maxstackdepth - 1
-                        fullpath = o.data.datalist[i].abspath
-                        if haskey(o.data.openstatemap, fullpath) && o.data.openstatemap[fullpath]
-                            o.data.openstatemap[fullpath] = false
-                            somethingchanged = true
-                        end
-                    end
-                end
-                if somethingchanged
-                    update_file_data()
-                    if length(currentstack) == maxstackdepth
-                        pop!(currentstack)
-                    end
-                    prevline = o.data.currentLine
-                    o.data.currentLine = 1
-                    for i = 1:min(prevline, o.data.datalistlen)
-                        if currentstack == o.data.datalist[i].stack
-                            o.data.currentLine = i
-                            if abs(i - prevline) > viewContentHeight
-                                o.data.currentTop = i - round(Int, viewContentHeight / 2)
-                            end
-                            break
-                        end
-                    end
-                    checkTop()
-                    dorefresh = true
-                else
-                    beep()
-                end
-            else
-                beep()
-            end
-        end
-    elseif token == "_"
-        # collapse all
-        if o.data.datalistlen == 0
-            beep()
-        else
-            currentstack = copy(o.data.datalist[o.data.currentLine].stack)
-            if length(currentstack) > 1
-                currentstack = Any[currentstack[1]]
-            end
-            o.data.openstatemap = Dict{String,Bool}()
-            o.data.openstatemap[o.data.rootpath] = true
-            update_file_data()
-            prevline = o.data.currentLine
-            o.data.currentLine = 1
-            for i = 1:min(prevline, o.data.datalistlen)
-                if currentstack == o.data.datalist[i].stack
-                    o.data.currentLine = i
-                    if abs(i - prevline) > viewContentHeight
-                        o.data.currentTop =
-                            o.data.currentLine - round(Int, viewContentHeight / 2)
-                    end
-                    break
-                end
-            end
-            checkTop()
-            dorefresh = true
-        end
-    elseif token == "."
-        # toggle hidden files
-        o.data.showHidden = !o.data.showHidden
-        prevstack = o.data.datalistlen > 0 ? copy(o.data.datalist[o.data.currentLine].stack) : Any[]
-        update_file_data()
-        # try to restore position
-        o.data.currentLine = 1
-        for i = 1:o.data.datalistlen
-            if o.data.datalist[i].stack == prevstack
-                o.data.currentLine = i
-                break
-            end
-        end
-        checkTop()
-        dorefresh = true
-    elseif token == "s"
-        # cycle sort order
-        if o.data.sortBy == :name
-            o.data.sortBy = :size
-        elseif o.data.sortBy == :size
-            o.data.sortBy = :mtime
-        else
-            o.data.sortBy = :name
-        end
-        prevstack = o.data.datalistlen > 0 ? copy(o.data.datalist[o.data.currentLine].stack) : Any[]
-        update_file_data()
-        o.data.currentLine = 1
-        for i = 1:o.data.datalistlen
-            if o.data.datalist[i].stack == prevstack
-                o.data.currentLine = i
-                break
-            end
-        end
-        checkTop()
-        dorefresh = true
-    elseif token == :F6
-        if o.data.datalistlen == 0
-            beep()
-        else
-            fullpath = o.data.datalist[o.data.currentLine].abspath
-            is_dir = o.data.datalist[o.data.currentLine].isdir
-            if !is_dir && isfile(fullpath)
-                ext = o.data.datalist[o.data.currentLine].typestr
-                sz = filesize(fullpath)
-                if sz == 0
-                    text = "(empty file)"
-                else
-                    bytes = read(fullpath, min(sz, 256_000))
-                    if any(==(0x00), bytes)
-                        text = "(binary file, " * human_readable_size(Int64(sz)) * ")"
-                    else
-                        text = String(bytes)
-                    end
-                end
-                if ext == ".jl"
-                    tshow(text,"julia:" * fullpath; title = basename(fullpath))
-                else
-                    tshow(text, title = basename(fullpath))
-                end
-                dorefresh = true
-            else
-                beep()
-            end
-        end
-    elseif token == :shift_F6
-        if o.data.datalistlen == 0
-            beep()
-        else
-            fullpath = o.data.datalist[o.data.currentLine].abspath
-            local info
-            try
-                st = stat(fullpath)
-                info = "Path: " * fullpath * "\n"
-                info *= "Size: " * human_readable_size(Int64(st.size)) * " (" * string(st.size) * " bytes)\n"
-                info *= "Modified: " * string(unix2datetime(st.mtime)) * "\n"
-                info *= "Mode: " * string(st.mode, base=8) * "\n"
-                if islink(fullpath)
-                    info *= "Link target: " * readlink(fullpath) * "\n"
-                end
-                if isdir(fullpath)
-                    info *= "Type: directory\n"
-                elseif isfile(fullpath)
-                    info *= "Type: file\n"
-                end
-            catch err
-                info = "Error reading stat: " * string(err)
-            end
-            tshow(info, title = "stat: " * basename(fullpath))
-            dorefresh = true
-        end
-    elseif token == :ctrl_up || token == :ctrl_down
-        # Prev/next sibling (same depth + parent dir), shared with the tree and
-        # dict tree via the generic tree_nav primitive.
-        dir = token == :ctrl_up ? :prev_sibling : :next_sibling
-        (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, dir)
-        if moved
-            o.data.currentLine = target
-            checkTop()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :ctrl_pageup
-        # page up in preview pane
-        if o.data.previewTop > 1
-            o.data.previewTop = max(1, o.data.previewTop - viewContentHeight)
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :ctrl_pagedown
-        # page down in preview pane
-        curpath = o.data.datalistlen > 0 ? o.data.datalist[o.data.currentLine].abspath : ""
-        if curpath != "" && haskey(o.data.previewCache, curpath)
-            maxTop = max(1, length(o.data.previewCache[curpath]) - viewContentHeight + 1)
-            if o.data.previewTop < maxTop
-                o.data.previewTop = min(maxTop, o.data.previewTop + viewContentHeight)
-                dorefresh = true
-            else
-                beep()
-            end
-        else
-            beep()
-        end
-    elseif token == :up
-        dorefresh = moveby(-1)
-    elseif token == :down
-        dorefresh = moveby(1)
-    elseif token == :left
-        if o.data.currentLeft > 1
-            o.data.currentLeft -= 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :ctrl_left
-        # Move to the parent directory node, shared via tree_nav.
-        (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, :parent)
-        if moved
-            o.data.currentLine = target
-            checkTop()
-            dorefresh = true
-        else
-            beep()
-        end
+    # h-scroll, ctrl_left (parent dir), ctrl_right, mouse
+    vh = o.height - 2 * o.borderSizeV
+    if token == :left
+        o.data.currentLeft > 1 ? (o.data.currentLeft -= 1; refresh(o)) : beep()
+        return Handled
     elseif token == :right
-        o.data.currentLeft += 1
-        dorefresh = true
+        o.data.currentLeft += 1; refresh(o)
+        return Handled
     elseif token == :ctrl_right
-        o.data.currentLeft += 10
-        dorefresh = true
-    elseif token == :pageup
-        dorefresh = moveby(-viewContentHeight)
-    elseif token == :pagedown
-        dorefresh = moveby(viewContentHeight)
+        o.data.currentLeft += 10; refresh(o)
+        return Handled
+    elseif token == :ctrl_left
+        (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, :parent)
+        moved ? (o.data.currentLine = target; _fb_checkTop!(o); refresh(o)) : beep()
+        return Handled
     elseif token == :KEY_MOUSE
         (mstate, x, y, bs) = getmouse()
         if mstate == :scroll_up
-            dorefresh = moveby(-(round(Int, viewContentHeight / 5)))
+            _fb_moveby!(o, -(round(Int, vh / 5))); refresh(o)
         elseif mstate == :scroll_down
-            dorefresh = moveby(round(Int, viewContentHeight / 5))
+            _fb_moveby!(o,  round(Int, vh / 5));  refresh(o)
         elseif mstate == :ctrl_scroll_up
-            # scroll preview pane up by one line
             if o.data.previewTop > 1
-		o.data.previewTop = max( 1, o.data.previewTop - 5 )
-                dorefresh = true
+                o.data.previewTop = max(1, o.data.previewTop - 5); refresh(o)
             else
                 beep()
             end
         elseif mstate == :ctrl_scroll_down
-            # scroll preview pane down by one line
             curpath = o.data.datalistlen > 0 ? o.data.datalist[o.data.currentLine].abspath : ""
             if curpath != "" && haskey(o.data.previewCache, curpath)
-                maxTop = max(1, length(o.data.previewCache[curpath]) - viewContentHeight + 1)
-                if o.data.previewTop < maxTop
-		    o.data.previewTop = min(maxTop, o.data.previewTop + 5)
-                    dorefresh = true
-                else
-                    beep()
-                end
+                maxTop = max(1, length(o.data.previewCache[curpath]) - vh + 1)
+                o.data.previewTop < maxTop ?
+                    (o.data.previewTop = min(maxTop, o.data.previewTop + 5); refresh(o)) : beep()
             else
                 beep()
             end
         elseif mstate == :button1_pressed
             begy, begx = getwinbegyx(o.window)
-            relx = x - begx
-            rely = y - begy
+            relx = x - begx; rely = y - begy
             if 0 <= relx < o.width && 0 <= rely < o.height
                 newline = o.data.currentTop + rely - o.borderSizeV
                 if newline >= 1 && newline <= o.data.datalistlen
-                    o.data.currentLine = newline
-                    dorefresh = true
+                    o.data.currentLine = newline; _fb_checkTop!(o); refresh(o)
                 end
             else
-                retcode = Ignored
+                return Ignored
             end
         end
-    elseif token == :home
-        if o.data.currentTop != 1 || o.data.currentLeft != 1 || o.data.currentLine != 1
-            o.data.currentTop = 1
-            o.data.currentLeft = 1
-            o.data.currentLine = 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == "/"
-        helper = newTwEntry(
-            o.screen.value,
-            String;
-            width = 30,
-            posy = :center,
-            posx = :center,
-            title = "Search: ",
-        )
-        helper.data.inputText = o.data.searchText
-        s = activateTwObj(helper)
-        unregisterTwObj(o.screen.value, helper)
-        if s !== nothing
-            if s != "" && o.data.searchText != s
-                o.data.searchText = s
-                searchNext(1, true)
-            end
-        end
-        dorefresh = true
-    elseif token == "n" ||
-           token == "p" ||
-           token == "N" ||
-           token == :ctrl_n ||
-           token == :ctrl_p
-        if o.data.searchText != ""
-            searchNext(((token == "n" || token == :ctrl_n) ? 1 : -1), false)
-        end
-        dorefresh = true
-    elseif in(token, Any[Symbol("end")])
-        if o.data.datalistlen > 0 && o.data.currentLine != o.data.datalistlen
-            o.data.currentTop = max(1, o.data.datalistlen - viewContentHeight + 1)
-            o.data.currentLine = o.data.datalistlen
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == "L"
-        if o.data.datalistlen == 0
-            beep()
-        else
-            target = min(
-                round(Int, ceil((o.data.currentLine + o.data.datalistlen) / 2)),
-                o.data.datalistlen,
-            )
-            if target != o.data.currentLine
-                o.data.currentLine = target
-                checkTop()
-                dorefresh = true
-            else
-                beep()
-            end
-        end
-    elseif token == "l"
-        if o.data.datalistlen == 0
-            beep()
-        else
-            target = max(round(Int, floor(o.data.currentLine / 2)), 1)
-            if target != o.data.currentLine
-                o.data.currentLine = target
-                checkTop()
-                dorefresh = true
-            else
-                beep()
-            end
-        end
-    else
-        retcode = Ignored
+        return Handled
     end
 
-    if dorefresh
-        refresh(o)
-    end
-
-    return retcode
+    return Ignored
 end
 
-function helptext(o::TwObj{TwFileBrowserData})
-    if o.data.showHelp
-        o.data.helpText
-    else
-        ""
-    end
-end
+helptext(o::TwObj{TwFileBrowserData}) = o.data.showHelp ? helptext_from_bindings(o) : ""
 
 function clamp_scroll!(o::TwObj{TwFileBrowserData})
     updateFileBrowserDimensions(o)

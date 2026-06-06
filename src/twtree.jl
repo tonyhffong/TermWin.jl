@@ -1,22 +1,3 @@
-defaultTreeHelpText = """
-PgUp/PgDn,
-Arrow keys : standard navigation
-<spc>,<rtn>: toggle leaf expansion
-Home       : jump to the start
-End        : jump to the end
-ctrl_left  : jump to parent node
-ctrl_up    : jump to previous sibling
-ctrl_down  : jump to next sibling
-+, -       : expand/collapse one level
-_          : collapse all
-/          : search dialog
-F5         : show string(value) — with Julia syntax color if Expr
-F6         : popup window for value
-Shift-F6   : popup window for type
-F7         : store value into a Main global variable
-n, p       : Move to next/previous matched line
-m          : (Module Only) toggle export-only vs all names
-"""
 defaultTreeBottomText = "F1:help <spc><rtn>:toggle F5:string F6:popup F7:SaveGlobal +/-:exp&collaps /:search"
 
 modulenames = Dict{Module,Array{Symbol,1}}()
@@ -44,7 +25,6 @@ mutable struct TwTreeData
     showLineInfo::Bool # e.g.1/100 1.0% at top right corner
     bottomText::String
     showHelp::Bool
-    helpText::String
     searchText::String
     moduleall::Bool
     function TwTreeData()
@@ -62,7 +42,6 @@ mutable struct TwTreeData
             true,
             "",
             true,
-            defaultTreeHelpText,
             "",
             true,
         )
@@ -330,6 +309,177 @@ function getvaluebypath(x, path)
     end
 end
 
+function _tree_update_data!(o::TwObj{TwTreeData})
+    o.data.datalist = TreeRow[]
+    tree_data(o.value, o.title, o.data.datalist, o.data.openstatemap, Any[], Int[], o.data.moduleall)
+    updateTreeDimensions(o)
+end
+
+function _tree_checkTop!(o::TwObj{TwTreeData})
+    vh = o.height - 2 * o.borderSizeV
+    if o.data.currentTop < 1
+        o.data.currentTop = 1
+    elseif o.data.currentTop > o.data.datalistlen - vh + 1
+        o.data.currentTop = max(1, o.data.datalistlen - vh + 1)
+    end
+    if o.data.currentTop > o.data.currentLine
+        o.data.currentTop = o.data.currentLine
+    elseif o.data.currentLine - o.data.currentTop > vh - 1
+        o.data.currentTop = o.data.currentLine - vh + 1
+    end
+end
+
+function _tree_moveby!(o::TwObj{TwTreeData}, n::Int)
+    oldline = o.data.currentLine
+    o.data.currentLine = max(1, min(o.data.datalistlen, o.data.currentLine + n))
+    if oldline != o.data.currentLine
+        _tree_checkTop!(o)
+        return true
+    else
+        beep()
+        return false
+    end
+end
+
+function _tree_search_next!(o::TwObj{TwTreeData}, step::Int, trivialstop::Bool)
+    st = o.data.currentLine
+    o.data.searchText = lowercase(o.data.searchText)
+    vh = o.height - 2 * o.borderSizeV
+    i = trivialstop ? st : (mod(st-1+step, o.data.datalistlen) + 1)
+    while true
+        if occursin(o.data.searchText, lowercase(o.data.datalist[i].name)) ||
+           occursin(o.data.searchText, lowercase(o.data.datalist[i].valuestr))
+            o.data.currentLine = i
+            if abs(i-st) > vh
+                o.data.currentTop = o.data.currentLine - (vh >> 1)
+            end
+            _tree_checkTop!(o)
+            return i
+        end
+        i = mod(i-1+step, o.data.datalistlen) + 1
+        if i == st
+            beep()
+            return 0
+        end
+    end
+end
+
+function _tree_toggle_expand!(o::TwObj{TwTreeData})
+    expandhint = o.data.datalist[o.data.currentLine].expandhint
+    expandhint == :single && return
+    stck = o.data.datalist[o.data.currentLine].stack
+    o.data.openstatemap[stck] = !(get(o.data.openstatemap, stck, false))
+    _tree_update_data!(o)
+end
+
+function _tree_expand_all!(o::TwObj{TwTreeData})
+    currentstack = o.data.datalist[o.data.currentLine].stack
+    somethingchanged = false
+    for i = 1:o.data.datalistlen
+        if o.data.datalist[i].expandhint != :single
+            stck = o.data.datalist[i].stack
+            if !get(o.data.openstatemap, stck, false)
+                o.data.openstatemap[stck] = true
+                somethingchanged = true
+            end
+        end
+    end
+    if somethingchanged
+        vh = o.height - 2 * o.borderSizeV
+        prevline = o.data.currentLine
+        _tree_update_data!(o)
+        for i = o.data.currentLine:o.data.datalistlen
+            if currentstack == o.data.datalist[i].stack
+                o.data.currentLine = i
+                abs(i - prevline) > vh && (o.data.currentTop = i - round(Int, vh/2))
+                break
+            end
+        end
+        _tree_checkTop!(o)
+        return true
+    else
+        beep()
+        return false
+    end
+end
+
+function _tree_collapse_deepest!(o::TwObj{TwTreeData})
+    currentstack = copy(o.data.datalist[o.data.currentLine].stack)
+    maxstackdepth = maximum(map(x->length(x.stack), o.data.datalist))
+    maxstackdepth <= 1 && (beep(); return)
+    somethingchanged = false
+    for i = 1:o.data.datalistlen
+        stck = o.data.datalist[i].stack
+        if o.data.datalist[i].expandhint != :single && length(stck) == maxstackdepth-1
+            if get(o.data.openstatemap, stck, false)
+                o.data.openstatemap[stck] = false
+                somethingchanged = true
+            end
+        end
+    end
+    if somethingchanged
+        vh = o.height - 2 * o.borderSizeV
+        _tree_update_data!(o)
+        length(currentstack) == maxstackdepth && pop!(currentstack)
+        prevline = o.data.currentLine
+        o.data.currentLine = 1
+        for i = 1:min(prevline, o.data.datalistlen)
+            if currentstack == o.data.datalist[i].stack
+                o.data.currentLine = i
+                abs(i-prevline) > vh && (o.data.currentTop = i - round(Int, vh/2))
+                break
+            end
+        end
+        _tree_checkTop!(o)
+    else
+        beep()
+    end
+end
+
+function _tree_collapse_all!(o::TwObj{TwTreeData})
+    currentstack = copy(o.data.datalist[o.data.currentLine].stack)
+    length(currentstack) > 1 && (currentstack = Any[currentstack[1]])
+    o.data.openstatemap = Dict{Any,Bool}(Any[] => true)
+    _tree_update_data!(o)
+    vh = o.height - 2 * o.borderSizeV
+    prevline = o.data.currentLine
+    o.data.currentLine = 1
+    for i = 1:min(prevline, o.data.datalistlen)
+        if currentstack == o.data.datalist[i].stack
+            o.data.currentLine = i
+            abs(i-prevline) > vh && (o.data.currentTop = o.data.currentLine - round(Int, vh/2))
+            break
+        end
+    end
+    _tree_checkTop!(o)
+end
+
+function _tree_toggle_module!(o::TwObj{TwTreeData})
+    o.data.moduleall = !o.data.moduleall
+    prevstack = copy(o.data.datalist[o.data.currentLine].stack)
+    _tree_update_data!(o)
+    maxmatch = 0
+    bestline = 0
+    for i = 1:o.data.datalistlen
+        stck = o.data.datalist[i].stack
+        if length(prevstack) > maxmatch &&
+           length(stck) > maxmatch &&
+           isequal(prevstack[1:(maxmatch+1)], stck[1:(maxmatch+1)])
+            maxmatch += 1
+            bestline = i
+            continue
+        elseif length(prevstack) < maxmatch
+            break
+        elseif length(prevstack) >= maxmatch &&
+               length(stck) >= maxmatch &&
+               !isequal(prevstack[1:maxmatch], stck[1:maxmatch])
+            break
+        end
+    end
+    o.data.currentLine = max(1, bestline)
+    _tree_checkTop!(o)
+end
+
 function updateTreeDimensions(o::TwObj)
     global treeTypeMaxWidth, treeValueMaxWidth
 
@@ -462,413 +612,201 @@ function draw(o::TwObj{TwTreeData})
     end
 end
 
-function inject(o::TwObj{TwTreeData}, token)
-    dorefresh = false
-    retcode = Handled # default behavior is that we know what to do with it
-    viewContentHeight = o.height - 2 * o.borderSizeV
-    viewContentWidth =
-        o.data.datatreewidth + o.data.datatypewidth + o.data.datavaluewidth + 2
-
-    update_tree_data =
-        ()->begin
-            o.data.datalist = TreeRow[]
-            tree_data(
-                o.value,
-                o.title,
-                o.data.datalist,
-                o.data.openstatemap,
-                Any[],
-                Int[],
-                o.data.moduleall,
-            )
-            updateTreeDimensions(o)
-            viewContentWidth =
-                o.data.datatreewidth + o.data.datatypewidth + o.data.datavaluewidth + 2
-        end
-
-    checkTop =
-        () -> begin
-            if o.data.currentTop < 1
-                o.data.currentTop = 1
-            elseif o.data.currentTop > o.data.datalistlen - viewContentHeight + 1
-                o.data.currentTop = max(1, o.data.datalistlen - viewContentHeight + 1)
-            end
-            if o.data.currentTop > o.data.currentLine
-                o.data.currentTop = o.data.currentLine
-            elseif o.data.currentLine - o.data.currentTop > viewContentHeight-1
-                o.data.currentTop = o.data.currentLine - viewContentHeight+1
-            end
-        end
-    moveby =
-        n -> begin
-            oldline = o.data.currentLine
-            o.data.currentLine = max(1, min(o.data.datalistlen, o.data.currentLine + n))
-            if oldline != o.data.currentLine
-                checkTop()
-                return true
-            else
-                beep()
-                return false
-            end
-        end
-
-    searchNext =
-        (
-            step,
-            trivialstop,
-        )->begin # if the currentLine contains the term, is it a success?
-            local st = o.data.currentLine
-            o.data.searchText = lowercase(o.data.searchText)
-            i = trivialstop ? st : (mod(st-1+step, o.data.datalistlen) + 1)
-            while true
-                if occursin(o.data.searchText, lowercase(o.data.datalist[i].name)) ||
-                   occursin(o.data.searchText, lowercase(o.data.datalist[i].valuestr))
-                    o.data.currentLine = i
-                    if abs(i-st) > viewContentHeight
-                        o.data.currentTop = o.data.currentLine - (viewContentHeight>>1)
+function bindings(o::TwObj{TwTreeData})
+    [
+        Binding(:esc, "cancel", action = _->Cancel),
+        Binding([" ", :enter, Symbol("return")], "toggle expand",
+                action = _->(_tree_toggle_expand!(o); Handled)),
+        Binding("+", "expand all",     action = _->(_tree_expand_all!(o); Handled)),
+        Binding("-", "collapse level", action = _->(_tree_collapse_deepest!(o); Handled)),
+        Binding("_", "collapse all",   action = _->(_tree_collapse_all!(o); Handled)),
+        Binding("m", "toggle exports",
+                when   = _-> typeof(o.value) == Module,
+                action = _->(_tree_toggle_module!(o); Handled)),
+        Binding(:F5, "show as string",
+                action = _->begin
+                    stck = copy(o.data.datalist[o.data.currentLine].stack)
+                    lastkey = isempty(stck) ? o.title : stck[end]
+                    v = getvaluebypath(o.value, copy(stck))
+                    if v isa Expr
+                        tshow(exprstring(v), "julia"; title = string(lastkey))
+                    else
+                        tshow(string(v); title = string(lastkey))
                     end
-                    checkTop()
-                    return i
-                end
-                i = mod(i-1+step, o.data.datalistlen) + 1
-                if i == st
-                    beep()
-                    return 0
-                end
-            end
-        end
-
-    if token == :esc
-        retcode = Cancel
-    elseif token == " " || token == Symbol("return") || token == :enter
-        expandhint = o.data.datalist[o.data.currentLine].expandhint
-        if expandhint != :single
-            stck = o.data.datalist[o.data.currentLine].stack
-            if !haskey(o.data.openstatemap, stck) || !o.data.openstatemap[stck]
-                o.data.openstatemap[stck] = true
-            else
-                o.data.openstatemap[stck] = false
-            end
-            update_tree_data()
-            dorefresh = true
-        end
-    elseif token == "+" # the tricky part is to preserve the currentLine
-        currentstack = o.data.datalist[o.data.currentLine].stack
-        somethingchanged = false
-        for i = 1:o.data.datalistlen
-            expandhint = o.data.datalist[i].expandhint
-            if expandhint != :single
-                stck = o.data.datalist[i].stack
-                if !haskey(o.data.openstatemap, stck) || !o.data.openstatemap[stck]
-                    o.data.openstatemap[stck] = true
-                    somethingchanged = true
-                end
-            end
-        end
-        if somethingchanged
-            prevline = o.data.currentLine
-            update_tree_data()
-            for i = o.data.currentLine:o.data.datalistlen
-                if currentstack == o.data.datalist[i].stack
-                    o.data.currentLine = i
-                    if abs(i - prevline) > viewContentHeight
-                        o.data.currentTop = i - round(Int, viewContentHeight/2)
-                    end
-                    break
-                end
-            end
-            checkTop()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == "-" # the tricky part is to preserve the currentLine
-        currentstack = copy(o.data.datalist[o.data.currentLine].stack)
-        somethingchanged = false
-        maxstackdepth = maximum(map(x->length(x.stack), o.data.datalist))
-        if maxstackdepth > 1
-            for i = 1:o.data.datalistlen
-                expandhint = o.data.datalist[i].expandhint
-                stck = o.data.datalist[i].stack
-                if expandhint != :single && length(stck) == maxstackdepth-1
-                    if haskey(o.data.openstatemap, stck) && o.data.openstatemap[stck]
-                        o.data.openstatemap[stck] = false
-                        somethingchanged = true
-                    end
-                end
-            end
-            if somethingchanged
-                update_tree_data()
-                if length(currentstack) == maxstackdepth
-                    pop!(currentstack)
-                end
-                prevline = o.data.currentLine
-                o.data.currentLine = 1
-                for i = 1:min(prevline, o.data.datalistlen)
-                    if currentstack == o.data.datalist[i].stack
-                        o.data.currentLine = i
-                        if abs(i-prevline) > viewContentHeight
-                            o.data.currentTop = i - round(Int, viewContentHeight / 2)
+                    Handled
+                end),
+        Binding(:F6, "popup value",
+                action = _->begin
+                    stck = copy(o.data.datalist[o.data.currentLine].stack)
+                    lastkey = isempty(stck) ? o.title : stck[end]
+                    v = getvaluebypath(o.value, stck)
+                    if typeof(v) == Method
+                        try
+                            f = getfield(v.module, v.name)
+                            edit(f, v.sig)
+                        catch err
+                            tshow("Error showing Method\n" * string(err), title = string(lastkey))
                         end
-                        break
+                    elseif !in(v, [nothing, Nothing, Any])
+                        tshow(v, title = string(lastkey))
                     end
-                end
-                checkTop()
-                dorefresh = true
-            end
-        else
-            beep()
-        end
-    elseif token == "_"
-        currentstack = copy(o.data.datalist[o.data.currentLine].stack)
-        if length(currentstack) > 1
-            currentstack = Any[currentstack[1]]
-        end
-        o.data.openstatemap = Dict{Any,Bool}()
-        o.data.openstatemap[Any[]] = true
-        update_tree_data()
-        prevline = o.data.currentLine
-        o.data.currentLine = 1
-        for i = 1:min(prevline, o.data.datalistlen)
-            if currentstack == o.data.datalist[i].stack
-                o.data.currentLine = i
-                if abs(i-prevline) > viewContentHeight
-                    o.data.currentTop =
-                        o.data.currentLine - round(Int, viewContentHeight / 2)
-                end
-                break
-            end
-        end
-        checkTop()
-        dorefresh = true
-    elseif token == "m" && typeof(o.value) == Module
-        o.data.moduleall = !o.data.moduleall
-        prevstack = copy(o.data.datalist[o.data.currentLine].stack)
-        update_tree_data()
-        maxmatch = 0
-        bestline = 0
-        for i = 1:o.data.datalistlen
-            stck = o.data.datalist[i].stack
-            if length(prevstack) > maxmatch &&
-               length(stck) > maxmatch &&
-               isequal(prevstack[1:(maxmatch+1)], stck[1:(maxmatch+1)])
-                maxmatch += 1
-                bestline = i
-                continue
-            elseif length(prevstack) < maxmatch
-                break
-            elseif length(prevstack) >= maxmatch &&
-                   length(stck) >= maxmatch &&
-                   !isequal(prevstack[1:maxmatch], stck[1:maxmatch])
-                break
-            end
-        end
-        o.data.currentLine = max(1, bestline)
-        checkTop()
-        dorefresh = true
-    elseif token == :F5
-        stck = copy(o.data.datalist[o.data.currentLine].stack)
-        lastkey = isempty(stck) ? o.title : stck[end]
-        v = getvaluebypath(o.value, copy(stck))
-        if v isa Expr
-            tshow( exprstring( v ), "julia"; title = string(lastkey))
-        else
-            s = string(v)
-            tshow(s; title = string(lastkey))
-        end
-        dorefresh = true
-    elseif token == :F6
-        stck = copy(o.data.datalist[o.data.currentLine].stack)
-        if !isempty(stck)
-            lastkey = stck[end]
-        else
-            lastkey = o.title
-        end
-        v = getvaluebypath(o.value, stck)
-        if typeof(v) == Method
-            try
-                f = getfield(v.module, v.name)
-                edit(f, v.sig)
-            catch err
-                tshow("Error showing Method\n" * string(err), title = string(lastkey))
-            end
-        elseif !in(v, [nothing, Nothing, Any])
-            tshow(v, title = string(lastkey))
-        end
-        dorefresh = true
-    elseif token == :shift_F6
-        stck = copy(o.data.datalist[o.data.currentLine].stack)
-        if !isempty(stck)
-            lastkey = stck[end]
-        else
-            lastkey = o.title
-        end
-        v = getvaluebypath(o.value, stck)
-        vtyp = typeof(v)
-        if !in(v, [nothing, Nothing, Any])
-            tshow(vtyp)
-            dorefresh = true
-        end
-    elseif token == :F7
-        stck = copy(o.data.datalist[o.data.currentLine].stack)
-        lastkey = isempty(stck) ? o.title : stck[end]
-        v = getvaluebypath(o.value, stck)
-        helper = newTwEntry(
-            o.screen.value,
-            String;
-            width = 34,
-            posy = :center,
-            posx = :center,
-            title = "Store as global: ",
-        )
-        helper.data.inputText = string(lastkey)
-        helper.data.cursorPos = length(helper.data.inputText) + 1
-        varname = activateTwObj(helper)
-        unregisterTwObj(o.screen.value, helper)
-        if varname !== nothing && !isempty(strip(varname))
-            try
-                Core.eval(Main, Expr(:(=), Symbol(strip(varname)), QuoteNode(v)))
-            catch err
-                tshow("Error storing variable:\n" * string(err), title = "F7 error")
-            end
-        end
-        dorefresh = true
-    elseif token == :up
-        dorefresh = moveby(-1)
-    elseif token == :down
-        dorefresh = moveby(1)
-    elseif token == :left
+                    Handled
+                end),
+        Binding(:shift_F6, "popup type",
+                action = _->begin
+                    stck = copy(o.data.datalist[o.data.currentLine].stack)
+                    v = getvaluebypath(o.value, stck)
+                    !in(v, [nothing, Nothing, Any]) && tshow(typeof(v))
+                    Handled
+                end),
+        Binding(:F7, "save to global",
+                action = _->begin
+                    stck = copy(o.data.datalist[o.data.currentLine].stack)
+                    lastkey = isempty(stck) ? o.title : stck[end]
+                    v = getvaluebypath(o.value, stck)
+                    helper = newTwEntry(
+                        o.screen.value, String;
+                        width = 34, posy = :center, posx = :center,
+                        title = "Store as global: ",
+                    )
+                    helper.data.inputText = string(lastkey)
+                    helper.data.cursorPos = length(helper.data.inputText) + 1
+                    varname = activateTwObj(helper)
+                    unregisterTwObj(o.screen.value, helper)
+                    if varname !== nothing && !isempty(strip(varname))
+                        try
+                            Core.eval(Main, Expr(:(=), Symbol(strip(varname)), QuoteNode(v)))
+                        catch err
+                            tshow("Error storing variable:\n" * string(err), title = "F7 error")
+                        end
+                    end
+                    Handled
+                end),
+        Binding(:up,   "up",   action = _->(_tree_moveby!(o, -1); Handled)),
+        Binding(:down, "down", action = _->(_tree_moveby!(o,  1); Handled)),
+        Binding(:ctrl_left, "parent",
+                action = _->begin
+                    (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, :parent)
+                    moved ? (o.data.currentLine = target; _tree_checkTop!(o)) : beep()
+                    Handled
+                end),
+        Binding(:ctrl_up, "prev sibling",
+                action = _->begin
+                    (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, :prev_sibling)
+                    moved ? (o.data.currentLine = target; _tree_checkTop!(o)) : beep()
+                    Handled
+                end),
+        Binding(:ctrl_down, "next sibling",
+                action = _->begin
+                    (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, :next_sibling)
+                    moved ? (o.data.currentLine = target; _tree_checkTop!(o)) : beep()
+                    Handled
+                end),
+        Binding(:pageup,   "page up",
+                action = _->(_tree_moveby!(o, -(o.height - 2*o.borderSizeV)); Handled)),
+        Binding(:pagedown, "page down",
+                action = _->(_tree_moveby!(o,  o.height - 2*o.borderSizeV); Handled)),
+        Binding(:home, "go to start",
+                action = _->begin
+                    if o.data.currentTop != 1 || o.data.currentLeft != 1 || o.data.currentLine != 1
+                        o.data.currentTop = 1; o.data.currentLeft = 1; o.data.currentLine = 1
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+        Binding(Symbol("end"), "go to end",
+                action = _->begin
+                    vh = o.height - 2 * o.borderSizeV
+                    if o.data.currentTop + vh - 1 < o.data.datalistlen
+                        o.data.currentTop = o.data.datalistlen - vh + 1
+                        o.data.currentLine = o.data.datalistlen
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+        Binding("/", "search",
+                action = _->begin
+                    helper = newTwEntry(
+                        o.screen.value, String;
+                        width = 30, posy = :center, posx = :center,
+                        title = "Search: ",
+                    )
+                    helper.data.inputText = o.data.searchText
+                    s = activateTwObj(helper)
+                    unregisterTwObj(o.screen.value, helper)
+                    if s !== nothing && s != "" && o.data.searchText != s
+                        o.data.searchText = s
+                        _tree_search_next!(o, 1, true)
+                    end
+                    Handled
+                end),
+        Binding(["n", :ctrl_n], "next match",
+                action = _->(o.data.searchText != "" && _tree_search_next!(o,  1, false); Handled)),
+        Binding(["p", "N", :ctrl_p], "prev match",
+                action = _->(o.data.searchText != "" && _tree_search_next!(o, -1, false); Handled)),
+        Binding("L", "mid → end",
+                action = _->begin
+                    target = min(round(Int, ceil((o.data.currentLine + o.data.datalistlen)/2)), o.data.datalistlen)
+                    target != o.data.currentLine ? (o.data.currentLine = target; _tree_checkTop!(o)) : beep()
+                    Handled
+                end),
+        Binding("l", "mid → start",
+                action = _->begin
+                    target = max(round(Int, floor(o.data.currentLine / 2)), 1)
+                    target != o.data.currentLine ? (o.data.currentLine = target; _tree_checkTop!(o)) : beep()
+                    Handled
+                end),
+    ]
+end
+
+function inject(o::TwObj{TwTreeData}, token)
+    r = inject_via_table(o, token)
+    r === Handled && refresh(o)
+    r !== Ignored && return r
+
+    # h-scroll and mouse (undocumented)
+    vcw = o.data.datatreewidth + o.data.datatypewidth + o.data.datavaluewidth + 2
+    if token == :left
         if o.data.currentLeft > 1
-            o.data.currentLeft -= 1
-            dorefresh = true
+            o.data.currentLeft -= 1; refresh(o)
         else
             beep()
         end
-    elseif token == :ctrl_left || token == :ctrl_up || token == :ctrl_down
-        # Parent / prev-sibling / next-sibling navigation, shared with the file
-        # browser and dict tree via the generic tree_nav primitive.
-        dir = token == :ctrl_left ? :parent :
-              token == :ctrl_up   ? :prev_sibling : :next_sibling
-        (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, dir)
-        if moved
-            o.data.currentLine = target
-            checkTop()
-            dorefresh = true
-        else
-            beep()
-        end
+        return Handled
     elseif token == :right
-        if o.data.currentLeft + o.width - 2*o.borderSizeH < viewContentWidth
-            o.data.currentLeft += 1
-            dorefresh = true
+        if o.data.currentLeft + o.width - 2*o.borderSizeH < vcw
+            o.data.currentLeft += 1; refresh(o)
         else
             beep()
         end
-    elseif token == :pageup
-        dorefresh = moveby(-viewContentHeight)
-    elseif token == :pagedown
-        dorefresh = moveby(viewContentHeight)
+        return Handled
     elseif token == :KEY_MOUSE
         (mstate, x, y, bs) = getmouse()
+        vh = o.height - 2 * o.borderSizeV
         if mstate == :scroll_up
-            dorefresh = moveby(-(round(Int, viewContentHeight/5)))
+            _tree_moveby!(o, -(round(Int, vh/5))); refresh(o)
         elseif mstate == :scroll_down
-            dorefresh = moveby(round(Int, viewContentHeight/5))
+            _tree_moveby!(o,  round(Int, vh/5));  refresh(o)
         elseif mstate == :button1_pressed
             begy, begx = getwinbegyx(o.window)
             relx = x - begx
             rely = y - begy
-            if 0<=relx<o.width && 0<=rely<o.height
+            if 0 <= relx < o.width && 0 <= rely < o.height
                 o.data.currentLine = o.data.currentTop + rely - o.borderSizeH + 1
-                dorefresh = true
+                refresh(o)
             else
-                retcode = Ignored
+                return Ignored
             end
         end
-    elseif token == :home
-        if o.data.currentTop != 1 || o.data.currentLeft != 1 || o.data.currentLine != 1
-            o.data.currentTop = 1
-            o.data.currentLeft = 1
-            o.data.currentLine = 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == "/"
-        helper = newTwEntry(
-            o.screen.value,
-            String;
-            width = 30,
-            posy = :center,
-            posx = :center,
-            title = "Search: ",
-        )
-        helper.data.inputText = o.data.searchText
-        s = activateTwObj(helper)
-        unregisterTwObj(o.screen.value, helper)
-        if s !== nothing
-            if s != "" && o.data.searchText != s
-                o.data.searchText = s
-                searchNext(1, true)
-            end
-        end
-        dorefresh = true
-    elseif token == "n" ||
-           token == "p" ||
-           token == "N" ||
-           token == :ctrl_n ||
-           token == :ctrl_p
-        if o.data.searchText != ""
-            searchNext(((token == "n" || token == :ctrl_n) ? 1 : -1), false)
-        end
-        dorefresh = true
-    elseif in(token, Any[Symbol("end")])
-        if o.data.currentTop + viewContentHeight - 1 < o.data.datalistlen
-            o.data.currentTop = o.data.datalistlen - viewContentHeight + 1
-            o.data.currentLine = o.data.datalistlen
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == "L" # move half-way toward the end
-        target = min(
-            round(Int, ceil((o.data.currentLine + o.data.datalistlen)/2)),
-            o.data.datalistlen,
-        )
-        if target != o.data.currentLine
-            o.data.currentLine = target
-            checkTop()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == "l" # move half-way toward the beginning
-        target = max(round(Int, floor(o.data.currentLine / 2)), 1)
-        if target != o.data.currentLine
-            o.data.currentLine = target
-            checkTop()
-            dorefresh = true
-        else
-            beep()
-        end
-    else
-        retcode = Ignored # I don't know what to do with it
+        return Handled
     end
 
-    if dorefresh
-        refresh(o)
-    end
-
-    return retcode
+    return Ignored
 end
 
-function helptext(o::TwObj{TwTreeData})
-    if o.data.showHelp
-        o.data.helpText
-    else
-        ""
-    end
-end
+helptext(o::TwObj{TwTreeData}) = o.data.showHelp ? helptext_from_bindings(o) : ""
 
 function clamp_scroll!(o::TwObj{TwTreeData})
     updateTreeDimensions(o)

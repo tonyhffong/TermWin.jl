@@ -3,24 +3,13 @@
 SELECTEDORDERABLE = 1 # whether selected items are orderable, selected always on top
 SELECTSUBSTR = 2 # search by substring (default by prefix)
 
-defaultMultiSelectHelpText = """
-arrows : move cursor
-home   : move to top
-end    : move to bottom
-shft-up: move the item up
-shft-dn: move the item down
-space  : toggle selection
-enter  : finalize selection
-
-Search box:
-alt-space: enter space inside search box
-ctrl-a : move search cursor to start
-ctrl-e : move search cursor to end
-ctrl-k : empty search entry
-ctrl-r : Toggle insertion/overwrite mode
-
-ctrl-n : move to the next matched item
-ctrl-p : move to the previous matched item
+const _MS_SEARCHBOX_HELP = """
+Search box (always active):
+Alt-Space      : insert space in search box
+Ctrl-A         : search cursor to start
+Ctrl-E         : search cursor to end
+Ctrl-K         : clear search box
+Ctrl-R         : toggle insert/overwrite
 """
 
 mutable struct TwMultiSelectData
@@ -31,9 +20,8 @@ mutable struct TwMultiSelectData
     searchbox::Any
     scroll::ScrollState      # cursor=current line, top=first visible, left=h-scroll
     selectmode::Int
-    helpText::String
     TwMultiSelectData(arr::Array{String,1}, selected::Array{String,1}) =
-        new(arr, selected, Any[], 0, nothing, ScrollState(), 0, "")
+        new(arr, selected, Any[], 0, nothing, ScrollState(), 0)
 end
 TwMultiSelectData(
     arr::Array{T,1},
@@ -74,7 +62,6 @@ function newTwMultiSelect(
         obj.data.selectmode |= SELECTSUBSTR
     end
     rebuild_select_datalist(obj)
-    obj.data.helpText = defaultMultiSelectHelpText
     obj.data.maxchoicelength = 0
     if !isempty(arr)
         obj.data.maxchoicelength = maximum(map(x->length(x), arr))
@@ -193,191 +180,152 @@ function select_search_next(o::TwObj{TwMultiSelectData}, step::Int, trivialstop:
     end
 end
 
+_ms_vph(o::TwObj{TwMultiSelectData}) = o.height - 2 * o.borderSizeV
+
+function _ms_toggle!(o::TwObj{TwMultiSelectData})
+    cur = o.data.scroll.cursor
+    currstr  = o.data.datalist[cur][1]
+    currstatus = o.data.datalist[cur][2]
+    if !currstatus
+        push!(o.data.selected, currstr)
+    else
+        deleteat!(o.data.selected, findfirst(isequal(currstr), o.data.selected))
+    end
+    if o.data.selectmode & SELECTEDORDERABLE != 0
+        rebuild_select_datalist(o)
+    else
+        o.data.datalist[cur][2] = !currstatus
+    end
+end
+
+function _ms_reorder!(o::TwObj{TwMultiSelectData}, delta::Int)
+    cur = o.data.scroll.cursor
+    o.data.datalist[cur][2] || (beep(); return Handled)   # not selected → beep
+    currstr = o.data.datalist[cur][1]
+    idx = findfirst(isequal(currstr), o.data.selected)
+    target = idx + delta
+    (target < 1 || target > length(o.data.selected)) && (beep(); return Handled)
+    o.data.selected[target], o.data.selected[idx] =
+        o.data.selected[idx], o.data.selected[target]
+    o.data.scroll.cursor += delta
+    rebuild_select_datalist(o)
+    clamp_view!(o.data.scroll, length(o.data.datalist), _ms_vph(o))
+    Handled
+end
+
+function bindings(o::TwObj{TwMultiSelectData})
+    vph = _ms_vph(o)
+    n   = () -> length(o.data.datalist)
+    [
+        Binding(:up,       "up",
+                action = _->(move_cursor!(o.data.scroll, -1, n(), vph); Handled)),
+        Binding(:down,     "down",
+                action = _->(move_cursor!(o.data.scroll,  1, n(), vph); Handled)),
+        Binding(:pageup,   "page up",
+                action = _->(page!(o.data.scroll, -1, n(), vph); Handled)),
+        Binding(:pagedown, "page down",
+                action = _->(page!(o.data.scroll,  1, n(), vph); Handled)),
+        Binding(:home,     "top",
+                action = _->(o.data.scroll.top = 1; o.data.scroll.cursor = 1; o.data.scroll.left = 1; Handled)),
+        Binding(Symbol("end"), "bottom",
+                action = _->(o.data.scroll.cursor = n(); clamp_view!(o.data.scroll, n(), vph); Handled)),
+        Binding(" ",       "toggle",
+                action = _->(_ms_toggle!(o); Handled)),
+        Binding([:enter, Symbol("return")], "confirm",
+                action = _->(o.value = copy(o.data.selected); Accept)),
+        Binding(:ctrl_n,   "next match",
+                action = _->(select_search_next(o, 1, false);  clamp_view!(o.data.scroll, n(), vph); Handled)),
+        Binding(:ctrl_p,   "prev match",
+                action = _->(select_search_next(o, -1, false); clamp_view!(o.data.scroll, n(), vph); Handled)),
+        Binding(:shift_up,   "move up",
+                when   = _-> o.data.selectmode & SELECTEDORDERABLE != 0,
+                action = _-> _ms_reorder!(o, -1)),
+        Binding(:shift_down, "move down",
+                when   = _-> o.data.selectmode & SELECTEDORDERABLE != 0,
+                action = _-> _ms_reorder!(o,  1)),
+        Binding(:esc, "cancel", action = _->Cancel),
+    ]
+end
+
 function inject(o::TwObj{TwMultiSelectData}, token)
-    dorefresh = false
-    retcode = Handled # default behavior is that we know what to do with it
-
-    viewContentWidth = o.width - o.borderSizeH * 2
-    viewContentHeight = o.height - 2 * o.borderSizeV
-
-    # Shared viewport helpers replace the hand-rolled checkTop/moveby math.
-    checkTop = () -> clamp_view!(o.data.scroll, length(o.data.datalist), viewContentHeight)
-    moveby = n -> (move_cursor!(o.data.scroll, n, length(o.data.datalist), viewContentHeight); true)
-
+    # 1. Search box pre-empts most tokens (except F1 and regular space).
+    #    A non-breaking space (U+00A0) is normalized to regular space for the searchbox.
     if token != :F1 && token != " "
         inputText = o.data.searchbox.data.inputText
-        if token == " " # no break space
+        if token == " "  # non-breaking space → normalize for searchbox
             token = " "
         end
         result = inject(o.data.searchbox, token)
-
         if result == Handled
             if inputText != o.data.searchbox.data.inputText
                 select_search_next(o, 1, true)
-                checkTop()
+                clamp_view!(o.data.scroll, length(o.data.datalist), _ms_vph(o))
             end
             refresh(o)
             return result
         end
     end
 
-    if token == :esc
-        retcode = Cancel
-    elseif token == :up
-        dorefresh = moveby(-1)
-    elseif token == :down
-        dorefresh = moveby(1)
-    elseif token == :left
+    # 2. Bindings table (documented nav + mode-conditional reorder + esc/confirm)
+    r = inject_via_table(o, token)
+    r === Handled && refresh(o)
+    r !== Ignored && return r
+
+    # 3. Secondary nav: h-scroll (undocumented), mouse, focus_off
+    vw = o.width - o.borderSizeH * 2
+    if token == :left || token == :shift_left
         if o.data.scroll.left > 1
-            o.data.scroll.left -= 1
-            dorefresh = true
+            o.data.scroll.left -= 1; refresh(o)
         else
             beep()
         end
-    elseif token == :right
-        if o.data.scroll.left + viewContentWidth < o.data.maxchoicelength
-            o.data.scroll.left += 1
-            dorefresh = true
+        return Handled
+    elseif token == :right || token == :shift_right
+        if o.data.scroll.left + vw < o.data.maxchoicelength
+            o.data.scroll.left += 1; refresh(o)
         else
             beep()
         end
-    elseif token == :shift_left # TODO ctrl-left
+        return Handled
+    elseif token == :ctrlshift_left
         if o.data.scroll.left > 1
-            o.data.scroll.left -= 1
-            dorefresh = true
+            o.data.scroll.left = 1; refresh(o)
         else
             beep()
         end
-    elseif token == :ctrlshift_left # TODO ctrl-left
-        if o.data.scroll.left > 1
-            o.data.scroll.left = 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :shift_right
-        if o.data.scroll.left + viewContentWidth < o.data.maxchoicelength
-            o.data.scroll.left += 1
-            dorefresh = true
-        else
-            beep()
-        end
+        return Handled
     elseif token == :ctrlshift_right
-        if o.data.scroll.left + viewContentWidth < o.data.maxchoicelength
-            o.data.scroll.left = o.data.maxchoicelength - viewContentWidth
-            dorefresh = true
+        if o.data.scroll.left + vw < o.data.maxchoicelength
+            o.data.scroll.left = o.data.maxchoicelength - vw; refresh(o)
         else
             beep()
         end
-    elseif token == :pageup
-        dorefresh = moveby(-viewContentHeight)
-    elseif token == :pagedown
-        dorefresh = moveby(viewContentHeight)
-    elseif token == :ctrl_n
-        select_search_next(o, 1, false)
-        checkTop()
-        dorefresh = true
-    elseif token == :ctrl_p
-        select_search_next(o, -1, false)
-        checkTop()
-        dorefresh = true
+        return Handled
     elseif token == :KEY_MOUSE
         (mstate, x, y, bs) = getmouse()
+        vph = _ms_vph(o)
         if mstate == :scroll_up
-            dorefresh = moveby(-(round(Int, viewContentHeight/10)))
+            move_cursor!(o.data.scroll, -(round(Int, vph/10)), length(o.data.datalist), vph)
+            refresh(o)
         elseif mstate == :scroll_down
-            dorefresh = moveby(round(Int, viewContentHeight/10))
+            move_cursor!(o.data.scroll, round(Int, vph/10), length(o.data.datalist), vph)
+            refresh(o)
         elseif mstate == :button1_pressed && o.data.trackLine
             (rely, relx) = screen_to_relative(o.window, y, x)
-            if 0<=relx<o.width && 0<=rely<o.height
+            if 0 <= relx < o.width && 0 <= rely < o.height
                 o.data.scroll.cursor = o.data.scroll.top + rely - o.borderSizeH + 1
-                dorefresh = true
+                refresh(o)
             else
-                retcode = Ignored
+                return Ignored
             end
         end
-    elseif token == :home
-        if o.data.scroll.top != 1 || o.data.scroll.left != 1 || o.data.scroll.cursor != 1
-            o.data.scroll.top = 1
-            o.data.scroll.left = 1
-            o.data.scroll.cursor = 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif in(token, Any[Symbol("end")])
-        n = length(o.data.datalist)
-        if o.data.scroll.cursor != n
-            o.data.scroll.cursor = n
-            checkTop()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif o.data.selectmode & SELECTEDORDERABLE != 0 && token == :shift_up
-        currstatus = o.data.datalist[o.data.scroll.cursor][2]
-        if currstatus && o.data.scroll.cursor > 1
-            currstr = o.data.datalist[o.data.scroll.cursor][1]
-            idx = findfirst(isequal(currstr), o.data.selected)
-            o.data.selected[idx-1], o.data.selected[idx] =
-                (o.data.selected[idx], o.data.selected[idx-1])
-            o.data.scroll.cursor -= 1
-            rebuild_select_datalist(o)
-            checkTop()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif o.data.selectmode & SELECTEDORDERABLE != 0 && token == :shift_down
-        currstatus = o.data.datalist[o.data.scroll.cursor][2]
-        if currstatus && o.data.scroll.cursor < length(o.data.selected)
-            currstr = o.data.datalist[o.data.scroll.cursor][1]
-            idx = findfirst(isequal(currstr), o.data.selected)
-            o.data.selected[idx+1], o.data.selected[idx] =
-                (o.data.selected[idx], o.data.selected[idx+1])
-            o.data.scroll.cursor += 1
-            rebuild_select_datalist(o)
-            checkTop()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == " "
-        currstr = o.data.datalist[o.data.scroll.cursor][1]
-        currstatus = o.data.datalist[o.data.scroll.cursor][2]
-        if !currstatus # we are selecting it
-            push!(o.data.selected, currstr)
-            if o.data.selectmode & SELECTEDORDERABLE != 0
-                rebuild_select_datalist(o)
-            else
-                o.data.datalist[o.data.scroll.cursor][2] = true
-            end
-        else # we are de-selecting it
-            idx = findfirst(isequal(currstr), o.data.selected)
-            deleteat!(o.data.selected, idx)
-            if o.data.selectmode & SELECTEDORDERABLE != 0
-                rebuild_select_datalist(o)
-            else
-                o.data.datalist[o.data.scroll.cursor][2] = false
-            end
-        end
-        dorefresh = true
-    elseif token == :enter || token == Symbol("return")
-        o.value = copy(o.data.selected)
-        retcode = Accept
+        return Handled
     elseif token == :focus_off
         o.value = copy(o.data.selected)
-    else
-        retcode = Ignored # I don't know what to do with it
+        return Handled
     end
 
-    if dorefresh
-        refresh(o)
-    end
-
-    return retcode
+    return Ignored
 end
 
-function helptext(o::TwObj{TwMultiSelectData})
-    o.data.helpText
-end
+helptext(o::TwObj{TwMultiSelectData}) = helptext_from_bindings(o) * _MS_SEARCHBOX_HELP

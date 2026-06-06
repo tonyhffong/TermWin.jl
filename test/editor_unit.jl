@@ -250,7 +250,7 @@ end
     # _dt_begin_edit! / editor_handle / _dt_commit_edit! are window-free.
     data = TW.TwDictTreeData(
         Dict{Any,Bool}(), TW.TreeRow[], 0, 0, 0, 0, 1, 1, 1,
-        true, "", true, "", "",
+        true, "", true, "",
         false, TW.InlineEditor(String; width = 1),
     )
     o = TW.TwObj(data, Val{:DictTree})

@@ -224,6 +224,65 @@ end
     @test TW.tree_nav(list, 1, :parent)       == (1, false)  # root has no parent
 end
 
+@testset "Tree bindings table (headless)" begin
+    using Dates
+    d = Dict("a" => 1, "b" => 2)
+    o = TW.TwObj(TW.TwTreeData(), Val{:Tree})
+    o.value = d
+    o.title = "root"
+    o.box   = true
+    o.borderSizeV = 1
+    o.borderSizeH = 1
+    o.height = 12
+    o.width  = 40
+    # Seed the datalist (root closed by default).
+    TW.tree_data(d, "root", o.data.datalist, o.data.openstatemap, Any[], Int[], true)
+    TW.updateTreeDimensions(o)
+    o.data.currentLine = 1
+
+    # :esc → Cancel
+    @test TW.inject_via_table(o, :esc) === TW.Cancel
+
+    # space toggles expand on the root node; root is a Dict container
+    r = TW.inject_via_table(o, " ")
+    @test r === TW.Handled
+    @test get(o.data.openstatemap, Any[], false)  # root is now open
+
+    # :up at line 1 hits the top — inject_via_table still returns Handled (beep inside)
+    o.data.currentLine = 1
+    @test TW.inject_via_table(o, :up) === TW.Handled
+
+    # :down moves cursor (root expanded, datalist now has children)
+    TW.tree_data(d, "root", o.data.datalist, o.data.openstatemap, Any[], Int[], true)
+    TW.updateTreeDimensions(o)
+    prev = o.data.currentLine
+    TW.inject_via_table(o, :down)
+    @test o.data.currentLine == prev + 1
+
+    # :home resets to line 1
+    o.data.currentLine = 3
+    TW.inject_via_table(o, :home)
+    @test o.data.currentLine == 1 && o.data.currentLeft == 1
+
+    # "+" expand all and "_" collapse all
+    TW.inject_via_table(o, "+")
+    @test all(v -> v, values(o.data.openstatemap))  # everything opened
+    TW.inject_via_table(o, "_")
+    # after collapse-all the openstatemap is reset to only the root entry
+    @test get(o.data.openstatemap, Any[], false)
+    @test all(k == Any[] || !v for (k,v) in o.data.openstatemap)
+
+    # unknown key → Ignored
+    @test TW.inject_via_table(o, :F2) === TW.Ignored
+
+    # help is generated from the binding table (no hard-wired constant)
+    help = TW.helptext_from_bindings(o)
+    @test occursin("toggle expand", help)
+    @test occursin("expand all",    help)
+    @test occursin("search",        help)
+    @test occursin("save to global", help)
+end
+
 @testset "Calendar bindings (headless)" begin
     using Dates
     # Build the data object directly; inject_via_table runs the binding actions
@@ -317,7 +376,7 @@ end
         Dict{Any,Bool}(), TW.TreeRow[],
         0, 0, 0, 0,           # datalistlen, tree/type/value widths
         1, 1, 1,              # currentTop, currentLine, currentLeft
-        true, "", true, "", "",   # showLineInfo, bottomText, showHelp, helpText, searchText
+        true, "", true, "",   # showLineInfo, bottomText, showHelp, searchText
         false, TW.InlineEditor(String; width = 1),  # isEditing, editor
     )
     o = TW.TwObj(data, Val{:DictTree})
@@ -334,6 +393,118 @@ end
     names = [r.name for r in o.data.datalist]
     @test "root" in names
     @test TW.tree_nav(o.data.datalist, 1, :parent) == (1, false)   # root has no parent
+end
+
+@testset "DictTree bindings table (headless)" begin
+    d = Dict{Any,Any}("a" => 10, "b" => 99)
+    o = TW.TwObj(TW.TwDictTreeData(
+        Dict{Any,Bool}(), TW.TreeRow[], 0, 0, 0, 0, 1, 1, 1,
+        true, "", true, "",
+        false, TW.InlineEditor(String; width = 1),
+    ), Val{:DictTree})
+    o.value  = d
+    o.title  = "root"
+    o.height = 12; o.width = 50; o.borderSizeV = 1; o.borderSizeH = 2
+    o.data.openstatemap[Any[]] = true
+    TW._dt_update_data!(o)
+    o.data.currentLine = 1
+
+    # :esc → Cancel; :F10 → Accept
+    @test TW.inject_via_table(o, :esc)  === TW.Cancel
+    @test TW.inject_via_table(o, :F10)  === TW.Accept
+
+    # :down moves cursor
+    TW.inject_via_table(o, :down)
+    @test o.data.currentLine == 2
+
+    # :home resets to 1
+    o.data.currentLine = 3
+    TW.inject_via_table(o, :home)
+    @test o.data.currentLine == 1
+
+    # space toggles expand on root (Dict → toggle openstatemap)
+    prev = get(o.data.openstatemap, Any[], false)
+    TW.inject_via_table(o, " ")
+    @test get(o.data.openstatemap, Any[], false) == !prev
+
+    # "+" expands all, "_" collapses all
+    TW.inject_via_table(o, "+")
+    @test all(v -> v, values(o.data.openstatemap))
+    TW.inject_via_table(o, "_")
+    @test get(o.data.openstatemap, Any[], false)
+    @test all(k == Any[] || !v for (k,v) in o.data.openstatemap)
+
+    # unknown key → Ignored
+    @test TW.inject_via_table(o, :F3) === TW.Ignored
+
+    # help generated from binding table (no hard-wired constant)
+    help = TW.helptext_from_bindings(o)
+    @test occursin("expand / edit", help)
+    @test occursin("add entry",     help)
+    @test occursin("save to global", help)
+end
+
+@testset "FileBrowser bindings table (headless)" begin
+    tmp = mktempdir()
+    mkdir(joinpath(tmp, "adir"))
+    write(joinpath(tmp, "adir", "f1.txt"), "hello")
+    write(joinpath(tmp, "bfile.txt"), "world")
+
+    list = TW.FileRow[]
+    osm  = Dict{String,Bool}(joinpath(tmp, "adir") => true)
+    TW.file_tree_data(tmp, list, osm, Any[], Int[], false, :name)
+    o = TW.TwObj(TW.TwFileBrowserData(), Val{:FileBrowser})
+    o.data.rootpath  = tmp
+    o.data.datalist  = list
+    o.data.openstatemap = osm
+    TW.updateFileBrowserDimensions(o)
+    o.height = 12; o.width = 60; o.borderSizeV = 1; o.borderSizeH = 2
+    o.data.currentLine = 1
+
+    # :esc → Cancel
+    @test TW.inject_via_table(o, :esc) === TW.Cancel
+
+    # :down moves cursor
+    TW.inject_via_table(o, :down)
+    @test o.data.currentLine == 2
+
+    # :home → back to 1
+    o.data.currentLine = 3
+    TW.inject_via_table(o, :home)
+    @test o.data.currentLine == 1 && o.data.currentLeft == 1
+
+    # "." toggles hidden files flag
+    was_hidden = o.data.showHidden
+    TW.inject_via_table(o, ".")
+    @test o.data.showHidden == !was_hidden
+
+    # "s" cycles sort order
+    orig_sort = o.data.sortBy
+    TW.inject_via_table(o, "s")
+    @test o.data.sortBy != orig_sort
+
+    # space on a file (find a file row) beeps and stays Handled
+    ifile = findfirst(r -> !r.isdir, o.data.datalist)
+    if ifile !== nothing
+        o.data.currentLine = ifile
+        @test TW.inject_via_table(o, " ") === TW.Handled
+    end
+
+    # ctrl_up / ctrl_down sibling nav
+    o.data.datalist = TW.FileRow[]
+    TW.file_tree_data(tmp, o.data.datalist, osm, Any[], Int[], false, :name)
+    TW.updateFileBrowserDimensions(o)
+    o.data.currentLine = 1
+    @test TW.inject_via_table(o, :ctrl_down) === TW.Handled  # moves or beeps, always Handled
+
+    # unknown key → Ignored
+    @test TW.inject_via_table(o, :F3) === TW.Ignored
+
+    # help from binding table
+    help = TW.helptext_from_bindings(o)
+    @test occursin("toggle dir",  help)
+    @test occursin("cycle sort",  help)
+    @test occursin("prev match",  help)
 end
 
 @testset "MultiSelect adopts ScrollState (headless)" begin
@@ -356,6 +527,42 @@ end
     # datalist rows are still [name, checked] pairs (not converted to a struct)
     @test o.data.datalist[1][1] == "a"
     @test o.data.datalist[1][2] == false
+end
+
+@testset "MultiSelect bindings table (headless)" begin
+    o = TW.TwObj(TW.TwMultiSelectData(["a", "b", "c", "d", "e", "f"], String[]), Val{:MultiSelect})
+    TW.rebuild_select_datalist(o)
+    o.height = 10; o.borderSizeV = 1   # viewport = 8
+
+    # toggle "a" (cursor starts at 1)
+    r = TW.inject_via_table(o, " ")
+    @test r === TW.Handled
+    @test "a" in o.data.selected
+
+    # confirm → Accept, sets o.value
+    r = TW.inject_via_table(o, :enter)
+    @test r === TW.Accept
+    @test o.value == ["a"]
+
+    # esc → Cancel
+    r = TW.inject_via_table(o, :esc)
+    @test r === TW.Cancel
+
+    # shift_up guard blocks when not orderable
+    r = TW.inject_via_table(o, :shift_up)
+    @test r === TW.Ignored
+
+    # orderable mode: shift_up moves selected item up
+    o2 = TW.TwObj(TW.TwMultiSelectData(["a", "b", "c"], String[]), Val{:MultiSelect})
+    o2.data.selectmode |= TW.SELECTEDORDERABLE
+    o2.data.selected = ["a", "b"]
+    TW.rebuild_select_datalist(o2)
+    o2.height = 10; o2.borderSizeV = 1
+    o2.data.scroll.cursor = 2    # cursor on "b" (second selected item)
+    r = TW.inject_via_table(o2, :shift_up)
+    @test r === TW.Handled
+    @test o2.data.selected[1] == "b"   # b moved above a
+    @test o2.data.selected[2] == "a"
 end
 
 @testset "Viewer bindings + dual-mode scroll (headless)" begin
@@ -423,6 +630,132 @@ end
     o.height = 5                 # dataH = 2
     TW.clamp_scroll!(o)
     @test o.data.currentTop <= o.data.currentRow <= o.data.currentTop + 2 - 1
+end
+
+@testset "Popup bindings table (headless)" begin
+    o = TW.TwObj(TW.TwPopupData(["alpha", "beta", "gamma"]), Val{:Popup})
+    o.height = 7; o.borderSizeV = 1
+    o.width = 20; o.borderSizeH = 1
+
+    @test TW.inject_via_table(o, :esc) === TW.Cancel
+    @test TW.inject_via_table(o, :f9)  === TW.Ignored
+
+    # :down / :up move cursor
+    @test TW.inject_via_table(o, :down) === TW.Handled && o.data.scroll.cursor == 2
+    @test TW.inject_via_table(o, :up)   === TW.Handled && o.data.scroll.cursor == 1
+
+    # :home resets (cursor already 1 → beeps but still Handled)
+    o.data.scroll.cursor = 3
+    @test TW.inject_via_table(o, :home) === TW.Handled && o.data.scroll.cursor == 1
+
+    # :enter → Accept, value set
+    @test TW.inject_via_table(o, :enter) === TW.Accept
+    @test o.value == "alpha"
+
+    # :ctrl_n / :ctrl_p guarded by quickselect — Ignored without it
+    @test TW.inject_via_table(o, :ctrl_n) === TW.Ignored
+    @test TW.inject_via_table(o, :ctrl_p) === TW.Ignored
+
+    # :tab guarded by tabcomplete (quickselect && !substr)
+    @test TW.inject_via_table(o, :tab) === TW.Ignored
+
+    # enable quickselect → ctrl_n/ctrl_p when-guard passes
+    o.data.selectmode |= TW.POPUPQUICKSELECT
+    bs = TW.bindings(o)
+    @test filter(b -> :ctrl_n in b.keys, bs)[1].when(o)
+    @test filter(b -> :ctrl_p in b.keys, bs)[1].when(o)
+
+    # tabcomplete: quickselect + no substr → active
+    tabb = filter(b -> :tab in b.keys, bs)[1]
+    @test tabb.when(o)
+
+    # tabcomplete: quickselect + substr → inactive
+    o.data.selectmode |= TW.POPUPSUBSTR
+    bs2 = TW.bindings(o)
+    @test !filter(b -> :tab in b.keys, bs2)[1].when(o)
+
+    # helptext: without quickselect → no searchbox section
+    o.data.selectmode = 0
+    ht = TW.helptext(o)
+    @test occursin("down", ht)
+    @test !occursin("Ctrl-A", ht)
+
+    # helptext: with quickselect → searchbox section appended
+    o.data.selectmode |= TW.POPUPQUICKSELECT
+    ht2 = TW.helptext(o)
+    @test occursin("Ctrl-A", ht2) || occursin("Ctrl-K", ht2)
+end
+
+@testset "Entry bindings table (headless)" begin
+    using Dates
+
+    # --- Int entry ---
+    d = TW.TwEntryData(Int)
+    o = TW.TwObj(d, Val{:Entry})
+    o.width = 12; o.box = true; o.borderSizeH = 1; o.title = ""
+    TW.apply_default!(o, 42)
+
+    @test TW.inject_via_table(o, :esc) === TW.Cancel
+    @test TW.inject_via_table(o, :f9)  === TW.Ignored
+
+    # :enter commits valid buffer → Accept, o.value updated
+    o.data.editor.buffer = "100"
+    @test TW.inject_via_table(o, :enter) === TW.Accept
+    @test o.value == 100
+
+    # "m" ×1000 (Int is Real, not Bool)
+    o.data.editor.buffer = "5"
+    @test TW.inject_via_table(o, "m") === TW.Handled
+    @test o.value == 5000
+
+    # shift_up: no tickSize → when guard blocks → Ignored
+    @test TW.inject_via_table(o, :shift_up) === TW.Ignored
+
+    # shift_up with tickSize configured
+    o.data.editor.tickSize = 10
+    TW.apply_default!(o, 50)
+    @test TW.inject_via_table(o, :shift_up) === TW.Handled
+    @test o.value == 60
+
+    # shift_down
+    @test TW.inject_via_table(o, :shift_down) === TW.Handled
+    @test o.value == 50
+
+    # --- String entry: "m", shift, "?" all blocked ---
+    ds = TW.TwEntryData(String)
+    os = TW.TwObj(ds, Val{:Entry})
+    os.width = 12; os.box = false; os.borderSizeH = 0; os.title = ""
+    @test TW.inject_via_table(os, "m")         === TW.Ignored
+    @test TW.inject_via_table(os, :shift_up)   === TW.Ignored
+    @test TW.inject_via_table(os, :shift_down) === TW.Ignored
+    @test TW.inject_via_table(os, "?")         === TW.Ignored
+
+    # --- Date entry: "?" binding active, "m" blocked ---
+    dd = TW.TwEntryData(Date)
+    od = TW.TwObj(dd, Val{:Entry})
+    od.width = 14; od.box = false; od.borderSizeH = 0; od.title = ""
+    @test TW.inject_via_table(od, "m") === TW.Ignored
+    bs = TW.bindings(od)
+    qb = filter(b -> "?" in b.keys, bs)
+    @test length(qb) == 1 && qb[1].when(od)
+
+    # --- helptext: type-conditional sections ---
+    d.showHelp = true
+    ht_int = TW.helptext(o)
+    @test occursin("×1000", ht_int)
+    @test occursin("tick",  ht_int)
+    @test occursin("Ctrl",  ht_int)
+    @test !occursin("Date", ht_int)
+
+    ds.showHelp = true
+    ht_str = TW.helptext(os)
+    @test !occursin("×1000", ht_str)
+    @test !occursin("tick",  ht_str)
+
+    dd.showHelp = true
+    ht_date = TW.helptext(od)
+    @test occursin("YYYY", ht_date)
+    @test !occursin("×1000", ht_date)
 end
 
 println("\nAll primitives unit tests passed.")

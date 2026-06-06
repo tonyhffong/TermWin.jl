@@ -5,58 +5,13 @@
 # to `editor_handle`, keeping only the entry-specific keys (Enter/Esc/focus_off,
 # shift-↑/↓ tick, `m` ×1000, `?`→calendar).
 
-defaultEntryStringHelpText = """
-<-, -> : move cursor
-ctrl-a : move cursor to start
-ctrl-e : move cursor to end
-ctrl-k : empty entry
-ctrl-r : Toggle insertion/overwrite mode
-
-Edges are highlighted if more beyond boundary
-"""
-
-defaultEntryNumberHelpText = """
-<-, -> : move cursor
-ctrl-a : move cursor to start
-ctrl-e : move cursor to end
-ctrl-k : empty entry
-,      : Clean up format (add commas)
-.      : Decimal point. If already exists, jump there
-m      : Multiply by 1,000. So 1mm becomes 1 million
-e      : (Floating Point only) exponent. 1e6 for 1,000,000.0
-ctrl-r : Toggle insertion/overwrite mode
-Shft-up: If configured, increase value by a tick-size
-Shft-dn: If configured, decrease value by a tick-size
-"""
-
-defaultEntryDateHelpText = """
-Format : YYYY-MM-DD standard, but allows formats such as
-         20140101, 1/1/2014, 1Jan2014, 1 January 2014
-         2014.01.01
-<-, -> : move cursor
-ctrl-a : move cursor to start
-ctrl-e : move cursor to end
-ctrl-k : empty entry
-,      : Clean up format
-ctrl-r : Toggle insertion/overwrite mode
-?      : View calendar
-Shft-up: If configured, increase value by a tick-size
-Shft-dn: If configured, decrease value by a tick-size
-"""
 mutable struct TwEntryData
     editor::InlineEditor       # the unified inline editor (state + parse/format)
     showHelp::Bool
-    helpText::String
     titleLeft::Bool
     titlewidth::Int # -1 = natural title length; >=0 = fixed column width via ensure_length
     limitToWidth::Bool # TODO: not implemented yet
-    function TwEntryData(dt::DataType)
-        helpText =
-            dt <: AbstractString ? defaultEntryStringHelpText :
-            dt <: Number ? defaultEntryNumberHelpText :
-            (dt <: Date ? defaultEntryDateHelpText : "")
-        new(InlineEditor(dt), false, helpText, true, -1, false)
-    end
+    TwEntryData(dt::DataType) = new(InlineEditor(dt), false, true, -1, false)
 end
 
 # The editor-state fields moved into `editor`, but `inputText`/`cursorPos`/etc.
@@ -173,82 +128,117 @@ function draw(o::TwObj{TwEntryData})
     draw_editor!(o.window, starty, startx, o.data.editor, o.hasFocus)
 end
 
+const _ENTRY_EDITOR_HELP =
+    "←/→ Ctrl-A/E : cursor navigation  Ctrl-K : clear  Ctrl-R : toggle insert/overwrite\n"
+const _ENTRY_NUMBER_FORMAT_HELP =
+    ",  : reformat with commas  .  : decimal point (or jump to existing)\n"
+const _ENTRY_FLOAT_HELP =
+    "e  : exponent notation (e.g. 1e6)\n"
+const _ENTRY_DATE_FORMAT_HELP =
+    "Date formats: YYYY-MM-DD, 20140101, 1Jan2014, 1/1/2014, 2014.01.01\n" *
+    ",  : reformat to canonical form\n"
+
+function bindings(o::TwObj{TwEntryData})
+    ed = o.data.editor
+    [
+        Binding(:esc, "cancel", action = _->Cancel),
+        Binding([:enter, Symbol("return")], "confirm",
+                action = _->begin
+                    (v, ok) = editor_commit(ed)
+                    ok ? (o.value = v; Accept) : (beep(); Handled)
+                end),
+        Binding(:shift_up, "increase by tick",
+                when   = _-> (ed.valuetype <: Real || ed.valuetype <: Date) && ed.tickSize != 0,
+                action = _->begin
+                    if editor_tick!(ed, 1)
+                        (v, ok) = editor_commit(ed)
+                        ok && (o.value = v)
+                    end
+                    Handled
+                end),
+        Binding(:shift_down, "decrease by tick",
+                when   = _-> (ed.valuetype <: Real || ed.valuetype <: Date) && ed.tickSize != 0,
+                action = _->begin
+                    if editor_tick!(ed, -1)
+                        (v, ok) = editor_commit(ed)
+                        ok && (o.value = v)
+                    end
+                    Handled
+                end),
+        Binding("m", "×1000",
+                when   = _-> ed.valuetype <: Real && ed.valuetype != Bool,
+                action = _->begin
+                    (fieldcount, _) = getFieldDimension(o)
+                    (v, ok) = editor_commit(ed)
+                    if ok && v !== missing
+                        o.value = v * 1000
+                        ed.buffer = myNumFormat(o.value, ed, fieldcount)
+                        editor_checkcursor!(ed)
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+        Binding("?", "open calendar",
+                when   = _-> ed.valuetype <: Date,
+                action = _->begin
+                    (fieldcount, _) = getFieldDimension(o)
+                    (v0, _) = evalNFormat(ed, ed.buffer, fieldcount)
+                    initd = v0 isa Date ? v0 : today()
+                    global rootTwScreen
+                    w = newTwCalendar(rootTwScreen, initd; posy = :center, posx = :center)
+                    activateTwObj(w)
+                    if w.value isa Date
+                        editor_set_buffer!(ed, string(w.value))
+                        editor_checkcursor!(ed)
+                    end
+                    unregisterTwObj(rootTwScreen, w)
+                    Handled
+                end),
+    ]
+end
+
 function inject(o::TwObj{TwEntryData}, token)
     data = o.data
     ed = data.editor
     (fieldcount, _) = getFieldDimension(o)
     ed.width = fieldcount
-    dorefresh = false
-    retcode = Handled
 
-    if token == :esc
-        return Cancel
-    elseif token == :enter || token == Symbol("return")
+    # focus_off: not a user binding; commit on blur
+    if token == :focus_off
         (v, ok) = editor_commit(ed)
         if ok
             o.value = v
-            retcode = Accept
-        else
-            beep()
+            return Accept
         end
-    elseif token == :focus_off
-        (v, ok) = editor_commit(ed)
-        if ok
-            o.value = v
-            retcode = Accept
-        end
-        # invalid → editor_commit set `incomplete`; stay focused (retcode Handled)
-    elseif token == :shift_up &&
-           (ed.valuetype <: Real || ed.valuetype <: Date) && ed.tickSize != 0
-        if editor_tick!(ed, 1)
-            (v, ok) = editor_commit(ed)
-            ok && (o.value = v)
-            dorefresh = true
-        end
-    elseif token == :shift_down &&
-           (ed.valuetype <: Real || ed.valuetype <: Date) && ed.tickSize != 0
-        if editor_tick!(ed, -1)
-            (v, ok) = editor_commit(ed)
-            ok && (o.value = v)
-            dorefresh = true
-        end
-    elseif token == "m" && ed.valuetype <: Real && ed.valuetype != Bool  # ×1000
-        (v, ok) = editor_commit(ed)
-        if ok && v !== missing
-            o.value = v * 1000
-            ed.buffer = myNumFormat(o.value, ed, fieldcount)
+        return Handled  # invalid → editor set incomplete; stay
+    end
+
+    # Bindings table (esc, enter, shift_up/down, m, ?)
+    r = inject_via_table(o, token)
+    r === Handled && refresh(o)
+    r !== Ignored && return r
+
+    # Editor handle fallthrough (printable chars, cursor nav, ctrl keys)
+    r2 = editor_handle(ed, token)
+    if r2 === :handled
+        refresh(o); return Handled
+    elseif r2 === :rejected || r2 === :at_left_edge || r2 === :at_right_edge
+        beep(); return Handled
+    elseif r2 === :open_calendar
+        (v0, _) = evalNFormat(ed, ed.buffer, fieldcount)
+        initd = v0 isa Date ? v0 : today()
+        global rootTwScreen
+        w = newTwCalendar(rootTwScreen, initd; posy = :center, posx = :center)
+        activateTwObj(w)
+        if w.value isa Date
+            editor_set_buffer!(ed, string(w.value))
             editor_checkcursor!(ed)
-            dorefresh = true
-        else
-            beep()
         end
-    else
-        r = editor_handle(ed, token)
-        if r === :handled
-            dorefresh = true
-        elseif r === :rejected || r === :at_left_edge || r === :at_right_edge
-            beep()                       # entry has no column nav; edges just beep
-        elseif r === :open_calendar
-            global rootTwScreen
-            (v0, _) = evalNFormat(ed, ed.buffer, fieldcount)
-            initd = v0 isa Date ? v0 : today()
-            w = newTwCalendar(rootTwScreen, initd; posy = :center, posx = :center)
-            activateTwObj(w)
-            if w.value isa Date
-                editor_set_buffer!(ed, string(w.value))
-                editor_checkcursor!(ed)
-            end
-            unregisterTwObj(rootTwScreen, w)
-            dorefresh = true
-        else  # :open_enum (entry has no enum) or :ignored → bubble to host
-            retcode = Ignored
-        end
+        unregisterTwObj(rootTwScreen, w)
+        refresh(o); return Handled
     end
-
-    if dorefresh
-        refresh(o)
-    end
-    return retcode
+    return Ignored
 end
 
 # Parse/format engine lives in editor.jl. These shims keep the TwEntryData call
@@ -259,8 +249,11 @@ evalNFormat(data::TwEntryData, s::AbstractString, fieldcount::Int) =
     evalNFormat(data.editor, s, fieldcount)
 
 function helptext(o::TwObj{TwEntryData})
-    if !o.data.showHelp
-        return ""
-    end
-    o.data.helpText
+    o.data.showHelp || return ""
+    t = o.data.editor.valuetype
+    helptext_from_bindings(o) *
+        _ENTRY_EDITOR_HELP *
+        (t <: AbstractFloat ? _ENTRY_NUMBER_FORMAT_HELP * _ENTRY_FLOAT_HELP :
+         t <: Real && t != Bool ? _ENTRY_NUMBER_FORMAT_HELP :
+         t <: Date ? _ENTRY_DATE_FORMAT_HELP : "")
 end

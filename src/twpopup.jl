@@ -19,29 +19,6 @@ POPUPHIDEUNMATCHED = 4
 POPUPSORTMATCHED = 8
 POPUPALLOWNEW = 16
 
-defaultPopupHelpText = """
-arrows : move cursor
-home   : move to top
-end    : move to bottom
-enter  : select
-"""
-
-defaultPopupQuickHelpText = """
-arrows : move item cursor
-home   : move to top
-end    : move to bottom
-enter  : select
-
-Search box:
-ctrl-a : move search cursor to start
-ctrl-e : move search cursor to end
-ctrl-k : empty search entry
-ctrl-r : Toggle insertion/overwrite mode
-
-ctrl-n : move to the next matched item
-ctrl-p : move to the previous matched item
-"""
-
 mutable struct TwPopupData
     choices::Array{String,1}
     datalist::Array{Any,1}
@@ -49,10 +26,9 @@ mutable struct TwPopupData
     searchbox::Any
     scroll::ScrollState      # cursor=selected line, top=first visible, left=h-scroll (1-based)
     selectmode::Int
-    helpText::String
     colorpair::Int
     TwPopupData(arr::Array{String,1}) =
-        new(arr, Any[], maximum(map(z->length(z), arr)), nothing, ScrollState(), 0, "", 0)
+        new(arr, Any[], maximum(map(z->length(z), arr)), nothing, ScrollState(), 0, 0)
 end
 TwPopupData(arr::Array{T,1}) where {T<:AbstractString} = TwPopupData(map(x->String(x), arr))
 
@@ -139,12 +115,6 @@ function newTwPopup(
     if usedatalist
         rebuild_popup_datalist(obj)
     end
-    if obj.data.selectmode & POPUPQUICKSELECT != 0
-        obj.data.helpText = defaultPopupQuickHelpText
-    else
-        obj.data.helpText = defaultPopupHelpText
-    end
-
     obj.data.colorpair = colorpair
 
     h = 2 + min(length(arr), maxheight)
@@ -381,191 +351,159 @@ function update_popup_score(o::TwObj{TwPopupData})
     end
 end
 
+const _POPUP_SEARCHBOX_HELP = """
+Search box (always active):
+Ctrl-A/Ctrl-E  : search cursor to start/end
+Ctrl-K         : clear search box
+Ctrl-R         : toggle insert/overwrite
+"""
+
+function bindings(o::TwObj{TwPopupData})
+    vph = () -> popup_viewport(o)
+    n   = () -> popup_count(o)
+    [
+        Binding(:esc, "cancel", action = _->Cancel),
+        Binding(:up,       "up",        action = _->(move_cursor!(o.data.scroll, -1, n(), vph()); Handled)),
+        Binding(:down,     "down",      action = _->(move_cursor!(o.data.scroll,  1, n(), vph()); Handled)),
+        Binding(:pageup,   "page up",   action = _->(page!(o.data.scroll, -1, n(), vph()); Handled)),
+        Binding(:pagedown, "page down", action = _->(page!(o.data.scroll,  1, n(), vph()); Handled)),
+        Binding(:home, "go to top",
+                action = _->begin
+                    if o.data.scroll.top == 1 && o.data.scroll.left == 1 && o.data.scroll.cursor == 1
+                        beep(); return Handled
+                    end
+                    o.data.scroll.top = 1; o.data.scroll.left = 1; o.data.scroll.cursor = 1
+                    Handled
+                end),
+        Binding(Symbol("end"), "go to bottom",
+                action = _->begin
+                    if o.data.scroll.cursor == n()
+                        beep(); return Handled
+                    end
+                    o.data.scroll.cursor = n()
+                    clamp_view!(o.data.scroll, n(), vph())
+                    Handled
+                end),
+        Binding([:enter, Symbol("return")], "select",
+                action = _->begin
+                    udl = popup_use_datalist(o)
+                    if udl
+                        if o.data.scroll.cursor <= length(o.data.datalist)
+                            o.value = o.data.datalist[o.data.scroll.cursor][2]
+                            return Accept
+                        elseif o.data.selectmode & POPUPALLOWNEW != 0
+                            o.value = strip(o.data.searchbox.data.inputText)
+                            return Accept
+                        end
+                    else
+                        if o.data.scroll.cursor <= length(o.data.choices)
+                            o.value = o.data.choices[o.data.scroll.cursor]
+                            return Accept
+                        end
+                    end
+                    Handled
+                end),
+        Binding(:ctrl_n, "next match",
+                when   = _-> o.data.selectmode & POPUPQUICKSELECT != 0,
+                action = _->begin
+                    popup_search_next(o, 1, false)
+                    clamp_view!(o.data.scroll, n(), vph())
+                    Handled
+                end),
+        Binding(:ctrl_p, "prev match",
+                when   = _-> o.data.selectmode & POPUPQUICKSELECT != 0,
+                action = _->begin
+                    popup_search_next(o, -1, false)
+                    clamp_view!(o.data.scroll, n(), vph())
+                    Handled
+                end),
+        Binding(:tab, "tab-complete",
+                when   = _-> (o.data.selectmode & POPUPQUICKSELECT != 0) &&
+                             (o.data.selectmode & POPUPSUBSTR == 0),
+                action = _->begin
+                    udl = popup_use_datalist(o)
+                    nextstr = ""; currstr = ""
+                    if udl
+                        if o.data.scroll.cursor < length(o.data.datalist)
+                            currstr = o.data.datalist[o.data.scroll.cursor][2]
+                            nextstr = o.data.datalist[o.data.scroll.cursor+1][2]
+                        end
+                    else
+                        if o.data.scroll.cursor < length(o.data.choices)
+                            currstr = o.data.choices[o.data.scroll.cursor]
+                            nextstr = o.data.choices[o.data.scroll.cursor+1]
+                        end
+                    end
+                    lcp = longest_common_prefix(currstr, nextstr)
+                    if startswith(lcp, o.data.searchbox.data.inputText)
+                        o.data.searchbox.data.inputText = lcp
+                        inject(o.data.searchbox, :ctrl_e)
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+    ]
+end
+
 function inject(o::TwObj{TwPopupData}, token)
-    dorefresh = false
-    retcode = Handled # default behavior is that we know what to do with it
-
     viewContentWidth = o.width - o.borderSizeH * 2
-    viewContentHeight = o.height - 2 * o.borderSizeV
 
-    usedatalist = popup_use_datalist(o)
-    tabcomplete =
-        (o.data.selectmode & POPUPQUICKSELECT != 0) &&
-        (o.data.selectmode & POPUPSUBSTR == 0)
-
-    # Shared viewport helpers replace the hand-rolled checkTop/moveby math.
-    checkTop = () -> clamp_view!(o.data.scroll, popup_count(o), viewContentHeight)
-    moveby = n -> (move_cursor!(o.data.scroll, n, popup_count(o), viewContentHeight); true)
-
+    # Quickselect pre-emption: searchbox gets most tokens first (same pattern as multiselect).
     if o.data.selectmode & POPUPQUICKSELECT != 0 && token != :F1
         inputText = o.data.searchbox.data.inputText
         result = inject(o.data.searchbox, token)
-
         if result == Handled
             if inputText != o.data.searchbox.data.inputText
                 update_popup_score(o)
-                checkTop()
+                clamp_view!(o.data.scroll, popup_count(o), popup_viewport(o))
             end
             refresh(o)
             return result
         end
     end
 
-    if token == :esc
-        retcode = Cancel
-    elseif token == :up
-        dorefresh = moveby(-1)
-    elseif token == :down
-        dorefresh = moveby(1)
-    elseif token == :left
-        if o.data.scroll.left > 1
-            o.data.scroll.left -= 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :right
-        if o.data.scroll.left + viewContentWidth < o.data.maxchoicelength
-            o.data.scroll.left += 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :shift_left # TODO ctrl-left
-        if o.data.scroll.left > 1
-            o.data.scroll.left -= 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :ctrlshift_left # TODO ctrl-left
-        if o.data.scroll.left > 1
-            o.data.scroll.left = 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :shift_right
-        if o.data.scroll.left + viewContentWidth < o.data.maxchoicelength
-            o.data.scroll.left += 1
-            dorefresh = true
-        else
-            beep()
-        end
+    # Bindings table (nav, select, search-nav, tab-complete)
+    r = inject_via_table(o, token)
+    r === Handled && refresh(o)
+    r !== Ignored && return r
+
+    # h-scroll and mouse (undocumented, stay as fallthrough)
+    if token in (:left, :shift_left)
+        o.data.scroll.left > 1 ? (o.data.scroll.left -= 1; refresh(o)) : beep()
+        return Handled
+    elseif token in (:right, :shift_right)
+        o.data.scroll.left + viewContentWidth < o.data.maxchoicelength ? (o.data.scroll.left += 1; refresh(o)) : beep()
+        return Handled
+    elseif token == :ctrlshift_left
+        o.data.scroll.left > 1 ? (o.data.scroll.left = 1; refresh(o)) : beep()
+        return Handled
     elseif token == :ctrlshift_right
-        if o.data.scroll.left + viewContentWidth < o.data.maxchoicelength
-            o.data.scroll.left = o.data.maxchoicelength - viewContentWidth
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :pageup
-        dorefresh = moveby(-viewContentHeight)
-    elseif token == :pagedown
-        dorefresh = moveby(viewContentHeight)
-    elseif token == :ctrl_n
-        popup_search_next(o, 1, false)
-        checkTop()
-        dorefresh = true
-    elseif token == :ctrl_p
-        popup_search_next(o, -1, false)
-        checkTop()
-        dorefresh = true
+        o.data.scroll.left + viewContentWidth < o.data.maxchoicelength ? (o.data.scroll.left = o.data.maxchoicelength - viewContentWidth; refresh(o)) : beep()
+        return Handled
     elseif token == :KEY_MOUSE
-        (mstate, x, y, bs) = getmouse()
+        (mstate, x, y, _) = getmouse()
+        vph = popup_viewport(o)
         if mstate == :scroll_up
-            dorefresh = moveby(-(round(Int, viewContentHeight/10)))
+            move_cursor!(o.data.scroll, -(round(Int, vph/10)), popup_count(o), vph)
+            refresh(o); return Handled
         elseif mstate == :scroll_down
-            dorefresh = moveby(round(Int, viewContentHeight/10))
+            move_cursor!(o.data.scroll,  round(Int, vph/10),  popup_count(o), vph)
+            refresh(o); return Handled
         elseif mstate == :button1_pressed
             (rely, relx) = screen_to_relative(o.window, y, x)
             if o.borderSizeV <= rely < o.height - o.borderSizeV && 0 <= relx < o.width
-                sz = popup_use_datalist(o) ? length(o.data.datalist) : length(o.data.choices)
-                o.data.scroll.cursor = clamp(o.data.scroll.top + rely - o.borderSizeV, 1, sz)
-                dorefresh = true
-            else
-                retcode = Ignored
+                o.data.scroll.cursor = clamp(o.data.scroll.top + rely - o.borderSizeV, 1, popup_count(o))
+                refresh(o); return Handled
             end
         end
-    elseif token == :tab && tabcomplete
-        # auto-input the search text to be the longest common prefix of the current line and the next line,
-        # as long as the current search text content can be appended.
-        nextstr = ""
-        currstr = ""
-        if usedatalist
-            if o.data.scroll.cursor < length(o.data.datalist)
-                currstr = o.data.datalist[o.data.scroll.cursor][2]
-                nextstr = o.data.datalist[o.data.scroll.cursor+1][2]
-            end
-        else
-            if o.data.scroll.cursor < length(o.data.choices)
-                currstr = o.data.choices[o.data.scroll.cursor]
-                nextstr = o.data.choices[o.data.scroll.cursor+1]
-            end
-        end
-        lcp = longest_common_prefix(currstr, nextstr)
-        if startswith(lcp, o.data.searchbox.data.inputText)
-            o.data.searchbox.data.inputText = lcp
-            inject(o.data.searchbox, :ctrl_e) # move the cursor to the end
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :home
-        if o.data.scroll.top != 1 || o.data.scroll.left != 1 || o.data.scroll.cursor != 1
-            o.data.scroll.top = 1
-            o.data.scroll.left = 1
-            o.data.scroll.cursor = 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif in(token, Any[Symbol("end")])
-        if usedatalist
-            n = length(o.data.datalist)
-        else
-            n = length(o.data.choices)
-        end
-        if o.data.scroll.cursor != n
-            o.data.scroll.cursor = n
-            checkTop()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :enter || token == Symbol("return")
-        if usedatalist
-            if o.data.scroll.cursor <= length(o.data.datalist)
-                o.value = o.data.datalist[o.data.scroll.cursor][2]
-                retcode = Accept
-            elseif o.data.selectmode & POPUPALLOWNEW != 0
-                o.value = strip(o.data.searchbox.data.inputText)
-                retcode = Accept
-            end
-        else
-            if o.data.scroll.cursor <= length(o.data.choices)
-                o.value = o.data.choices[o.data.scroll.cursor]
-                retcode = Accept
-            end
-        end
-    else
-        retcode = Ignored # I don't know what to do with it
+        return Ignored
     end
 
-    if dorefresh
-        refresh(o)
-    end
-
-    return retcode
+    return Ignored
 end
 
 function helptext(o::TwObj{TwPopupData})
-    s = o.data.helpText
-    tabcomplete =
-        (o.data.selectmode & POPUPQUICKSELECT != 0) &&
-        (o.data.selectmode & POPUPSUBSTR == 0)
-    if tabcomplete
-        s *= "tab    : tab-completion"
-    end
-    s
+    s = helptext_from_bindings(o)
+    o.data.selectmode & POPUPQUICKSELECT != 0 ? s * _POPUP_SEARCHBOX_HELP : s
 end
