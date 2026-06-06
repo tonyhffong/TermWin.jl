@@ -1,6 +1,16 @@
 # twedittable.jl — editable table widget backed by a DataFrame
 
-defaultEditTableBottomText = "F1:Help  Ctrl-N:New_row  Ctrl-D:Del_Row  Ctrl-Y:Copy  Ctrl-P:Paste  F10:Submit"
+defaultEditTableBottomText = "F1:Help  Ctrl-N:New  Ctrl-D:Del  Ctrl-Y:Copy  Ctrl-V:Paste  Ctrl-Z:Undo  F10:Submit"
+
+const _ET_CLIPBOARD_CAPACITY = 20
+const _et_clipboard_stack = String[]
+
+function _et_clipboard_push!(s::String)
+    pushfirst!(_et_clipboard_stack, s)
+    length(_et_clipboard_stack) > _ET_CLIPBOARD_CAPACITY &&
+        deleteat!(_et_clipboard_stack, (_ET_CLIPBOARD_CAPACITY + 1):length(_et_clipboard_stack))
+    nothing
+end
 
 struct TwEditTableCol
     name::Symbol                               # DataFrame column name
@@ -26,6 +36,7 @@ mutable struct TwEditTableData
     currentLeft::Int       # first visible column (horizontal scroll)
     editor::InlineEditor   # the active cell's inline editor (state + parse/format)
     bottomText::String
+    history::EditHistory{DataFrame}
 end
 
 function newTwEditTable(
@@ -47,6 +58,7 @@ function newTwEditTable(
         1, 1, 1, 1,
         InlineEditor(String; width = 1),   # placeholder; _et_load_cell! builds the real one
         bottomText,
+        EditHistory{DataFrame}(copy(df)),
     )
     obj = TwObj(data, Val{:EditTable})
     obj.box = box
@@ -97,6 +109,7 @@ function _et_commit_cell!(data::TwEditTableData)::Bool
     col = data.colspecs[data.currentCol]
     !col.editable && return true
     ed = data.editor
+    was_dirty = ed.dirty
 
     # Enum cells: the value is written on popup selection. With missingok we also
     # accept an in-list value or an empty (→ missing) buffer.
@@ -105,10 +118,12 @@ function _et_commit_cell!(data::TwEditTableData)::Bool
         if in(ed.buffer, col.enumvalues)
             data.df[data.currentRow, col.name] = ed.buffer
             ed.incomplete = false; ed.dirty = false
+            was_dirty && push_snapshot!(data.history, copy(data.df))
             return true
         elseif ed.buffer == ""
             data.df[data.currentRow, col.name] = missing
             ed.incomplete = false; ed.dirty = false
+            was_dirty && push_snapshot!(data.history, copy(data.df))
             return true
         else
             ed.incomplete = true
@@ -120,6 +135,7 @@ function _et_commit_cell!(data::TwEditTableData)::Bool
     (v, ok) = editor_commit(ed)
     if ok
         data.df[data.currentRow, col.name] = v
+        was_dirty && push_snapshot!(data.history, copy(data.df))
         return true
     else
         return false   # editor_commit set ed.incomplete
@@ -243,6 +259,7 @@ function _et_draw_active_cell!(
 end
 
 function _et_clipboard_write(s::String)
+    _et_clipboard_push!(s)
     try
         if Sys.isapple()
             open(`pbcopy`, "w") do io; write(io, s); end
@@ -295,9 +312,8 @@ function _et_copy_table!(o::TwObj{TwEditTableData})
     _et_clipboard_write(join(rows, "\n"))
 end
 
-function _et_paste_table!(o::TwObj{TwEditTableData})
+function _et_paste_from_string!(o::TwObj{TwEditTableData}, raw::String)
     data = o.data
-    raw = _et_clipboard_read()
     isempty(raw) && return
 
     lines = split(raw, r"\r?\n")
@@ -345,8 +361,13 @@ function _et_paste_table!(o::TwObj{TwEditTableData})
         dest_row += 1
     end
 
+    push_snapshot!(data.history, copy(data.df))
     _et_load_cell!(data)
     _et_checkTop!(o)
+end
+
+function _et_paste_table!(o::TwObj{TwEditTableData})
+    _et_paste_from_string!(o, _et_clipboard_read())
 end
 
 function _et_open_enum_popup!(o::TwObj{TwEditTableData})
@@ -363,7 +384,9 @@ function _et_open_enum_popup!(o::TwObj{TwEditTableData})
     result = activateTwObj(popup)
     unregisterTwObj(rootTwScreen, popup)
     if result !== nothing
+        prev = data.df[data.currentRow, col.name]
         data.df[data.currentRow, col.name] = result
+        (ismissing(prev) || prev != result) && push_snapshot!(data.history, copy(data.df))
         _et_load_cell!(data)
     end
 end
@@ -451,157 +474,268 @@ function draw(o::TwObj{TwEditTableData})
     end
 end
 
-# ─── inject ───────────────────────────────────────────────────────────────────
-
-function inject(o::TwObj{TwEditTableData}, token)
-    data = o.data
+function _et_move_next_editable!(o::TwObj{TwEditTableData})
+    data  = o.data
     nrows = nrow(data.df)
     ncols = length(data.colspecs)
-    dorefresh = false
-    retcode = Handled
+    c = data.currentCol; r = data.currentRow
+    start_c, start_r = c, r
+    while true
+        c += 1
+        if c > ncols; c = 1; r += 1; r > nrows && (r = start_r; c = start_c; return); end
+        (c == start_c && r == start_r) && return
+        data.colspecs[c].editable && (data.currentCol = c; data.currentRow = r; return)
+    end
+end
 
-    col = data.colspecs[data.currentCol]
-    is_editable = col.editable
-    is_enum = col.enumvalues !== nothing
+function _et_move_prev_editable!(o::TwObj{TwEditTableData})
+    data  = o.data
+    nrows = nrow(data.df)
+    ncols = length(data.colspecs)
+    c = data.currentCol; r = data.currentRow
+    start_c, start_r = c, r
+    while true
+        c -= 1
+        if c < 1; c = ncols; r -= 1; r < 1 && (r = start_r; c = start_c; return); end
+        (c == start_c && r == start_r) && return
+        data.colspecs[c].editable && (data.currentCol = c; data.currentRow = r; return)
+    end
+end
 
-    function move_next_editable()
-        c = data.currentCol; r = data.currentRow
-        start_c, start_r = c, r
-        while true
-            c += 1
-            if c > ncols; c = 1; r += 1; r > nrows && (r = start_r; c = start_c; return); end
-            (c == start_c && r == start_r) && return
-            data.colspecs[c].editable && (data.currentCol = c; data.currentRow = r; return)
-        end
+function bindings(o::TwObj{TwEditTableData})
+    data = o.data
+    [
+        Binding(:F10, "commit and exit",
+            action = _-> begin
+                if _et_commit_cell!(data)
+                    o.value = data.df; Accept
+                else
+                    beep(); Handled
+                end
+            end),
+        Binding(:esc, "revert cell / cancel",
+            action = _-> data.editor.dirty ? (_et_load_cell!(data); Handled) : Cancel),
+        Binding(:up, "move row up",
+            action = _-> begin
+                if _et_commit_cell!(data)
+                    data.currentRow > 1 ? (data.currentRow -= 1) : beep()
+                    _et_load_cell!(data); _et_checkTop!(o)
+                else
+                    beep()
+                end
+                Handled
+            end),
+        Binding(:down, "move row down",
+            action = _-> begin
+                if _et_commit_cell!(data)
+                    data.currentRow < nrow(data.df) ? (data.currentRow += 1) : beep()
+                    _et_load_cell!(data); _et_checkTop!(o)
+                else
+                    beep()
+                end
+                Handled
+            end),
+        Binding([:enter, Symbol("return")], "move down",
+            when   = _-> begin lc = data.colspecs[data.currentCol]; !(lc.editable && lc.enumvalues !== nothing) end,
+            action = _-> begin
+                if _et_commit_cell!(data)
+                    data.currentRow < nrow(data.df) ? (data.currentRow += 1) : beep()
+                    _et_load_cell!(data); _et_checkTop!(o)
+                else
+                    beep()
+                end
+                Handled
+            end),
+        Binding(:pageup, "page up",
+            action = _-> begin
+                if _et_commit_cell!(data)
+                    data.currentRow = max(1, data.currentRow - max(1, o.height - 2*o.borderSizeV - 1))
+                    _et_load_cell!(data); _et_checkTop!(o)
+                else
+                    beep()
+                end
+                Handled
+            end),
+        Binding(:pagedown, "page down",
+            action = _-> begin
+                if _et_commit_cell!(data)
+                    data.currentRow = min(nrow(data.df), data.currentRow + max(1, o.height - 2*o.borderSizeV - 1))
+                    _et_load_cell!(data); _et_checkTop!(o)
+                else
+                    beep()
+                end
+                Handled
+            end),
+        Binding(:left, "move left / cursor back",
+            action = _-> begin
+                lc = data.colspecs[data.currentCol]
+                if lc.editable && lc.enumvalues === nothing && data.editor.cursorPos > 1
+                    data.editor.cursorPos -= 1; editor_checkcursor!(data.editor)
+                elseif _et_commit_cell!(data)
+                    data.currentCol > 1 ? (data.currentCol -= 1) : beep()
+                    _et_load_cell!(data); _et_checkLeft!(o)
+                else
+                    beep()
+                end
+                Handled
+            end),
+        Binding(:right, "move right / cursor forward",
+            action = _-> begin
+                lc = data.colspecs[data.currentCol]
+                if lc.editable && lc.enumvalues === nothing && data.editor.cursorPos <= length(data.editor.buffer)
+                    data.editor.cursorPos += 1; editor_checkcursor!(data.editor)
+                elseif _et_commit_cell!(data)
+                    data.currentCol < length(data.colspecs) ? (data.currentCol += 1) : beep()
+                    _et_load_cell!(data); _et_checkLeft!(o)
+                else
+                    beep()
+                end
+                Handled
+            end),
+        Binding([:home, :ctrl_a], "cursor to start of cell",
+            action = _-> (editor_handle(data.editor, :home); Handled)),
+        Binding([Symbol("end"), :ctrl_e], "cursor to end of cell",
+            action = _-> (editor_handle(data.editor, Symbol("end")); Handled)),
+        Binding([:ctrl_r, :insert], "toggle insert/overwrite",
+            action = _-> (editor_handle(data.editor, :ctrl_r); Handled)),
+        Binding(:ctrl_k, "clear cell",
+            when   = _-> begin lc = data.colspecs[data.currentCol]; lc.editable && (lc.enumvalues === nothing || lc.missingok) end,
+            action = _-> (editor_handle(data.editor, :ctrl_k); Handled)),
+        Binding(:delete, "delete char forward",
+            when   = _-> begin lc = data.colspecs[data.currentCol]; lc.editable && lc.enumvalues === nothing end,
+            action = _-> (editor_handle(data.editor, :delete); Handled)),
+        Binding(:backspace, "delete char backward",
+            when   = _-> begin lc = data.colspecs[data.currentCol]; lc.editable && lc.enumvalues === nothing end,
+            action = _-> (editor_handle(data.editor, :backspace); Handled)),
+        Binding(:ctrl_n, "new row after current",
+            action = _-> begin
+                if _et_commit_cell!(data)
+                    _et_insert_row_after!(data, data.currentRow)
+                    data.currentRow += 1
+                    push_snapshot!(data.history, copy(data.df))
+                    first_ed = findfirst(c -> c.editable, data.colspecs)
+                    data.currentCol = first_ed !== nothing ? first_ed : 1
+                    _et_load_cell!(data); _et_checkTop!(o); _et_checkLeft!(o)
+                else
+                    beep()
+                end
+                Handled
+            end),
+        Binding(:ctrl_d, "delete current row",
+            action = _-> begin
+                if nrow(data.df) <= 1
+                    beep()
+                else
+                    delete!(data.df, data.currentRow)
+                    data.currentRow = min(data.currentRow, nrow(data.df))
+                    push_snapshot!(data.history, copy(data.df))
+                    _et_load_cell!(data); _et_checkTop!(o)
+                end
+                Handled
+            end),
+        Binding(:ctrl_i, "next editable field",
+            action = _-> begin
+                if _et_commit_cell!(data)
+                    _et_move_next_editable!(o)
+                    _et_load_cell!(data); _et_checkTop!(o); _et_checkLeft!(o)
+                else
+                    beep()
+                end
+                Handled
+            end),
+        Binding(:ctrlshift_i, "prev editable field",
+            action = _-> begin
+                if _et_commit_cell!(data)
+                    _et_move_prev_editable!(o)
+                    _et_load_cell!(data); _et_checkTop!(o); _et_checkLeft!(o)
+                else
+                    beep()
+                end
+                Handled
+            end),
+        Binding(:ctrl_y, "copy table to clipboard",
+            action = _-> (_et_copy_table!(o); Handled)),
+        Binding(:ctrl_v, "paste TSV from clipboard",
+            action = _-> (_et_paste_table!(o); Handled)),
+        Binding(:alt_y, "clipboard history",
+            when   = _-> !isempty(_et_clipboard_stack),
+            action = _-> begin
+                items = [ensure_length(split(s, '\n')[1], 60) for s in _et_clipboard_stack]
+                popup = newTwPopup(
+                    o.screen.value, items;
+                    posy         = :center,
+                    posx         = :center,
+                    title        = "Clipboard History",
+                    substrsearch = true,
+                    maxheight    = min(length(items) + 2, 12),
+                    maxwidth     = 70,
+                )
+                choice = activateTwObj(popup)
+                unregisterTwObj(o.screen.value, popup)
+                if choice !== nothing
+                    idx = findfirst(==(choice), items)
+                    idx !== nothing && _et_paste_from_string!(o, _et_clipboard_stack[idx])
+                end
+                refresh(o)
+                Handled
+            end),
+        Binding(:ctrl_z, "undo",
+            when   = _-> can_undo(data.history),
+            action = _-> begin
+                (prev, ok) = undo!(data.history)
+                if ok
+                    data.df = copy(prev)
+                    o.value = data.df
+                    data.currentRow = min(data.currentRow, nrow(data.df))
+                    data.currentCol = min(data.currentCol, length(data.colspecs))
+                    _et_load_cell!(data); _et_checkTop!(o); _et_checkLeft!(o)
+                else
+                    beep()
+                end
+                Handled
+            end),
+        Binding(:ctrlshift_z, "redo",
+            when   = _-> can_redo(data.history),
+            action = _-> begin
+                (next_state, ok) = redo!(data.history)
+                if ok
+                    data.df = copy(next_state)
+                    o.value = data.df
+                    data.currentRow = min(data.currentRow, nrow(data.df))
+                    data.currentCol = min(data.currentCol, length(data.colspecs))
+                    _et_load_cell!(data); _et_checkTop!(o); _et_checkLeft!(o)
+                else
+                    beep()
+                end
+                Handled
+            end),
+    ]
+end
+
+function inject(o::TwObj{TwEditTableData}, token)
+    r = inject_via_table(o, token)
+    if r !== Ignored
+        r === Handled && refresh(o)
+        return r
     end
 
-    function move_prev_editable()
-        c = data.currentCol; r = data.currentRow
-        start_c, start_r = c, r
-        while true
-            c -= 1
-            if c < 1; c = ncols; r -= 1; r < 1 && (r = start_r; c = start_c; return); end
-            (c == start_c && r == start_r) && return
-            data.colspecs[c].editable && (data.currentCol = c; data.currentRow = r; return)
-        end
-    end
+    data = o.data
+    col  = data.colspecs[data.currentCol]
 
-    if token == :F10
-        if _et_commit_cell!(data)
-            o.value = data.df
-            retcode = Accept
-        else
-            beep()
-        end
-    elseif token == :esc
-        if data.editor.dirty
-            _et_load_cell!(data)
-            dorefresh = true
-        else
-            retcode = Cancel
-        end
-    elseif token == :up
-        if _et_commit_cell!(data)
-            if data.currentRow > 1
-                data.currentRow -= 1
-            else
-                beep()
-            end
-            _et_load_cell!(data)
-            _et_checkTop!(o)
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :down
-        if _et_commit_cell!(data)
-            if data.currentRow < nrows
-                data.currentRow += 1
-            else
-                beep()
-            end
-            _et_load_cell!(data)
-            _et_checkTop!(o)
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif (token == :enter || token == Symbol("return")) && !(is_editable && is_enum)
-        # Enter on non-enum cells moves down a row (like a spreadsheet)
-        if _et_commit_cell!(data)
-            if data.currentRow < nrows
-                data.currentRow += 1
-            else
-                beep()
-            end
-            _et_load_cell!(data)
-            _et_checkTop!(o)
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :pageup
-        if _et_commit_cell!(data)
-            pageSize = max(1, o.height - 2 * o.borderSizeV - 1)
-            data.currentRow = max(1, data.currentRow - pageSize)
-            _et_load_cell!(data)
-            _et_checkTop!(o)
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :pagedown
-        if _et_commit_cell!(data)
-            pageSize = max(1, o.height - 2 * o.borderSizeV - 1)
-            data.currentRow = min(nrows, data.currentRow + pageSize)
-            _et_load_cell!(data)
-            _et_checkTop!(o)
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :left
-        # cursor move inside an editable, non-enum cell; otherwise switch column
-        if is_editable && !is_enum && data.editor.cursorPos > 1
-            data.editor.cursorPos -= 1
-            editor_checkcursor!(data.editor)
-            dorefresh = true
-        elseif _et_commit_cell!(data)
-            data.currentCol > 1 ? (data.currentCol -= 1) : beep()
-            _et_load_cell!(data); _et_checkLeft!(o); dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :right
-        if is_editable && !is_enum && data.editor.cursorPos <= length(data.editor.buffer)
-            data.editor.cursorPos += 1
-            editor_checkcursor!(data.editor)
-            dorefresh = true
-        elseif _et_commit_cell!(data)
-            data.currentCol < ncols ? (data.currentCol += 1) : beep()
-            _et_load_cell!(data); _et_checkLeft!(o); dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :home || token == :ctrl_a || token == Symbol("end") ||
-           token == :ctrl_e || token == :ctrl_r || token == :insert
-        # pure cursor / overwrite-mode keys: always allowed, delegate to editor
-        editor_handle(data.editor, token) === :handled && (dorefresh = true)
-    elseif token == :ctrl_k && is_editable && (!is_enum || col.missingok)
-        editor_handle(data.editor, token) === :handled && (dorefresh = true)
-    elseif (token == :delete || token == :backspace) && is_editable && !is_enum
-        editor_handle(data.editor, token) === :handled ? (dorefresh = true) : beep()
-    elseif is_editable && is_enum &&
-           (typeof(token) <: AbstractString || token == :enter || token == Symbol("return"))
+    # Printable char or enter into an editable enum cell → open picker
+    if col.editable && col.enumvalues !== nothing &&
+       (typeof(token) <: AbstractString || token == :enter || token == Symbol("return"))
         _et_open_enum_popup!(o)
-        dorefresh = true
-    elseif typeof(token) <: AbstractString && is_editable && !is_enum
-        # printable character into an editable cell: the shared editor applies the
-        # per-type rules (string/number/date) and signals the date calendar.
-        r = editor_handle(data.editor, token)
-        if r === :handled
-            dorefresh = true
-        elseif r === :open_calendar
+        refresh(o)
+        return Handled
+    end
+
+    # Printable char into an editable non-enum cell
+    if typeof(token) <: AbstractString && col.editable && col.enumvalues === nothing
+        er = editor_handle(data.editor, token)
+        if er === :handled
+            refresh(o); return Handled
+        elseif er === :open_calendar
             (parsed, _) = evalNFormat(data.editor, data.editor.buffer, col.width)
             init_date = parsed isa Dates.Date ? parsed : Dates.today()
             cal = newTwCalendar(o.screen.value, init_date; posy = :center, posx = :center)
@@ -609,147 +743,69 @@ function inject(o::TwObj{TwEditTableData}, token)
             cal.value isa Dates.Date &&
                 editor_set_buffer!(data.editor, Dates.format(cal.value, "yyyy-mm-dd"))
             unregisterTwObj(o.screen.value, cal)
-            dorefresh = true
-        else  # :rejected and friends
-            beep()
-        end
-    elseif token == :ctrl_n
-        if _et_commit_cell!(data)
-            _et_insert_row_after!(data, data.currentRow)
-            data.currentRow += 1
-            # Move to first editable column on the new row
-            first_ed = findfirst(c -> c.editable, data.colspecs)
-            data.currentCol = first_ed !== nothing ? first_ed : 1
-            _et_load_cell!(data)
-            _et_checkTop!(o)
-            _et_checkLeft!(o)
-            dorefresh = true
+            refresh(o); return Handled
         else
-            beep()
+            beep(); return Handled
         end
-    elseif token == :ctrl_d
-        if nrows <= 1
-            beep()
-        else
-            delete!(data.df, data.currentRow)
-            data.currentRow = min(data.currentRow, nrow(data.df))
-            _et_load_cell!(data)
-            _et_checkTop!(o)
-            dorefresh = true
-        end
-    elseif token == :ctrl_i #ctrl_tab
-        if _et_commit_cell!(data)
-            move_next_editable()
-            _et_load_cell!(data)
-            _et_checkTop!(o)
-            _et_checkLeft!(o)
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :ctrlshift_i #ctrlshift_tab
-        if _et_commit_cell!(data)
-            move_prev_editable()
-            _et_load_cell!(data)
-            _et_checkTop!(o)
-            _et_checkLeft!(o)
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :ctrl_y
-        _et_copy_table!(o)
-    elseif token == :ctrl_p
-        _et_paste_table!(o)
-        dorefresh = true
-    elseif token == :KEY_MOUSE
-        (mstate, x, y, bs) = getmouse()
-        bv = o.borderSizeV
-        bh = o.borderSizeH
+    end
+
+    # Mouse
+    if token == :KEY_MOUSE
+        (mstate, x, y, _bs) = getmouse()
+        bv = o.borderSizeV; bh = o.borderSizeH
         if mstate == :scroll_up
             if _et_commit_cell!(data)
                 data.currentRow = max(1, data.currentRow - 3)
-                _et_load_cell!(data)
-                _et_checkTop!(o)
-                dorefresh = true
+                _et_load_cell!(data); _et_checkTop!(o); refresh(o)
             end
+            return Handled
         elseif mstate == :scroll_down
             if _et_commit_cell!(data)
-                data.currentRow = min(nrows, data.currentRow + 3)
-                _et_load_cell!(data)
-                _et_checkTop!(o)
-                dorefresh = true
+                data.currentRow = min(nrow(data.df), data.currentRow + 3)
+                _et_load_cell!(data); _et_checkTop!(o); refresh(o)
             end
+            return Handled
         elseif mstate == :button1_pressed
             rely, relx = screen_to_relative(o.window, y, x)
-            # screen_to_relative returns canvas coords for TwWindow; normalise to widget-local.
             if isa(o.window, TwWindow)
-                rely -= o.window.yloc
-                relx -= o.window.xloc
+                rely -= o.window.yloc; relx -= o.window.xloc
             end
-            # Check click is inside the data area (not border, not header row)
             in_content = bh <= relx < o.width - bh && bv + 1 <= rely < o.height - bv
             if in_content
-                clicked_row = data.currentTop + (rely - bv - 1)
-                clicked_row = clamp(clicked_row, 1, nrows)
-                # Determine clicked column from x offset within content area
+                clicked_row = clamp(data.currentTop + (rely - bv - 1), 1, nrow(data.df))
                 visibleCols, colxStarts = _et_visible_cols(o)
-                clicked_col = data.currentCol  # default: stay
+                clicked_col = data.currentCol
                 for (vi, c) in enumerate(visibleCols)
                     col_start = bh + colxStarts[vi]
-                    col_end   = col_start + data.colspecs[c].width - 1
-                    if col_start <= relx <= col_end
-                        clicked_col = c
-                        break
+                    if col_start <= relx <= col_start + data.colspecs[c].width - 1
+                        clicked_col = c; break
                     end
                 end
                 if clicked_row != data.currentRow || clicked_col != data.currentCol
                     if _et_commit_cell!(data)
-                        data.currentRow = clicked_row
-                        data.currentCol = clicked_col
-                        _et_load_cell!(data)
-                        _et_checkTop!(o)
-                        _et_checkLeft!(o)
-                        dorefresh = true
+                        data.currentRow = clicked_row; data.currentCol = clicked_col
+                        _et_load_cell!(data); _et_checkTop!(o); _et_checkLeft!(o)
+                        refresh(o)
                     else
                         beep()
                     end
                 else
-                    dorefresh = true  # refresh to show focus
+                    refresh(o)
                 end
+                return Handled
             else
-                retcode = Ignored
+                return Ignored
             end
         end
-    elseif token == :focus_off
+    end
+
+    # focus_off: commit silently, widget is leaving focus
+    if token == :focus_off
         _et_commit_cell!(data)
-        retcode = Accept
-    else
-        retcode = Ignored
+        return Accept
     end
 
-    if dorefresh
-        refresh(o)
-    end
-    retcode
+    return Ignored
 end
 
-function helptext(o::TwObj{TwEditTableData})
-    """
-←/→      : move cursor (at edge: switch column)
-↑/↓      : move row (commits current cell)
-Enter    : move down
-Home/End : cursor to start/end of cell
-Ctrl-K   : clear cell contents
-Ctrl-R   : toggle insert/overwrite mode
-Del/BS   : delete character
-Ctrl-N   : insert new row after current row
-Ctrl-D   : delete current row
-Ctrl-Tab : advance to next editable field (wraps rows)
-C-Sh-Tab : retreat to previous editable field (wraps rows)
-Ctrl-Y   : copy whole table to clipboard (TSV with header)
-Ctrl-P   : paste TSV from clipboard starting at cursor position
-Esc      : revert cell (if changed) / exit
-F10      : commit and exit
-"""
-end
+helptext(o::TwObj{TwEditTableData}) = helptext_from_bindings(o)

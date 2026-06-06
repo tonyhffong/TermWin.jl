@@ -1,26 +1,3 @@
-defaultTableHelpText = """
-PgUp/PgDn,←/→/↑/↓  : standard navigation
-<spc>,<rtn>: toggle leaf expansion
-Home/End   : jump to the start/end of the table
-ctrl_←/→   : paginate to left/right
-ctrl_↑/↓   : move up to the previous/next branch of the same level
-[, ]       : make current column narrower/wider
-+, -       : Expand or collapse 1 level everywhere
-p          : Change pivot
-c          : Change columns/order (then use Shift-up/down to reorder)
-v          : Switch preset views
-/          : search text (on string columns) on exposed rows
-?          : DEEP search text (on string columns), may expand nodes
-ctrl_n/p   : search next/previous occurence on exposed rows
-N          : search next occurence on any row. may expand more nodes
-F2         : describe() all columns of the full table
-Shift-F2   : describe(:all) for the current column only (transposed)
-F3         : popup window for leaf & root node stats
-F6         : popup window for value
-Ctrl-Y     : Export current view (HTML→browser, CSV/TSV→clipboard or file)
-             CSV uses tab indentation to represent pivot depth.
-             HTML opens a dark-themed self-contained file in the default browser.
-"""
 defaultTableBottomText = "F1:help p:Pivot c:ColOrd v:Views  F2:Describe  Ctrl-Y:Export"
 
 mutable struct TwTableColInfo
@@ -192,11 +169,11 @@ mutable struct TwDfTableData
     colInfo::Array{TwTableColInfo,1} # only the visible ones, maybe off-screen
     allcolInfo::Dict{Symbol,TwTableColInfo} # including invisible ones
     bottomText::String
-    helpText::String
     initdepth::Int
     views::Array{TwTableView,1}
     calcpivots::Dict{Symbol,CalcPivot}
     searchText::String
+    selection_text::Observable{String}
     # calculated dimension
     TwDfTableData() = new(
         TwDfTableNode(),
@@ -214,11 +191,11 @@ mutable struct TwDfTableData
         TwTableColInfo[],
         Dict{Symbol,TwTableColInfo}(),
         "",
-        defaultTableHelpText,
         1,
         TwTableView[],
         Dict{Symbol,CalcPivot}(),
         "",
+        Observable(""),
     )
 end
 
@@ -949,598 +926,534 @@ function _dt_export_menu!(o::TwObj{TwDfTableData})
     refresh(o)
 end
 
-function inject(o::TwObj{TwDfTableData}, token)
-    dorefresh = false
-    retcode = Handled # default behavior is that we know what to do with it
-    viewContentHeight = o.height - 2 * o.borderSizeV - o.data.headerlines
-    viewContentWidth = o.width - 2 * o.borderSizeH - o.data.datatreewidth
-    widths = map(x->x.format.width, o.data.colInfo)
+_dft_vph(o::TwObj{TwDfTableData}) = o.height - 2 * o.borderSizeV - o.data.headerlines
+_dft_vpw(o::TwObj{TwDfTableData}) = o.width  - 2 * o.borderSizeH - o.data.datatreewidth
 
-    update_tree_data = ()->begin
-        builddatalist(o.data)
+function _dft_check_top!(o::TwObj{TwDfTableData})
+    vch = _dft_vph(o)
+    o.data.datalistlen = length(o.data.datalist)
+    if o.data.currentLine > o.data.datalistlen
+        o.data.currentLine = o.data.datalistlen
     end
+    if o.data.currentTop < 1
+        o.data.currentTop = 1
+    end
+    if o.data.currentTop > o.data.datalistlen - vch + 1
+        o.data.currentTop = max(1, o.data.datalistlen - vch + 1)
+    end
+    if o.data.currentTop > o.data.currentLine
+        o.data.currentTop = o.data.currentLine
+    end
+    if o.data.currentLine - o.data.currentTop > vch - 1
+        o.data.currentTop = o.data.currentLine - vch + 1
+    end
+end
 
-    checkTop =
-        () -> begin
-            o.data.datalistlen = length(o.data.datalist)
-            if o.data.currentLine > o.data.datalistlen
-                o.data.currentLine = o.data.datalistlen
-            end
-            if o.data.currentTop < 1
-                o.data.currentTop = 1
-            end
-            if o.data.currentTop > o.data.datalistlen - viewContentHeight + 1
-                o.data.currentTop = max(1, o.data.datalistlen - viewContentHeight + 1)
-            end
-            if o.data.currentTop > o.data.currentLine
-                o.data.currentTop = o.data.currentLine
-            end
-            if o.data.currentLine - o.data.currentTop > viewContentHeight-1
-                o.data.currentTop = o.data.currentLine - viewContentHeight+1
+function _dft_check_left!(o::TwObj{TwDfTableData})
+    vcw = _dft_vpw(o)
+    widths = map(x->x.format.width, o.data.colInfo)
+    if o.data.currentLeft < 1
+        o.data.currentLeft = 1
+    else
+        revcumwidths = cumsum(map(x->x+1, reverse(widths)))
+        widthrng = searchsorted(revcumwidths, vcw)
+        if o.data.currentLeft > length(o.data.colInfo) - widthrng.stop + 1
+            o.data.currentLeft = length(o.data.colInfo) - widthrng.stop + 1
+        end
+    end
+    if o.data.currentLeft > o.data.currentCol
+        o.data.currentLeft = o.data.currentCol
+    else
+        revcumwidths = cumsum(map(x->x+1, reverse(widths[o.data.currentLeft:o.data.currentCol])))
+        widthrng = searchsorted(revcumwidths, vcw)
+        if o.data.currentLeft < o.data.currentCol - widthrng.stop + 1
+            o.data.currentLeft = o.data.currentCol - widthrng.stop + 1
+        end
+    end
+end
+
+function _dft_movev!(o::TwObj{TwDfTableData}, n::Int)
+    old = o.data.currentLine
+    o.data.currentLine = max(1, min(o.data.datalistlen, o.data.currentLine + n))
+    if old != o.data.currentLine
+        _dft_check_top!(o)
+        return true
+    else
+        beep()
+        return false
+    end
+end
+
+function _dft_moveh!(o::TwObj{TwDfTableData}, n::Int)
+    old = o.data.currentCol
+    o.data.currentCol = max(1, min(length(o.data.colInfo), o.data.currentCol + n))
+    if old != o.data.currentCol
+        _dft_check_left!(o)
+        return true
+    else
+        beep()
+        return false
+    end
+end
+
+function _dft_ctrl_left!(o::TwObj{TwDfTableData})
+    vcw = _dft_vpw(o)
+    widths = map(x->x.format.width, o.data.colInfo)
+    if o.data.currentCol != o.data.currentLeft
+        o.data.currentCol = o.data.currentLeft
+        return true
+    elseif o.data.currentLeft == 1
+        beep()
+        return false
+    else
+        revcumwidths = cumsum(map(x->x+1, reverse(widths[1:o.data.currentLeft])))
+        widthrng = searchsorted(revcumwidths, vcw)
+        o.data.currentLeft = o.data.currentCol = max(1, o.data.currentLeft - widthrng.start + 1)
+        _dft_check_left!(o)
+        return true
+    end
+end
+
+function _dft_ctrl_right!(o::TwObj{TwDfTableData})
+    vcw = _dft_vpw(o)
+    widths = map(x->x.format.width, o.data.colInfo)
+    if o.data.currentCol != o.data.currentRight
+        o.data.currentCol = o.data.currentRight
+        return true
+    elseif o.data.currentRight == length(o.data.colInfo)
+        beep()
+        return false
+    else
+        cumwidths = cumsum(map(x->x+1, reverse(widths[o.data.currentRight:end])))
+        widthrng = searchsorted(cumwidths, vcw)
+        o.data.currentRight = o.data.currentCol =
+            min(o.data.currentRight + widthrng.stop, length(o.data.colInfo))
+        _dft_check_left!(o)
+        return true
+    end
+end
+
+function _dft_next_sibling!(o::TwObj{TwDfTableData})
+    curr = o.data.currentLine
+    stck = o.data.datalist[curr][2]
+    if isempty(stck)
+        beep(); return false
+    end
+    tmpstack = copy(stck); pop!(tmpstack)
+    for r = (curr+1):length(o.data.datalist)
+        rstack = o.data.datalist[r][2]
+        if length(rstack) == length(tmpstack)+1 && rstack[1:length(tmpstack)] == tmpstack
+            o.data.currentLine = r
+            _dft_check_top!(o)
+            return true
+        end
+    end
+    beep(); return false
+end
+
+function _dft_prev_sibling!(o::TwObj{TwDfTableData})
+    curr = o.data.currentLine
+    stck = o.data.datalist[curr][2]
+    if isempty(stck)
+        beep(); return false
+    end
+    tmpstack = copy(stck); pop!(tmpstack)
+    for r = (curr-1):-1:1
+        rstack = o.data.datalist[r][2]
+        if length(rstack) == length(tmpstack)+1 && rstack[1:length(tmpstack)] == tmpstack
+            o.data.currentLine = r
+            _dft_check_top!(o)
+            return true
+        end
+    end
+    beep(); return false
+end
+
+function _dft_expand_all!(o::TwObj{TwDfTableData})
+    changed = false
+    for r = 1:length(o.data.datalist)
+        if o.data.datalist[r][3] == :close
+            node = o.data.datalist[r][5]
+            expandnode(node); ordernode(node)
+            changed = true
+        end
+    end
+    if changed
+        builddatalist(o.data); _dft_check_top!(o)
+    else
+        beep()
+    end
+end
+
+function _dft_collapse_all!(o::TwObj{TwDfTableData})
+    changed = false
+    for r = 1:length(o.data.datalist)
+        if o.data.datalist[r][3] == :open
+            node = o.data.datalist[r][5]
+            if !isempty(node.children)
+                if all(x->!x.isOpen, node.children)
+                    node.isOpen = false; changed = true
+                end
+            else
+                node.isOpen = false; changed = true
             end
         end
-    checkLeft =
-        () -> begin
-            if o.data.currentLeft < 1
-                o.data.currentLeft = 1
-            else # check if we have enough width to show from currentLeft to currentCol
-                revcumwidths = cumsum(map(x->x+1, reverse(widths))) # with boundary
-                widthrng = searchsorted(revcumwidths, viewContentWidth)
-                if o.data.currentLeft > length(o.data.colInfo) - widthrng.stop + 1
-                    o.data.currentLeft = length(o.data.colInfo) - widthrng.stop + 1
+    end
+    if changed
+        builddatalist(o.data); _dft_check_top!(o)
+    else
+        beep()
+    end
+end
+
+function _dft_search_next!(o::TwObj{TwDfTableData}, step::Int, trivialstop::Bool)
+    local st = o.data.currentLine
+    o.data.searchText = lowercase(o.data.searchText)
+    i = trivialstop ? st : (mod(st-1+step, o.data.datalistlen) + 1)
+    while true
+        node  = o.data.datalist[i][5]
+        isnode = (o.data.datalist[i][3] != :single)
+        for col = 1:length(o.data.colInfo)
+            cn = o.data.colInfo[col].name
+            v  = isnode ? node[cn] : node.subdataframesorted[!, cn][o.data.datalist[i][2][end]]
+            isa(v, AbstractString) || continue
+            if occursin(o.data.searchText, lowercase(v))
+                o.data.currentLine = i
+                o.data.currentCol  = col
+                _dft_check_top!(o); _dft_check_left!(o)
+                return i
+            end
+        end
+        i = mod(i-1+step, o.data.datalistlen) + 1
+        if i == st; beep(); return 0; end
+    end
+end
+
+function _dft_search_next_deep!(o::TwObj{TwDfTableData}, trivialstop::Bool)
+    local st  = o.data.currentLine
+    local stp = 1
+    o.data.searchText = lowercase(o.data.searchText)
+    i = trivialstop ? st : (mod(st-1+stp, o.data.datalistlen) + 1)
+    ncols = length(o.data.colInfo)
+    function checknode(nd::TwDfTableNode, substack::Array{Int,1})
+        function searchdfstring(df::AbstractDataFrame)
+            for j = 1:nrow(df)
+                for col = 1:ncols
+                    cn = o.data.colInfo[col].name
+                    v  = df[!, cn][j]
+                    isa(v, AbstractString) || continue
+                    if occursin(o.data.searchText, lowercase(v))
+                        o.data.currentCol = col; return j
+                    end
                 end
             end
-            if o.data.currentLeft > o.data.currentCol
-                o.data.currentLeft = o.data.currentCol
-            else
-                revcumwidths = cumsum(
-                    map(x->x+1, reverse(widths[o.data.currentLeft:o.data.currentCol])),
-                ) # with boundary
-                widthrng = searchsorted(revcumwidths, viewContentWidth)
-                if o.data.currentLeft < o.data.currentCol - widthrng.stop + 1
-                    o.data.currentLeft = o.data.currentCol - widthrng.stop + 1
+            return 0
+        end
+        if searchdfstring(nd.subdataframe) != 0
+            if !nd.isOpen; expandnode(nd); ordernode(nd); end
+            if !isempty(nd.children)
+                substacktmp = copy(substack); push!(substacktmp, 0)
+                for (k, c) in enumerate(nd.children)
+                    substacktmp[end] = k
+                    ret = checknode(c, substacktmp)
+                    ret !== nothing && return ret
                 end
-            end
-        end
-    movevertical =
-        n -> begin
-            oldline = o.data.currentLine
-            o.data.currentLine = max(1, min(o.data.datalistlen, o.data.currentLine + n))
-            if oldline != o.data.currentLine
-                checkTop()
-                return true
             else
-                beep()
-                return false
+                therow = searchdfstring(nd.subdataframesorted)
+                substacktmp = copy(substack); push!(substacktmp, therow)
+                return substacktmp
             end
         end
-    movehorizontal =
-        n -> begin
-            oldcol = o.data.currentCol
-            o.data.currentCol =
-                max(1, min(length(o.data.colInfo), o.data.currentCol + n))
-            if oldcol != o.data.currentCol
-                checkLeft()
-                return true
-            else
-                beep()
-                return false
+        return nothing
+    end
+    while true
+        node   = o.data.datalist[i][5]
+        isnode = (o.data.datalist[i][3] != :single)
+        if isnode && !node.isOpen
+            foundstack = checknode(node, o.data.datalist[i][2])
+            if foundstack !== nothing
+                builddatalist(o.data)
+                o.data.currentLine = searchsortedfirst(
+                    o.data.datalist, Any[nothing, foundstack],
+                    by = y->y[2],
+                    lt = (s1, s2)->begin
+                        for j = 1:min(length(s1), length(s2))
+                            s1[j] == s2[j] && continue
+                            return s1[j] < s2[j]
+                        end
+                        return length(s1) < length(s2)
+                    end,
+                )
+                _dft_check_top!(o); _dft_check_left!(o)
+                return o.data.currentLine
             end
         end
-
-    function searchNext(step::Int, trivialstop::Bool)
-        local st = o.data.currentLine
-        o.data.searchText = lowercase(o.data.searchText)
-        i = trivialstop ? st : (mod(st-1+step, o.data.datalistlen) + 1)
-        while true
-            node = o.data.datalist[i][5]
-            isnode = (o.data.datalist[i][3] != :single)
-            # only visible columns and exposed rows are search
-            for col = 1:length(o.data.colInfo)
+        if !isnode
+            for col = 1:ncols
                 cn = o.data.colInfo[col].name
-                if isnode
-                    v = node[cn]
-                else
-                    v = node.subdataframesorted[!, cn][o.data.datalist[i][2][end]]
-                end
-
-                if !(isa(v, AbstractString))
-                    continue
-                end
-
+                v  = node.subdataframesorted[!, cn][o.data.datalist[i][2][end]]
+                isa(v, AbstractString) || continue
                 if occursin(o.data.searchText, lowercase(v))
-                    o.data.currentLine = i
-                    o.data.currentCol = col
-                    checkTop()
-                    checkLeft()
+                    o.data.currentLine = i; o.data.currentCol = col
+                    _dft_check_top!(o); _dft_check_left!(o)
                     return i
                 end
             end
-            i = mod(i-1+step, o.data.datalistlen) + 1
-            if i == st
-                beep()
-                return 0
-            end
         end
+        i = mod(i-1+stp, o.data.datalistlen) + 1
+        if i == st; beep(); return 0; end
     end
+end
 
-    # deep search always go forward
-    function searchNextDeep(trivialstop::Bool)
-        local st = o.data.currentLine
-        local stp = 1
-
-        o.data.searchText = lowercase(o.data.searchText)
-        i = trivialstop ? st : (mod(st-1+stp, o.data.datalistlen) + 1)
-        ncols = length(o.data.colInfo)
-        function checknode(nd::TwDfTableNode, substack::Array{Int,1})
-            function searchdfstring(df::AbstractDataFrame)
-                for j = 1:nrow(df)
-                    for col = 1:ncols
-                        cn = o.data.colInfo[col].name
-                        v = df[!, cn][j]
-                        if !(isa(v, AbstractString))
-                            continue
-                        end
-                        if occursin(o.data.searchText, lowercase(v))
-                            o.data.currentCol = col
-                            return j
-                        end
-                    end
-                end
-                return 0
-            end
-            if searchdfstring(nd.subdataframe) != 0
-                if !nd.isOpen
-                    expandnode(nd)
-                    ordernode(nd)
-                end
-                if !isempty(nd.children)
-                    substacktmp = copy(substack)
-                    push!(substacktmp, 0)
-                    for (k, c) in enumerate(nd.children)
-                        substacktmp[end] = k
-                        ret = checknode(c, substacktmp)
-                        if ret !== nothing
-                            return ret
-                        end
-                    end
+function bindings(o::TwObj{TwDfTableData})
+    [
+        Binding(:esc, "cancel", action = _-> Cancel),
+        Binding([" ", :enter, Symbol("return")], "expand/collapse node",
+            when   = _-> !isempty(o.data.datalist) && o.data.datalist[o.data.currentLine][3] != :single,
+            action = _-> begin
+                node = o.data.datalist[o.data.currentLine][5]
+                node.isOpen ? (node.isOpen = false) : (expandnode(node); ordernode(node))
+                builddatalist(o.data); _dft_check_top!(o)
+                Handled
+            end),
+        Binding("+", "expand all",   action = _-> (_dft_expand_all!(o);   Handled)),
+        Binding("-", "collapse all", action = _-> (_dft_collapse_all!(o); Handled)),
+        Binding(:up,        "up",           action = _-> (_dft_movev!(o, -1); Handled)),
+        Binding(:down,      "down",         action = _-> (_dft_movev!(o,  1); Handled)),
+        Binding(:left,      "left col",     action = _-> (_dft_moveh!(o, -1); Handled)),
+        Binding(:right,     "right col",    action = _-> (_dft_moveh!(o,  1); Handled)),
+        Binding(:ctrl_left,  "page left",   action = _-> (_dft_ctrl_left!(o);  Handled)),
+        Binding(:ctrl_right, "page right",  action = _-> (_dft_ctrl_right!(o); Handled)),
+        Binding(:ctrl_up,   "prev sibling", action = _-> (_dft_prev_sibling!(o); Handled)),
+        Binding(:ctrl_down, "next sibling", action = _-> (_dft_next_sibling!(o); Handled)),
+        Binding(:pageup,   "page up",
+            action = _-> (_dft_movev!(o, -(_dft_vph(o) - o.data.headerlines)); Handled)),
+        Binding(:pagedown, "page down",
+            action = _-> (_dft_movev!(o,   _dft_vph(o) - o.data.headerlines);  Handled)),
+        Binding(:home, "top-left",
+            action = _-> begin
+                if o.data.currentTop != 1 || o.data.currentLeft != 1 ||
+                   o.data.currentLine != 1 || o.data.currentCol != 1
+                    o.data.currentTop = o.data.currentLeft = 1
+                    o.data.currentLine = o.data.currentCol = 1
                 else
-                    therow = searchdfstring(nd.subdataframesorted)
-                    substacktmp = copy(substack)
-                    push!(substacktmp, therow)
-                    #log( "found on " * string( substacktmp ) )
-                    return substacktmp
+                    beep()
                 end
-            end
-            return nothing
-        end
-        while true
-            node = o.data.datalist[i][5]
-            isnode = (o.data.datalist[i][3] != :single)
-            if isnode && !node.isOpen
-                foundstack = checknode(node, o.data.datalist[i][2])
-                if foundstack !== nothing
+                Handled
+            end),
+        Binding(Symbol("end"), "bottom",
+            action = _-> begin
+                vch = _dft_vph(o)
+                if o.data.currentTop + vch - 1 < o.data.datalistlen
+                    o.data.currentTop  = o.data.datalistlen - vch + 1
+                    o.data.currentLine = o.data.datalistlen
+                else
+                    beep()
+                end
+                Handled
+            end),
+        Binding("[", "narrow col",
+            action = _-> begin
+                w = o.data.colInfo[o.data.currentCol].format.width
+                w > 4 ? (o.data.colInfo[o.data.currentCol].format.width = w - 1) : beep()
+                Handled
+            end),
+        Binding("]", "widen col",
+            action = _-> begin
+                w = o.data.colInfo[o.data.currentCol].format.width
+                w < _dft_vpw(o) - 1 ? (o.data.colInfo[o.data.currentCol].format.width = w + 1) : beep()
+                Handled
+            end),
+        Binding("p", "pivot columns",
+            action = _-> begin
+                allcols = String[string(n) for n in names(o.data.rootnode.subdataframe)]
+                append!(allcols, String[string(k) for k in keys(o.data.calcpivots)])
+                pvts = String[string(p) for p in o.data.pivots]
+                helper = newTwMultiSelect(o.screen.value, allcols,
+                    selected=pvts, title="Pivot order", orderable=true, substrsearch=true)
+                newpivots = activateTwObj(helper)
+                unregisterTwObj(o.screen.value, helper)
+                if newpivots !== nothing && newpivots != pvts
+                    o.data.pivots = Symbol[Symbol(x) for x in newpivots]
+                    o.data.rootnode.children = Any[]
+                    o.data.rootnode.isOpen = false
+                    expandnode(o.data.rootnode, o.data.initdepth)
+                    ordernode(o.data.rootnode)
                     builddatalist(o.data)
-                    o.data.currentLine = searchsortedfirst(
-                        o.data.datalist,
-                        Any[nothing, foundstack],
-                        by = y->y[2],
-                        lt = (s1, s2)->begin
-                            #log( "comparing " * string(s1) * " with " * string(s2) )
-                            for j = 1:min(length(s1), length(s2))
-                                if s1[j] == s2[j]
-                                    continue
-                                end
-                                #log( "Pivot level " * string( j ) * " index is different" )
-                                return s1[j] < s2[j]
-                            end
-                            #log( "All common indices are equal. Pivot lengths are compared" )
-                            return length(s1) < length(s2)
-                        end,
-                    )
-                    checkTop()
-                    checkLeft()
-                    return o.data.currentLine
+                    o.data.currentLine = 1; _dft_check_top!(o)
                 end
-            end
-            if !isnode
-                for col = 1:ncols
-                    cn = o.data.colInfo[col].name
-                    v = node.subdataframesorted[!, cn][o.data.datalist[i][2][end]]
-                    if !(isa(v, AbstractString))
-                        continue
+                Handled
+            end),
+        Binding("c", "column order",
+            action = _-> begin
+                allcols    = String[string(n) for n in names(o.data.rootnode.subdataframe)]
+                visiblecols = String[string(ci.name) for ci in o.data.colInfo]
+                helper = newTwMultiSelect(o.screen.value, allcols,
+                    selected=visiblecols, title="Visible columns & their order",
+                    orderable=true, substrsearch=true)
+                newcols = activateTwObj(helper)
+                unregisterTwObj(o.screen.value, helper)
+                if newcols !== nothing && newcols != visiblecols
+                    o.data.colInfo = TwTableColInfo[]
+                    for c in newcols
+                        push!(o.data.colInfo, o.data.allcolInfo[Symbol(c)])
                     end
+                end
+                Handled
+            end),
+        Binding("v", "views",
+            action = _-> begin
+                allviews = map(x->x.name, o.data.views)
+                helper = newTwPopup(o.screen.value, allviews, substrsearch=true, title="Views")
+                vname = activateTwObj(helper)
+                unregisterTwObj(o.screen.value, helper)
+                if vname !== nothing
+                    idx = findfirst(x->x.name == vname, o.data.views)
+                    v = o.data.views[idx]
+                    o.data.colInfo    = TwTableColInfo[]
+                    o.data.pivots     = v.pivots
+                    o.data.sortorder  = v.sortorder
+                    o.data.initdepth  = v.initdepth
+                    for c in v.columns
+                        push!(o.data.colInfo, o.data.allcolInfo[Symbol(c)])
+                    end
+                    o.data.rootnode.children = Any[]
+                    o.data.rootnode.isOpen   = false
+                    expandnode(o.data.rootnode, o.data.initdepth)
+                    ordernode(o.data.rootnode)
+                    builddatalist(o.data)
+                    o.data.currentLine = 1; _dft_check_top!(o)
+                end
+                Handled
+            end),
+        Binding("/", "search forward",
+            action = _-> begin
+                helper = newTwEntry(o.screen.value, String;
+                    width=30, posy=:center, posx=:center, title="Search: ")
+                helper.data.inputText = o.data.searchText
+                s = activateTwObj(helper)
+                unregisterTwObj(o.screen.value, helper)
+                if s !== nothing && s != "" && o.data.searchText != s
+                    o.data.searchText = s
+                    _dft_search_next!(o, 1, true)
+                end
+                Handled
+            end),
+        Binding("?", "deep search",
+            action = _-> begin
+                helper = newTwEntry(o.screen.value, String;
+                    width=30, posy=:center, posx=:center, title="Search: ")
+                helper.data.inputText = o.data.searchText
+                s = activateTwObj(helper)
+                unregisterTwObj(o.screen.value, helper)
+                if s !== nothing
+                    o.data.searchText = s
+                    _dft_search_next_deep!(o, true)
+                end
+                Handled
+            end),
+        Binding(:ctrl_n, "next match",      action = _-> (_dft_search_next!(o,  1, false); Handled)),
+        Binding(:ctrl_b, "prev match",      action = _-> (_dft_search_next!(o, -1, false); Handled)),
+        Binding("N",     "deep next match", action = _-> (_dft_search_next_deep!(o, false); Handled)),
+        Binding(:ctrl_y, "export",          action = _-> (_dt_export_menu!(o); Handled)),
+        Binding(:F2, "describe all cols",
+            action = _-> begin
+                df_desc = string(DataFrames.describe(o.value))
+                tshow(df_desc; title=o.title * " columns", posx=:center, posy=:center)
+                Handled
+            end),
+        Binding(:shift_F2, "describe current col",
+            action = _-> begin
+                colsym     = o.data.colInfo[o.data.currentCol].name
+                d          = DataFrames.describe(o.value, :all, cols=[colsym])
+                stat_names = String.(names(d)[2:end])
+                stat_vals  = [string(d[1, n]) for n in names(d)[2:end]]
+                stats_df   = DataFrame(stat=stat_names, value=stat_vals)
+                tshow(stats_df; title=string(colsym) * " full stats",
+                      posx=:center, posy=:center, width=50, height=35)
+                Handled
+            end),
+        Binding(:F6, "show cell value",
+            action = _-> begin
+                colsym = o.data.colInfo[o.data.currentCol].name
+                node   = o.data.datalist[o.data.currentLine][5]
+                isnode = (o.data.datalist[o.data.currentLine][3] != :single)
+                v = isnode ? node[colsym] :
+                    node.subdataframesorted[!, colsym][o.data.datalist[o.data.currentLine][2][end]]
+                if !ismissing(v) && !in(v, [nothing, Nothing, Any])
+                    tshow(v; title=string(colsym), posx=:center, posy=:center)
+                end
+                Handled
+            end),
+        Binding(:F3, "column stats",
+            action = _-> begin
+                colsym = o.data.colInfo[o.data.currentCol].name
+                node   = o.data.datalist[o.data.currentLine][5]
+                out    = IOBuffer()
+                TermWin.describe(out, node.subdataframe[!, colsym])
+                if node != o.data.rootnode
+                    println(out, "\nRoot table stats")
+                    TermWin.describe(out, o.data.rootnode.subdataframe[!, colsym])
+                end
+                tshow(String(take!(out)); title=string(colsym) * " stats",
+                      posx=:center, posy=:center)
+                Handled
+            end),
+    ]
+end
 
-                    if occursin(o.data.searchText, lowercase(v))
-                        o.data.currentLine = i
-                        o.data.currentCol = col
-                        checkTop()
-                        checkLeft()
-                        return i
-                    end
-                end
-            end
-            i = mod(i-1+stp, o.data.datalistlen) + 1
-            if i == st
-                beep()
-                return 0
-            end
+function _dft_sel_text(o::TwObj{TwDfTableData})
+    o.data.datalistlen == 0 && return ""
+    "Row $(o.data.currentLine) / $(o.data.datalistlen)"
+end
+
+function inject(o::TwObj{TwDfTableData}, token)
+    r = inject_via_table(o, token)
+    if r !== Ignored
+        if r === Handled
+            set!(o.data.selection_text, _dft_sel_text(o))
+            refresh(o)
         end
+        return r
     end
 
-    # reminder: (name, stack, exphints, skiplines, node )
-    if token == :esc
-        retcode = Cancel
-    elseif (token == " " || token == Symbol("return") || token == :enter) &&
-           o.data.datalist[o.data.currentLine][3] != :single
-        expandhint = o.data.datalist[o.data.currentLine][3]
-        node = o.data.datalist[o.data.currentLine][5]
-        if node.isOpen
-            node.isOpen = false
-        else
-            expandnode(node)
-            ordernode(node)
-        end
-        update_tree_data()
-        checkTop()
-        dorefresh = true
-    elseif token == "+"
-        somethingchanged=false
-        for r = 1:length(o.data.datalist)
-            if o.data.datalist[r][3] == :close
-                node = o.data.datalist[r][5]
-                expandnode(node)
-                ordernode(node)
-                somethingchanged=true
-            end
-        end
-        if somethingchanged
-            update_tree_data()
-            checkTop()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == "-"
-        somethingchanged=false
-        for r = 1:length(o.data.datalist)
-            if o.data.datalist[r][3] == :open
-                node = o.data.datalist[r][5]
-                if !isempty(node.children)
-                    if all(x->!x.isOpen, node.children)
-                        node.isOpen = false
-                        somethingchanged=true
-                    end
-                else
-                    node.isOpen = false
-                    somethingchanged=true
-                end
-            end
-        end
-        if somethingchanged
-            update_tree_data()
-            checkTop()
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :up
-        dorefresh = movevertical(-1)
-    elseif token == :down
-        dorefresh = movevertical(1)
-    elseif token == :left
-        dorefresh = movehorizontal(-1)
-    elseif token == :ctrl_left
-        if o.data.currentCol != o.data.currentLeft
-            o.data.currentCol = o.data.currentLeft
-            dorefresh = true
-        elseif o.data.currentLeft == 1
-            beep()
-        else
-            # page left
-            revcumwidths = cumsum(map(x->x+1, reverse(widths[1:o.data.currentLeft]))) # with boundary
-            widthrng = searchsorted(revcumwidths, viewContentWidth)
-            o.data.currentLeft =
-                o.data.currentCol = max(1, o.data.currentLeft - widthrng.start + 1)
-            checkLeft()
-            dorefresh=true
-        end
-    elseif token == :right
-        dorefresh = movehorizontal(1)
-    elseif token == :ctrl_right
-        if o.data.currentCol != o.data.currentRight
-            o.data.currentCol = o.data.currentRight
-            dorefresh = true
-        elseif o.data.currentRight == length(o.data.colInfo)
-            beep()
-        else
-            cumwidths = cumsum(map(x->x+1, reverse(widths[o.data.currentRight:end]))) # with boundary
-            widthrng = searchsorted(cumwidths, viewContentWidth)
-            o.data.currentRight =
-                o.data.currentCol =
-                    min(o.data.currentRight + widthrng.stop, length(o.data.colInfo))
-            checkLeft()
-            dorefresh=true
-        end
-    elseif token == :pageup
-        dorefresh = movevertical(-viewContentHeight + o.data.headerlines)
-    elseif token == :pagedown
-        dorefresh = movevertical(viewContentHeight - o.data.headerlines)
-    elseif token == :home
-        if o.data.currentTop != 1 ||
-           o.data.currentLeft != 1 ||
-           o.data.currentLine != 1 ||
-           o.data.currentCol != 1
-            o.data.currentTop = 1
-            o.data.currentLeft = 1
-            o.data.currentLine = 1
-            o.data.currentCol = 1
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :KEY_MOUSE
-        (mstate, x, y, bs) = getmouse()
+    if token == :KEY_MOUSE
+        (mstate, x, y, _bs) = getmouse()
+        vch = _dft_vph(o)
         if mstate == :scroll_up
-            dorefresh = movevertical(-(round(Int, viewContentHeight/10)))
+            _dft_movev!(o, -(round(Int, vch/10))) && refresh(o)
+            return Handled
         elseif mstate == :scroll_down
-            dorefresh = movevertical(round(Int, viewContentHeight/10))
+            _dft_movev!(o,  round(Int, vch/10))  && refresh(o)
+            return Handled
         elseif mstate == :button1_pressed
             rely, relx = screen_to_relative(o.window, y, x)
+            did = false
             if 1<=relx<o.width-1 && o.data.headerlines<rely<o.height-1
                 o.data.currentLine = min(
                     o.data.datalistlen,
                     o.data.currentTop + rely - o.borderSizeH + 1 - o.data.headerlines,
                 )
-                checkTop()
-                dorefresh = true
+                _dft_check_top!(o)
+                did = true
             end
             if o.data.datatreewidth+1<relx<o.width-1 && o.data.headerlines<=rely<o.height-1
-                cumwidths = cumsum(map(x->x+1, widths[o.data.currentLeft:end])) # with boundary
-                widthrng = searchsorted(cumwidths, relx - o.data.datatreewidth - 1)
-                o.data.currentCol =
-                    min(length(o.data.colInfo), o.data.currentLeft + widthrng.start - 1)
-                checkLeft()
-                dorefresh = true
+                widths    = map(x->x.format.width, o.data.colInfo)
+                cumwidths = cumsum(map(x->x+1, widths[o.data.currentLeft:end]))
+                widthrng  = searchsorted(cumwidths, relx - o.data.datatreewidth - 1)
+                o.data.currentCol = min(length(o.data.colInfo), o.data.currentLeft + widthrng.start - 1)
+                _dft_check_left!(o)
+                did = true
             end
-            if !dorefresh
-                retcode = Ignored
-            end
+            did && set!(o.data.selection_text, _dft_sel_text(o))
+            did && refresh(o)
+            return did ? Handled : Ignored
         end
-    elseif in(token, Any[Symbol("end")])
-        if o.data.currentTop + viewContentHeight - 1 < o.data.datalistlen
-            o.data.currentTop = o.data.datalistlen - viewContentHeight + 1
-            o.data.currentLine = o.data.datalistlen
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == "["
-        width = o.data.colInfo[o.data.currentCol].format.width
-        if width > 4
-            width -= 1
-            o.data.colInfo[o.data.currentCol].format.width = width
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == "]"
-        width = o.data.colInfo[o.data.currentCol].format.width
-        if width < viewContentWidth-1
-            width += 1
-            o.data.colInfo[o.data.currentCol].format.width = width
-            dorefresh = true
-        else
-            beep()
-        end
-    elseif token == :ctrl_down
-        curr = o.data.currentLine
-        stck = o.data.datalist[curr][2]
-        if isempty(stck)
-            beep()
-        else
-            tmpstack = copy(stck)
-            pop!(tmpstack)
-            for r = (curr+1):length(o.data.datalist)
-                rstack = o.data.datalist[r][2]
-                if length(rstack) == length(tmpstack)+1 && rstack[1:length(tmpstack)] == tmpstack
-                    o.data.currentLine = r
-                    checkTop()
-                    dorefresh = true
-                    break
-                end
-            end
-        end
-    elseif token == :ctrl_up
-        curr = o.data.currentLine
-        stck = o.data.datalist[curr][2]
-        if isempty(stck)
-            beep()
-        else
-            tmpstack = copy(stck)
-            pop!(tmpstack)
-            for r = (curr-1):-1:1
-                rstack = o.data.datalist[r][2]
-                if length(rstack) == length(tmpstack)+1 && rstack[1:length(tmpstack)] == tmpstack
-                    o.data.currentLine = r
-                    checkTop()
-                    dorefresh = true
-                    break
-                end
-            end
-        end
-    elseif token == "p"
-        allcols = String[string(n) for n in names(o.data.rootnode.subdataframe)]
-        append!(allcols, String[string(k) for k in keys(o.data.calcpivots)])
-        pvts = String[string(p) for p in o.data.pivots]
-        helper = newTwMultiSelect(
-            o.screen.value,
-            allcols,
-            selected = pvts,
-            title = "Pivot order",
-            orderable = true,
-            substrsearch = true,
-        )
-        newpivots = activateTwObj(helper)
-        unregisterTwObj(o.screen.value, helper)
-        if newpivots !== nothing && newpivots != pvts
-            o.data.pivots = Symbol[Symbol(x) for x in newpivots]
-            o.data.rootnode.children = Any[]
-            o.data.rootnode.isOpen = false
-            expandnode(o.data.rootnode, o.data.initdepth)
-            ordernode(o.data.rootnode)
-            update_tree_data()
-            o.data.currentLine = 1
-            checkTop()
-        end
-        dorefresh = true
-    elseif token == "c"
-        allcols = String[string(n) for n in names(o.data.rootnode.subdataframe)]
-        visiblecols = String[string(ci.name) for ci in o.data.colInfo]
-        helper = newTwMultiSelect(
-            o.screen.value,
-            allcols,
-            selected = visiblecols,
-            title = "Visible columns & their order",
-            orderable = true,
-            substrsearch = true,
-        )
-        newcols = activateTwObj(helper)
-        unregisterTwObj(o.screen.value, helper)
-        if newcols !== nothing && newcols != visiblecols
-            o.data.colInfo = TwTableColInfo[]
-            for c in newcols
-                push!(o.data.colInfo, o.data.allcolInfo[Symbol(c)])
-            end
-        end
-        dorefresh = true
-    elseif token == "v"
-        allviews = map(x->x.name, o.data.views)
-        helper = newTwPopup(o.screen.value, allviews, substrsearch = true, title = "Views")
-        vname = activateTwObj(helper)
-        unregisterTwObj(o.screen.value, helper)
-        if vname !== nothing
-            idx = findfirst(x->x.name == vname, o.data.views)
-            v = o.data.views[idx]
-            o.data.colInfo = TwTableColInfo[]
-            o.data.pivots = v.pivots
-            o.data.sortorder = v.sortorder
-            o.data.initdepth = v.initdepth
-            for c in v.columns
-                push!(o.data.colInfo, o.data.allcolInfo[Symbol(c)])
-            end
-            o.data.rootnode.children = Any[]
-            o.data.rootnode.isOpen = false
-            expandnode(o.data.rootnode, o.data.initdepth)
-            ordernode(o.data.rootnode)
-            update_tree_data()
-            o.data.currentLine = 1
-            checkTop()
-            dorefresh=true
-        end
-    elseif token == "/"
-        helper = newTwEntry(
-            o.screen.value,
-            String;
-            width = 30,
-            posy = :center,
-            posx = :center,
-            title = "Search: ",
-        )
-        helper.data.inputText = o.data.searchText
-        s = activateTwObj(helper)
-        unregisterTwObj(o.screen.value, helper)
-        if s !== nothing
-            if s != "" && o.data.searchText != s
-                o.data.searchText = s
-                searchNext(1, true)
-            end
-        end
-        dorefresh = true
-    elseif token == "?"
-        helper = newTwEntry(
-            o.screen.value,
-            String;
-            width = 30,
-            posy = :center,
-            posx = :center,
-            title = "Search: ",
-        )
-        helper.data.inputText = o.data.searchText
-        s = activateTwObj(helper)
-        unregisterTwObj(o.screen.value, helper)
-        if s !== nothing
-            o.data.searchText = s
-            searchNextDeep(true)
-        end
-        dorefresh = true
-    elseif token == :ctrl_n
-        searchNext(1, false)
-        dorefresh = true
-    elseif token == :ctrl_p
-        searchNext(-1, false)
-        dorefresh = true
-    elseif token == "N"
-        searchNextDeep(false)
-        dorefresh = true
-    elseif token == :ctrl_y
-        _dt_export_menu!(o)
-        dorefresh = true
-    elseif token == :F2
-        df_desc = string(DataFrames.describe(o.value))
-        tshow(df_desc; title = o.title * " columns", posx = :center, posy = :center)
-        dorefresh = true
-    elseif token == :shift_F2
-        colsym = o.data.colInfo[o.data.currentCol].name
-        d = DataFrames.describe(o.value, :all, cols=[colsym])
-        stat_names = String.(names(d)[2:end])
-        stat_vals  = [string(d[1, n]) for n in names(d)[2:end]]
-        stats_df = DataFrame(stat = stat_names, value = stat_vals)
-        tshow(stats_df; title = string(colsym) * " full stats", posx = :center, posy = :center, width = 50, height = 35)
-        dorefresh = true
-    elseif token == :F6
-        colsym = o.data.colInfo[o.data.currentCol].name
-        node = o.data.datalist[o.data.currentLine][5]
-        isnode = (o.data.datalist[o.data.currentLine][3] != :single)
-        if isnode
-            v = node[colsym]
-        else
-            v =
-                node.subdataframesorted[!, colsym][o.data.datalist[o.data.currentLine][2][end]]
-        end
-        if !ismissing(v) && !in(v, [nothing, Nothing, Any])
-            tshow(v; title = string(colsym), posx = :center, posy = :center)
-            dorefresh = true
-        end
-    elseif token == :F3
-        colsym = o.data.colInfo[o.data.currentCol].name
-        node = o.data.datalist[o.data.currentLine][5]
-        out = IOBuffer()
-        TermWin.describe(out, node.subdataframe[!, colsym])
-
-        if node != o.data.rootnode
-            println(out, "\nRoot table stats")
-            TermWin.describe(out, o.data.rootnode.subdataframe[!, colsym])
-        end
-        tshow(
-            String(take!(out));
-            title = string(colsym) * " stats",
-            posx = :center,
-            posy = :center,
-        )
-        dorefresh = true
-    else
-        retcode = Ignored # I don't know what to do with it
     end
-
-    if dorefresh
-        refresh(o)
-    end
-
-    return retcode
+    return Ignored
 end
 
-helptext(o::TwObj{TwDfTableData}) = o.data.helpText
+helptext(o::TwObj{TwDfTableData}) = helptext_from_bindings(o)
 
 function clamp_scroll!(o::TwObj{TwDfTableData})
     updateTableDimensions(o)

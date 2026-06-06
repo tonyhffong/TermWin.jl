@@ -34,6 +34,10 @@ function unregisterTwObj(scr::TwObj{TwScreenData}, o::TwObj)
     if o.screen.value != scr
         throw("unregister obj that doesn't belong to the screen")
     end
+    for (obs, h) in o.subscriptions
+        off(h, obs)
+    end
+    empty!(o.subscriptions)
     idx = o.screenIndex
     deleteat!(scr.data.objects, idx)
     if isa(o.window, NC.Plane)
@@ -300,6 +304,42 @@ function handle_resize!(scr::TwObj{TwScreenData})
     refresh(scr)
 end
 
+function _palette_open!(scr::TwObj{TwScreenData})
+    scr.data.focus == 0 && return Handled
+    focused = scr.data.objects[scr.data.focus]
+    bs = active_bindings(focused)
+    isempty(bs) && return Handled
+
+    # Build display strings: right-padded key label + description.
+    # Users can search by key ("Ctrl-N") or by action label ("new row").
+    items = [rpad(binding_keylabel(b), 16) * b.label for b in bs]
+
+    w = min(max(44, maximum(length, items) + 6), scr.width - 4)
+    h = min(length(items) + 2, scr.height - 4)
+
+    helper = newTwPopup(
+        scr, items;
+        substrsearch  = true,
+        hideunmatched = true,
+        title         = "Command Palette",
+        height        = h,
+        width         = w,
+        posy          = :center,
+        posx          = :center,
+    )
+    chosen = activateTwObj(helper)
+    unregisterTwObj(scr, helper)
+    refresh(scr)
+
+    chosen === nothing && return Handled
+    idx = findfirst(==(chosen), items)
+    idx === nothing && return Handled
+
+    r = bs[idx].action(focused)
+    r === Handled && refresh(focused)
+    return r   # propagate Accept/Cancel so the screen loop closes the widget
+end
+
 function inject(scr::TwObj{TwScreenData}, token)
     global rootTwScreen
     result = Ignored
@@ -307,8 +347,17 @@ function inject(scr::TwObj{TwScreenData}, token)
         handle_resize!(scr)
         return Handled
     end
+    # NCOPTION_NO_QUIT_SIGHANDLERS routes Ctrl-C as a key instead of SIGINT.
+    # Treat it as a global Cancel so the user can always exit the TUI.
+    if token == :ctrl_c
+        return Cancel
+    end
     if token == :KEY_MOUSE
         (mstate, x, y, bs) = getmouse()
+    end
+    # Global command palette — intercepts Ctrl-P before the focused widget.
+    if token == :ctrl_p && scr.data.focus != 0
+        return _palette_open!(scr)
     end
     if scr.data.focus != 0
         result = Base.invokelatest(inject, scr.data.objects[scr.data.focus], token)

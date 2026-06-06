@@ -33,6 +33,7 @@ mutable struct TwFileBrowserData
     previewTop::Int
     previewPath::String
     imagePreviewCache::Dict{String,NC.Visual}
+    selection_text::Observable{String}
     function TwFileBrowserData()
         ret = new(
             "",
@@ -58,6 +59,7 @@ mutable struct TwFileBrowserData
             1,
             "",
             Dict{String,NC.Visual}(),
+            Observable(""),
         )
         finalizer(ret) do d
             for v in values(d.imagePreviewCache)
@@ -1014,9 +1016,19 @@ function draw(o::TwObj{TwFileBrowserData})
     end
 end
 
+function _fb_sel_text(o::TwObj{TwFileBrowserData})
+    isempty(o.data.datalist) && return ""
+    row = o.data.datalist[clamp(o.data.currentLine, 1, length(o.data.datalist))]
+    row.abspath
+end
+
 function inject(o::TwObj{TwFileBrowserData}, token)
     r = inject_via_table(o, token)
-    r === Handled && refresh(o)
+    if r === Handled
+        set!(o.data.selection_text, _fb_sel_text(o))
+        refresh(o)
+        return r
+    end
     r !== Ignored && return r
 
     # h-scroll, ctrl_left (parent dir), ctrl_right, mouse
@@ -1032,7 +1044,12 @@ function inject(o::TwObj{TwFileBrowserData}, token)
         return Handled
     elseif token == :ctrl_left
         (target, moved) = tree_nav(o.data.datalist, o.data.currentLine, :parent)
-        moved ? (o.data.currentLine = target; _fb_checkTop!(o); refresh(o)) : beep()
+        if moved
+            o.data.currentLine = target; _fb_checkTop!(o)
+            set!(o.data.selection_text, _fb_sel_text(o)); refresh(o)
+        else
+            beep()
+        end
         return Handled
     elseif token == :KEY_MOUSE
         (mstate, x, y, bs) = getmouse()
@@ -1061,7 +1078,8 @@ function inject(o::TwObj{TwFileBrowserData}, token)
             if 0 <= relx < o.width && 0 <= rely < o.height
                 newline = o.data.currentTop + rely - o.borderSizeV
                 if newline >= 1 && newline <= o.data.datalistlen
-                    o.data.currentLine = newline; _fb_checkTop!(o); refresh(o)
+                    o.data.currentLine = newline; _fb_checkTop!(o)
+                    set!(o.data.selection_text, _fb_sel_text(o)); refresh(o)
                 end
             else
                 return Ignored

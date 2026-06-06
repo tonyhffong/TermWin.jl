@@ -27,6 +27,7 @@ mutable struct TwTreeData
     showHelp::Bool
     searchText::String
     moduleall::Bool
+    selection_text::Observable{String}
     function TwTreeData()
         log("TwTreeData 0")
         rv = new(
@@ -44,6 +45,7 @@ mutable struct TwTreeData
             true,
             "",
             true,
+            Observable(""),
         )
         log("TwTreeData 1")
         return (rv)
@@ -761,9 +763,19 @@ function bindings(o::TwObj{TwTreeData})
     ]
 end
 
+function _tw_tree_sel_text(o::TwObj{TwTreeData})
+    isempty(o.data.datalist) && return ""
+    row = o.data.datalist[clamp(o.data.currentLine, 1, length(o.data.datalist))]
+    "$(row.name) :: $(row.typestr)"
+end
+
 function inject(o::TwObj{TwTreeData}, token)
     r = inject_via_table(o, token)
-    r === Handled && refresh(o)
+    if r === Handled
+        set!(o.data.selection_text, _tw_tree_sel_text(o))
+        refresh(o)
+        return r
+    end
     r !== Ignored && return r
 
     # h-scroll and mouse (undocumented)
@@ -795,6 +807,7 @@ function inject(o::TwObj{TwTreeData}, token)
             rely = y - begy
             if 0 <= relx < o.width && 0 <= rely < o.height
                 o.data.currentLine = o.data.currentTop + rely - o.borderSizeH + 1
+                set!(o.data.selection_text, _tw_tree_sel_text(o))
                 refresh(o)
             else
                 return Ignored

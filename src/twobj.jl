@@ -106,6 +106,12 @@ function link_parent_child(
     )
 end
 
+function subscribe!(f::Function, obs::Observable, owner::TwObj)
+    on(f, obs)
+    push!(owner.subscriptions, (obs, f))
+    return f
+end
+
 function configure_newwinpanel!(obj::TwObj)
     global rootplane
     obj.window = NC.Plane(

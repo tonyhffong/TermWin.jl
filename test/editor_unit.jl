@@ -220,7 +220,7 @@ end
         TW.TwEditTableCol(:s, "S", 6, true, String, nothing, false),
     ]
     # _et_load_cell! / editor_handle / _et_commit_cell! are all window-free.
-    data = TW.TwEditTableData(df, cols, 1, 1, 1, 1, TW.InlineEditor(String; width = 1), "")
+    data = TW.TwEditTableData(df, cols, 1, 1, 1, 1, TW.InlineEditor(String; width = 1), "", TW.EditHistory{DataFrame}(copy(df)))
     TW._et_load_cell!(data)
     @test data.editor.valuetype === Int && data.editor.buffer == "10"
 
@@ -239,7 +239,7 @@ end
     # enum + missingok: empty buffer commits to missing
     ecols = [TW.TwEditTableCol(:n, "N", 6, true, String, ["x", "y"], true)]
     edf = DataFrame(n = Union{String,Missing}["x"])
-    edata = TW.TwEditTableData(edf, ecols, 1, 1, 1, 1, TW.InlineEditor(String; width = 1), "")
+    edata = TW.TwEditTableData(edf, ecols, 1, 1, 1, 1, TW.InlineEditor(String; width = 1), "", TW.EditHistory{DataFrame}(copy(edf)))
     TW._et_load_cell!(edata)
     @test TW.editor_handle(edata.editor, :ctrl_k) === :handled   # clear (missingok)
     @test TW._et_commit_cell!(edata)
@@ -252,6 +252,8 @@ end
         Dict{Any,Bool}(), TW.TreeRow[], 0, 0, 0, 0, 1, 1, 1,
         true, "", true, "",
         false, TW.InlineEditor(String; width = 1),
+        TW.EditHistory{Any}(nothing),
+        TW.Observable(""),
     )
     o = TW.TwObj(data, Val{:DictTree})
     o.value = Dict{Any,Any}("a" => 10, "b" => "hi")

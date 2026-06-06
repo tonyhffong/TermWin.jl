@@ -21,10 +21,6 @@
 #     TwList canvas, which uses TwWindow). Embedded use falls back to a
 #     "(image not supported in nested layout)" message.
 
-const _IMAGE_HELP = """
-Esc : close the image
-F1  : this help
-"""
 
 mutable struct TwImageData
     path::String
@@ -197,11 +193,10 @@ function draw(o::TwObj{TwImageData})
     end
 end
 
-function inject(o::TwObj{TwImageData}, token)
-    if token == :esc
-        return Cancel
-    end
-    return Ignored
-end
+bindings(o::TwObj{TwImageData}) = [
+    Binding(:esc, "close", action = _-> Cancel),
+]
 
-helptext(o::TwObj{TwImageData}) = _IMAGE_HELP
+inject(o::TwObj{TwImageData}, token) = inject_via_table(o, token)
+
+helptext(o::TwObj{TwImageData}) = helptext_from_bindings(o)

@@ -45,6 +45,7 @@ mutable struct TwObj{T,S}
     desiredPosx::Any
     listeners::Dict{Symbol,Array} # event=>array of registered listeners. each listener is of the type (o, ev)->Nothing
     session_id::Int # which session created this widget
+    subscriptions::Vector{Tuple{Any,Any}} # (observable, handler) pairs; cleaned up by unregisterTwObj
     function TwObj{T,S}(data::T) where {T,S}
         log("TwObj datatype=" * string(T) * " TwObjSubtype=" * string(S))
         x = new{T,S}(
@@ -72,6 +73,7 @@ mutable struct TwObj{T,S}
             nothing,
             Dict{Symbol,Array{Function,1}}(),
             current_session_id,
+            Tuple{Any,Any}[],
         )
         finalizer(
             y->begin

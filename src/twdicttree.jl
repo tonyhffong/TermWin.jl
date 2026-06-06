@@ -51,6 +51,8 @@ mutable struct TwDictTreeData
     # inline edit state
     isEditing::Bool
     editor::InlineEditor    # the active leaf's inline editor (state + parse/format)
+    history::EditHistory{Any}
+    selection_text::Observable{String}
 end
 
 function newTwDictTree(
@@ -73,6 +75,8 @@ function newTwDictTree(
         1, 1, 1,
         showLineInfo, bottomText, showHelp, "",
         false, InlineEditor(String; width = 1),
+        EditHistory{Any}(deepcopy(ex)),
+        Observable(""),
     )
     obj = TwObj(data, Val{:DictTree})
     obj.value   = deepcopy(ex)
@@ -119,6 +123,8 @@ function _dt_checkTop!(o::TwObj{TwDictTreeData})
         data.currentTop = data.currentLine - viewH + 1
     end
 end
+
+_dt_snapshot!(o::TwObj{TwDictTreeData}) = push_snapshot!(o.data.history, deepcopy(o.value))
 
 function _dt_update_data!(o::TwObj{TwDictTreeData})
     data = o.data
@@ -189,6 +195,7 @@ function _dt_commit_edit!(o::TwObj{TwDictTreeData})
     _dt_set_value_at_path!(o.value, stack, val)
     data.isEditing = false
     _dt_update_data!(o)
+    _dt_snapshot!(o)
     return true
 end
 
@@ -299,6 +306,7 @@ function _dt_add_to_dict!(o::TwObj{TwDictTreeData}, target::AbstractDict, target
     o.data.openstatemap[target_path] = true   # ensure parent is expanded
     _dt_update_data!(o)
     _dt_find_and_goto!(o, vcat(target_path, [new_key]))
+    _dt_snapshot!(o)
     return true
 end
 
@@ -323,6 +331,7 @@ function _dt_add_to_vector!(o::TwObj{TwDictTreeData}, target::AbstractVector, ta
     o.data.openstatemap[target_path] = true
     _dt_update_data!(o)
     _dt_find_and_goto!(o, vcat(target_path, [new_idx]))
+    _dt_snapshot!(o)
     return true
 end
 
@@ -380,6 +389,7 @@ function _dt_delete_entry!(o::TwObj{TwDictTreeData})
     _dt_update_data!(o)
     data.currentLine = max(1, min(data.currentLine, data.datalistlen))
     _dt_checkTop!(o)
+    _dt_snapshot!(o)
     return true
 end
 
@@ -418,6 +428,7 @@ function _dt_rename_key!(o::TwObj{TwDictTreeData})
     _dt_update_data!(o)
     new_stack = vcat(stack[1:end-1], [new_key])
     _dt_find_and_goto!(o, new_stack)
+    _dt_snapshot!(o)
     return true
 end
 
@@ -438,6 +449,7 @@ function _dt_swap_vector_element!(o::TwObj{TwDictTreeData}, direction::Int)
     _dt_update_data!(o)
     new_stack = vcat(stack[1:end-1], [new_idx])
     _dt_find_and_goto!(o, new_stack)
+    _dt_snapshot!(o)
     return true
 end
 
@@ -801,7 +813,41 @@ function bindings(o::TwObj{TwDictTreeData})
         Binding(["p", :ctrl_p], "prev match",
                 action = _->(o.data.searchText != "" && o.data.datalistlen > 0 &&
                               _dt_search_next!(o, -1, false); Handled)),
+        Binding(:ctrl_z, "undo",
+                when   = _-> can_undo(o.data.history),
+                action = _-> begin
+                    (prev, ok) = undo!(o.data.history)
+                    if ok
+                        o.value = deepcopy(prev)
+                        _dt_update_data!(o)
+                        o.data.currentLine = min(o.data.currentLine, max(1, o.data.datalistlen))
+                        _dt_checkTop!(o)
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
+        Binding(:ctrlshift_z, "redo",
+                when   = _-> can_redo(o.data.history),
+                action = _-> begin
+                    (next_state, ok) = redo!(o.data.history)
+                    if ok
+                        o.value = deepcopy(next_state)
+                        _dt_update_data!(o)
+                        o.data.currentLine = min(o.data.currentLine, max(1, o.data.datalistlen))
+                        _dt_checkTop!(o)
+                    else
+                        beep()
+                    end
+                    Handled
+                end),
     ]
+end
+
+function _dt_sel_text(o::TwObj{TwDictTreeData})
+    isempty(o.data.datalist) && return ""
+    row = o.data.datalist[clamp(o.data.currentLine, 1, length(o.data.datalist))]
+    "$(row.name) :: $(row.typestr)"
 end
 
 function inject(o::TwObj{TwDictTreeData}, token)
@@ -842,7 +888,11 @@ function inject(o::TwObj{TwDictTreeData}, token)
 
     # 2. Bindings table (nav + structural ops)
     r = inject_via_table(o, token)
-    r === Handled && refresh(o)
+    if r === Handled
+        set!(o.data.selection_text, _dt_sel_text(o))
+        refresh(o)
+        return r
+    end
     r !== Ignored && return r
 
     # 3. h-scroll and mouse (undocumented)
@@ -866,7 +916,8 @@ function inject(o::TwObj{TwDictTreeData}, token)
             if 0 <= relx < o.width && 0 <= rely < o.height
                 clicked = data.currentTop + rely - o.borderSizeV
                 if 1 <= clicked <= data.datalistlen
-                    data.currentLine = clicked; _dt_checkTop!(o); refresh(o)
+                    data.currentLine = clicked; _dt_checkTop!(o)
+                    set!(o.data.selection_text, _dt_sel_text(o)); refresh(o)
                 end
             else
                 return Ignored

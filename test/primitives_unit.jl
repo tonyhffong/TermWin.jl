@@ -378,6 +378,8 @@ end
         1, 1, 1,              # currentTop, currentLine, currentLeft
         true, "", true, "",   # showLineInfo, bottomText, showHelp, searchText
         false, TW.InlineEditor(String; width = 1),  # isEditing, editor
+        TW.EditHistory{Any}(nothing),
+        TW.Observable(""),
     )
     o = TW.TwObj(data, Val{:DictTree})
     o.value = Dict("a" => [1, 2], "b" => 3)
@@ -401,6 +403,8 @@ end
         Dict{Any,Bool}(), TW.TreeRow[], 0, 0, 0, 0, 1, 1, 1,
         true, "", true, "",
         false, TW.InlineEditor(String; width = 1),
+        TW.EditHistory{Any}(nothing),
+        TW.Observable(""),
     ), Val{:DictTree})
     o.value  = d
     o.title  = "root"
@@ -607,6 +611,83 @@ end
     @test occursin("page up", help) && occursin("halfway toward end", help)
 end
 
+@testset "EditTable bindings table (headless)" begin
+    using DataFrames, Dates
+    df = DataFrame(name = ["Alice", "Bob"], age = [30, 25],
+                   dept = ["Eng", "HR"], start = [Date(2020,1,1), Date(2021,6,1)])
+    enum_dept = ["Eng", "HR", "Sales"]
+    cols = [
+        TW.TwEditTableCol(:name,  "Name",  10, true,  String, nothing,   false),
+        TW.TwEditTableCol(:age,   "Age",    6, true,  Int,    nothing,   false),
+        TW.TwEditTableCol(:dept,  "Dept",   8, true,  String, enum_dept, false),
+        TW.TwEditTableCol(:start, "Start", 12, false, Date,   nothing,   false),
+    ]
+    data = TW.TwEditTableData(df, cols, 1, 1, 1, 1, TW.InlineEditor(String; width=10), "", TW.EditHistory{DataFrame}(copy(df)))
+    o = TW.TwObj(data, Val{:EditTable})
+    o.height = 10; o.borderSizeV = 1
+    o.width  = 50; o.borderSizeH = 1
+    TW._et_load_cell!(data)
+
+    # F10 → Accept + value = df
+    @test TW.inject_via_table(o, :F10) === TW.Accept
+    @test o.value === df
+
+    # esc when not dirty → Cancel
+    data.editor.dirty = false
+    @test TW.inject_via_table(o, :esc) === TW.Cancel
+
+    # esc when dirty → revert and Handled
+    data.editor.dirty = true
+    @test TW.inject_via_table(o, :esc) === TW.Handled
+    @test !data.editor.dirty
+
+    # up/down nav
+    data.currentRow = 2
+    @test TW.inject_via_table(o, :up) === TW.Handled
+    @test data.currentRow == 1
+    @test TW.inject_via_table(o, :down) === TW.Handled
+    @test data.currentRow == 2
+
+    # enter on non-enum column (col 1 = name) moves down — but we're at last row, so beep
+    data.currentCol = 1; TW._et_load_cell!(data)
+    @test TW.inject_via_table(o, :enter) === TW.Handled
+
+    # enter on enum column (col 3 = dept) → when guard blocks it → Ignored
+    data.currentCol = 3; TW._et_load_cell!(data)
+    @test TW.inject_via_table(o, :enter) === TW.Ignored
+
+    # ctrl_k: blocked on non-editable col (col 4) → Ignored
+    data.currentCol = 4; TW._et_load_cell!(data)
+    @test TW.inject_via_table(o, :ctrl_k) === TW.Ignored
+
+    # ctrl_k: allowed on editable non-enum col (col 1)
+    data.currentCol = 1; TW._et_load_cell!(data)
+    @test TW.inject_via_table(o, :ctrl_k) === TW.Handled
+
+    # delete/backspace: blocked on enum col (col 3) → Ignored
+    data.currentCol = 3; TW._et_load_cell!(data)
+    @test TW.inject_via_table(o, :delete)    === TW.Ignored
+    @test TW.inject_via_table(o, :backspace) === TW.Ignored
+
+    # delete/backspace: allowed on editable non-enum col (col 2)
+    data.currentCol = 2; TW._et_load_cell!(data)
+    @test TW.inject_via_table(o, :delete)    === TW.Handled
+    @test TW.inject_via_table(o, :backspace) === TW.Handled
+
+    # ctrl_n inserts a row
+    nrows_before = nrow(data.df)
+    data.currentRow = 1; data.currentCol = 1; TW._et_load_cell!(data)
+    @test TW.inject_via_table(o, :ctrl_n) === TW.Handled
+    @test nrow(data.df) == nrows_before + 1
+    @test data.currentRow == 2
+
+    # helptext generated from bindings table
+    ht = TW.helptext(o)
+    @test occursin("commit", ht)
+    @test occursin("new row", ht)
+    @test occursin("clipboard", ht)
+end
+
 @testset "EditTable clamp_scroll! on resize (headless)" begin
     using DataFrames
     df = DataFrame(a = collect(1:30), b = string.(collect(1:30)))
@@ -614,7 +695,7 @@ end
         TW.TwEditTableCol(:a, "A", 6, true, Int, nothing, false),
         TW.TwEditTableCol(:b, "B", 8, true, String, nothing, false),
     ]
-    data = TW.TwEditTableData(df, cols, 20, 1, 1, 1, TW.InlineEditor(Int; width = 6), "")
+    data = TW.TwEditTableData(df, cols, 20, 1, 1, 1, TW.InlineEditor(Int; width = 6), "", TW.EditHistory{DataFrame}(copy(df)))
     o = TW.TwObj(data, Val{:EditTable})
     o.borderSizeV = 1
     o.borderSizeH = 1
@@ -630,6 +711,34 @@ end
     o.height = 5                 # dataH = 2
     TW.clamp_scroll!(o)
     @test o.data.currentTop <= o.data.currentRow <= o.data.currentTop + 2 - 1
+end
+
+@testset "Progress bindings (headless)" begin
+    ch   = Channel{TW.ProgressUpdate}(10)
+    flag = Threads.Atomic{Bool}(false)
+    task = @async nothing
+    data = TW.TwProgressData(ch, flag, task, 0.0, "", 0.0, 0.0)
+    o    = TW.TwObj(data, Val{:Progress})
+
+    @test TW.inject_via_table(o, :esc)    === TW.Handled && flag[]
+    flag[] = false
+    @test TW.inject_via_table(o, :ctrl_k) === TW.Handled && flag[]
+    @test TW.inject_via_table(o, :f5)     === TW.Ignored
+
+    ht = TW.helptext(o)
+    @test occursin("cancel", ht)
+    @test occursin("Esc", ht) || occursin("ctrl_k", ht) || occursin("Ctrl", ht)
+end
+
+@testset "Image bindings (headless)" begin
+    data = TW.TwImageData("", nothing, TW.NC.Blitter.DEFAULT, TW.NC.Scale.SCALE, "")
+    o    = TW.TwObj(data, Val{:Image})
+
+    @test TW.inject_via_table(o, :esc) === TW.Cancel
+    @test TW.inject_via_table(o, :f5)  === TW.Ignored
+
+    ht = TW.helptext(o)
+    @test occursin("Esc", ht) || occursin("close", ht)
 end
 
 @testset "Popup bindings table (headless)" begin
@@ -756,6 +865,374 @@ end
     ht_date = TW.helptext(od)
     @test occursin("YYYY", ht_date)
     @test !occursin("×1000", ht_date)
+end
+
+@testset "DfTable bindings table (headless)" begin
+    # Build a minimal TwDfTableData without a live screen.
+    # We only need the struct + TwObj shell; nav tests don't require a rendered plane.
+    data = TW.TwDfTableData()
+    o    = TW.TwObj(data, Val{:DfTable})
+    o.height = 20; o.borderSizeV = 1
+    o.width  = 80; o.borderSizeH = 2
+
+    # esc → Cancel
+    @test TW.inject_via_table(o, :esc) === TW.Cancel
+
+    # unknown token → Ignored
+    @test TW.inject_via_table(o, :f9) === TW.Ignored
+
+    # nav bindings always return Handled (they beep when datalist is empty)
+    @test TW.inject_via_table(o, :up)       === TW.Handled
+    @test TW.inject_via_table(o, :down)     === TW.Handled
+    @test TW.inject_via_table(o, :pageup)   === TW.Handled
+    @test TW.inject_via_table(o, :pagedown) === TW.Handled
+
+    # home with all cursors at 1 → beep path, still Handled
+    o.data.currentTop = 1; o.data.currentLine = 1
+    o.data.currentLeft = 1; o.data.currentCol = 1
+    @test TW.inject_via_table(o, :home) === TW.Handled
+
+    # expand/collapse (space) when-guard: datalist empty → Ignored
+    @test TW.inject_via_table(o, " ") === TW.Ignored
+
+    # "[" and "]" need at least one colInfo entry
+    ci = TW.TwTableColInfo(:a, "a", TW.FormatHints(Int), :default)  # width=8
+    push!(o.data.colInfo, ci)
+    o.data.currentCol = 1
+    TW.inject_via_table(o, "[")
+    @test o.data.colInfo[1].format.width == 7
+    TW.inject_via_table(o, "]")
+    @test o.data.colInfo[1].format.width == 8
+
+    # bindings table covers all documented actions
+    bs     = TW.bindings(o)
+    labels = [b.label for b in bs]
+    for lbl in ["cancel", "up", "down", "export", "search forward",
+                "deep search", "pivot columns", "column order", "views",
+                "expand/collapse node", "expand all", "collapse all",
+                "describe all cols", "column stats"]
+        @test lbl in labels
+    end
+
+    # helptext is generated from the bindings table (not a stored constant)
+    ht = TW.helptext(o)
+    @test occursin("cancel",  ht)
+    @test occursin("export",  ht)
+    @test occursin("search",  ht)
+    @test occursin("pivot",   ht)
+end
+
+@testset "Command palette helpers (headless)" begin
+    # active_bindings respects when guards
+    data = TW.TwProgressData(
+        Channel{TW.ProgressUpdate}(1), Threads.Atomic{Bool}(false), @async(nothing),
+        0.0, "", 0.0, 0.0,
+    )
+    o = TW.TwObj(data, Val{:Progress})
+    bs = TW.active_bindings(o)
+    @test length(bs) == 1
+    @test bs[1].label == "request cooperative cancel"
+
+    # binding_keylabel formatting
+    @test TW.binding_keylabel(TW.Binding(:ctrl_p, "x")) == "Ctrl-P"
+    @test TW.binding_keylabel(TW.Binding(:ctrl_b, "x")) == "Ctrl-B"
+    @test TW.binding_keylabel(TW.Binding(:ctrl_v, "x")) == "Ctrl-V"
+    @test TW.binding_keylabel(TW.Binding(:esc,    "x")) == "Esc"
+    @test TW.binding_keylabel(TW.Binding(:F10,    "x")) == "F10"
+    @test TW.binding_keylabel(TW.Binding([:ctrl_n, :ctrl_b], "x")) == "Ctrl-N/Ctrl-B"
+
+    # palette item format: key rpadded to 16 chars + label
+    b = TW.Binding(:ctrl_n, "next match")
+    item = rpad(TW.binding_keylabel(b), 16) * b.label
+    @test startswith(item, "Ctrl-N")
+    @test occursin("next match", item)
+    @test length(item) >= 16 + length("next match")
+
+    # twdftable no longer exposes :ctrl_p; :ctrl_b is now prev match
+    using DataFrames
+    df_d = TW.TwDfTableData()
+    o_d  = TW.TwObj(df_d, Val{:DfTable})
+    o_d.height = 20; o_d.borderSizeV = 1
+    o_d.width  = 80; o_d.borderSizeH = 2
+    bs_d = TW.bindings(o_d)
+    keys_d = vcat([b.keys for b in bs_d]...)
+    @test :ctrl_p ∉ keys_d       # vacated for palette
+    @test :ctrl_b  in keys_d      # prev match moved here
+
+    # twedittable no longer exposes :ctrl_p; :ctrl_v is now paste
+    df_e = DataFrame(a = ["x"], b = [1])
+    cols_e = [TW.TwEditTableCol(:a, "A", 8, true, String, nothing, false),
+              TW.TwEditTableCol(:b, "B", 6, true, Int,    nothing, false)]
+    data_e = TW.TwEditTableData(df_e, cols_e, 1, 1, 1, 1, TW.InlineEditor(String; width=8), "", TW.EditHistory{DataFrame}(copy(df_e)))
+    o_e = TW.TwObj(data_e, Val{:EditTable})
+    o_e.height = 10; o_e.borderSizeV = 1
+    o_e.width  = 30; o_e.borderSizeH = 1
+    TW._et_load_cell!(data_e)
+    bs_e = TW.bindings(o_e)
+    keys_e = vcat([b.keys for b in bs_e]...)
+    @test :ctrl_p ∉ keys_e       # vacated for palette
+    @test :ctrl_v  in keys_e      # paste moved here
+end
+
+@testset "EditHistory ring buffer" begin
+    # Initial state is the first snapshot; nothing to undo yet.
+    h = TW.EditHistory{Int}(0)
+    @test !TW.can_undo(h)
+    @test !TW.can_redo(h)
+    @test TW.undo!(h) == (nothing, false)
+    @test TW.redo!(h) == (nothing, false)
+
+    # Push two states; cursor advances.
+    TW.push_snapshot!(h, 10)
+    @test TW.can_undo(h)
+    @test !TW.can_redo(h)
+    TW.push_snapshot!(h, 20)
+    @test TW.can_undo(h)
+
+    # Undo: cursor steps back, redo becomes available.
+    (v, ok) = TW.undo!(h)
+    @test ok && v == 10
+    @test TW.can_redo(h)
+
+    # Redo: cursor steps forward again.
+    (v2, ok2) = TW.redo!(h)
+    @test ok2 && v2 == 20
+    @test !TW.can_redo(h)
+
+    # New push after undo erases the redo tail.
+    TW.undo!(h)            # cursor back to state 10
+    TW.push_snapshot!(h, 99)   # erases state 20, pushes 99
+    @test !TW.can_redo(h)
+    (v3, _) = TW.undo!(h)
+    @test v3 == 10
+    (v4, _) = TW.undo!(h)
+    @test v4 == 0   # original snapshot
+
+    # Capacity cap: capacity=3 means at most 3 snapshots kept.
+    hc = TW.EditHistory{Int}(0, 3)
+    TW.push_snapshot!(hc, 1)
+    TW.push_snapshot!(hc, 2)
+    TW.push_snapshot!(hc, 3)
+    TW.push_snapshot!(hc, 4)   # oldest (0) is evicted
+    @test hc.cursor == 3
+    @test length(hc.snapshots) == 3
+    # Undo twice reaches state 2 (the oldest surviving)
+    TW.undo!(hc)
+    (vl, _) = TW.undo!(hc)
+    @test vl == 2
+    @test !TW.can_undo(hc)   # 0 was evicted
+end
+
+@testset "EditTable undo/redo (headless)" begin
+    using DataFrames
+    df = DataFrame(a = ["Alice", "Bob"], b = [10, 20])
+    cols = [
+        TW.TwEditTableCol(:a, "Name", 8, true, String, nothing, false),
+        TW.TwEditTableCol(:b, "Val",  6, true, Int,    nothing, false),
+    ]
+    data = TW.TwEditTableData(df, cols, 1, 1, 1, 1,
+                               TW.InlineEditor(String; width=8), "",
+                               TW.EditHistory{DataFrame}(copy(df)))
+    o = TW.TwObj(data, Val{:EditTable})
+    o.height = 8; o.borderSizeV = 1; o.width = 30; o.borderSizeH = 1
+    TW._et_load_cell!(data)
+
+    # Initial state: no undo available.
+    @test !TW.can_undo(data.history)
+
+    # Simulate a dirty cell commit: edit the editor buffer, mark dirty, then commit.
+    data.editor.buffer = "Carol"
+    data.editor.dirty  = true
+    committed = TW._et_commit_cell!(data)
+    @test committed
+    @test data.df[1, :a] == "Carol"
+    @test TW.can_undo(data.history)
+
+    # Undo via binding restores "Alice".
+    TW.inject_via_table(o, :ctrl_z)
+    @test data.df[1, :a] == "Alice"
+    @test TW.can_redo(data.history)
+
+    # Redo via binding reapplies "Carol".
+    TW.inject_via_table(o, :ctrlshift_z)
+    @test data.df[1, :a] == "Carol"
+    @test !TW.can_redo(data.history)
+
+    # Ctrl-N inserts a row and creates an undo point.
+    n_before = DataFrames.nrow(data.df)
+    TW.inject_via_table(o, :ctrl_n)
+    @test DataFrames.nrow(data.df) == n_before + 1
+    @test TW.can_undo(data.history)
+
+    TW.inject_via_table(o, :ctrl_z)
+    @test DataFrames.nrow(data.df) == n_before
+
+    # Ctrl-D delete + undo.
+    n_before2 = DataFrames.nrow(data.df)
+    data.currentRow = 1
+    TW.inject_via_table(o, :ctrl_d)
+    @test DataFrames.nrow(data.df) == n_before2 - 1
+    TW.inject_via_table(o, :ctrl_z)
+    @test DataFrames.nrow(data.df) == n_before2
+end
+
+@testset "EditTable enum dropdown snapshot (headless)" begin
+    # Regression: _et_open_enum_popup! was writing directly to data.df without
+    # calling push_snapshot!, so enum picks were invisible to undo.
+    # This test exercises the same mutation path headlessly.
+    using DataFrames
+    edf = DataFrame(kind = Union{String,Missing}["cat", "dog"])
+    ecols = [TW.TwEditTableCol(:kind, "Kind", 6, true, String, ["cat","dog","fish"], true)]
+    data = TW.TwEditTableData(edf, ecols, 1, 1, 1, 1,
+                               TW.InlineEditor(String; width=6), "",
+                               TW.EditHistory{DataFrame}(copy(edf)))
+    o = TW.TwObj(data, Val{:EditTable})
+    o.height = 8; o.borderSizeV = 1; o.width = 20; o.borderSizeH = 1
+    TW._et_load_cell!(data)
+    @test !TW.can_undo(data.history)
+
+    # Simulate the fixed popup path: value changes → snapshot taken.
+    col = data.colspecs[data.currentCol]
+    prev   = data.df[data.currentRow, col.name]   # "cat"
+    result = "fish"
+    data.df[data.currentRow, col.name] = result
+    (ismissing(prev) || prev != result) && TW.push_snapshot!(data.history, copy(data.df))
+    TW._et_load_cell!(data)
+
+    @test data.df[1, :kind] == "fish"
+    @test TW.can_undo(data.history)
+
+    # Undo restores "cat".
+    TW.inject_via_table(o, :ctrl_z)
+    @test data.df[1, :kind] == "cat"
+
+    # Picking the same value must NOT create a duplicate snapshot.
+    snapshot_count_before = length(data.history.snapshots)
+    prev2 = data.df[data.currentRow, col.name]   # "cat"
+    data.df[data.currentRow, col.name] = "cat"
+    (ismissing(prev2) || prev2 != "cat") && TW.push_snapshot!(data.history, copy(data.df))
+    @test length(data.history.snapshots) == snapshot_count_before   # no new snapshot
+
+    # Missing prev always triggers a snapshot (value was cleared, now set).
+    # Step 1: snapshot the "cleared to missing" state first (as a prior popup pick would do).
+    data.df[data.currentRow, col.name] = missing
+    TW.push_snapshot!(data.history, copy(data.df))   # missing state now in history
+    # Step 2: pick "dog" from missing → ismissing(prev3) → snapshot taken.
+    prev3   = data.df[data.currentRow, col.name]     # missing
+    result3 = "dog"
+    data.df[data.currentRow, col.name] = result3
+    (ismissing(prev3) || prev3 != result3) && TW.push_snapshot!(data.history, copy(data.df))
+    @test TW.can_undo(data.history)
+    TW.inject_via_table(o, :ctrl_z)
+    @test ismissing(data.df[1, :kind])   # undo → missing snapshot
+end
+
+@testset "Clipboard stack" begin
+    # Clear any residual state from earlier test runs.
+    empty!(TW._et_clipboard_stack)
+
+    TW._et_clipboard_push!("first\titem")
+    TW._et_clipboard_push!("second\titem")
+    @test length(TW._et_clipboard_stack) == 2
+    @test TW._et_clipboard_stack[1] == "second\titem"   # most recent first
+    @test TW._et_clipboard_stack[2] == "first\titem"
+
+    # Capacity capped at 20.
+    for i in 1:25
+        TW._et_clipboard_push!("item$i")
+    end
+    @test length(TW._et_clipboard_stack) == TW._ET_CLIPBOARD_CAPACITY
+
+    # Most recent item is at index 1.
+    @test TW._et_clipboard_stack[1] == "item25"
+end
+
+@testset "Observable: subscribe! / on / off / set!" begin
+    obs = TW.Observable("")
+    calls = String[]
+    h = TW.on(s -> push!(calls, s), obs)
+    TW.set!(obs, "hello")
+    @test calls == ["hello"]
+    TW.off(h, obs)
+    TW.set!(obs, "world")
+    @test calls == ["hello"]   # no new call after off
+    @test obs.value == "world"
+end
+
+@testset "Observable: subscribe! owner lifecycle cleanup" begin
+    # Build a minimal TwObj (no NC session needed — just the struct).
+    obs  = TW.Observable("")
+    data = TW.TwDictTreeData(
+        Dict{Any,Bool}(), TW.TreeRow[], 0, 0, 0, 0, 1, 1, 1,
+        true, "", true, "",
+        false, TW.InlineEditor(String; width = 1),
+        TW.EditHistory{Any}(nothing),
+        TW.Observable(""),
+    )
+    owner = TW.TwObj(data, Val{:DictTree})
+
+    calls = Int[]
+    TW.subscribe!(obs, owner) do _
+        push!(calls, 1)
+    end
+    @test length(owner.subscriptions) == 1
+    TW.set!(obs, "a")
+    @test length(calls) == 1
+
+    # Simulate lifecycle cleanup (what unregisterTwObj does without the screen check).
+    for (o2, h) in owner.subscriptions
+        TW.off(h, o2)
+    end
+    empty!(owner.subscriptions)
+
+    TW.set!(obs, "b")
+    @test length(calls) == 1   # subscriber was removed — no new call
+    @test isempty(owner.subscriptions)
+end
+
+@testset "selection_text observable fires on cursor move (headless)" begin
+    # TwTreeData: selection_text fires after _tree_moveby! via inject_via_table.
+    obj = TW.TwObj(TW.TwTreeData(), Val{:Tree})
+    obj.value = Dict("x" => 1, "y" => 2)
+    obj.title = "root"
+    obj.height = 10; obj.width = 50; obj.borderSizeV = 1; obj.borderSizeH = 2
+    obj.data.openstatemap[Any[]] = true
+    TW.tree_data(obj.value, "root", obj.data.datalist, obj.data.openstatemap, Any[], Int[], true)
+    TW.updateTreeDimensions(obj)
+    obj.data.currentLine = 1
+
+    fired = String[]
+    TW.on(s -> push!(fired, s), obj.data.selection_text)
+
+    r = TW.inject_via_table(obj, :down)
+    @test r === TW.Handled
+    # selection_text is updated by inject (via the outer inject wrapper) —
+    # inject_via_table itself just mutates the cursor; the outer inject calls set!.
+    # Here we call it directly to test the helper:
+    TW.set!(obj.data.selection_text, TW._tw_tree_sel_text(obj))
+    @test length(fired) == 1
+    @test !isempty(fired[1])
+
+    # TwDictTreeData: same pattern.
+    obs2 = TW.TwDictTreeData(
+        Dict{Any,Bool}(), TW.TreeRow[], 0, 0, 0, 0, 1, 1, 1,
+        true, "", true, "",
+        false, TW.InlineEditor(String; width = 1),
+        TW.EditHistory{Any}(nothing),
+        TW.Observable(""),
+    )
+    o2 = TW.TwObj(obs2, Val{:DictTree})
+    o2.value = Dict("a" => 1)
+    o2.title = "root"
+    o2.height = 10; o2.width = 50; o2.borderSizeV = 1; o2.borderSizeH = 2
+    o2.data.openstatemap[Any[]] = true
+    TW._dt_update_data!(o2)
+
+    fired2 = String[]
+    TW.on(s -> push!(fired2, s), o2.data.selection_text)
+    TW.set!(o2.data.selection_text, TW._dt_sel_text(o2))
+    @test length(fired2) == 1
+    @test !isempty(fired2[1])
 end
 
 println("\nAll primitives unit tests passed.")

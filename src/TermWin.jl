@@ -48,6 +48,7 @@ include("twscreen.jl")
 include("ccall.jl")
 include("format.jl")
 include("editor.jl")       # InlineEditor: shared inline text editor (used by entry/edittable/dicttree)
+include("history.jl")      # EditHistory{T}: fixed-capacity undo/redo ring
 include("dfutils.jl")
 include("twprogress.jl")
 include("twviewer.jl")
@@ -67,6 +68,7 @@ include("twlabel.jl")
 include("twedittable.jl")
 include("twdicttree.jl")
 include("twbuilder.jl")
+include("twstatusbar.jl")
 
 export tshow, activateTwObj, registerTwObj, unregisterTwObj
 export trun # experimental
@@ -79,6 +81,8 @@ export newTwDfTable, newTwList
 export newTwEditTable, TwEditTableCol
 export newTwDictTree
 export newTwSpacer, newTwLabel
+export newTwStatusBar
+export Observable, set!, on, off, subscribe!
 export exprstring
 
 export uniqvalue, unionall
@@ -122,6 +126,11 @@ function initsession()
         rootplane = NC.stdplane(nc_context)
         NC.mice_enable(nc_context)
         NC.cursor_disable(nc_context)
+        # Disable terminal line-discipline signal generation so Ctrl-Z arrives
+        # as :ctrl_z (undo) instead of SIGTSTP.  Also suppresses SIGINT (^C)
+        # and SIGQUIT (^\) from the keyboard — the screen inject handles ^C as
+        # a global Cancel instead.  Notcurses re-enables line signals on NC.stop().
+        NC.LibNotcurses.notcurses_linesigs_disable(nc_context.ptr)
 
         # Build color_channel_table from the old init_pair definitions
         # pair_number => (fg_color_index, bg_color_index)

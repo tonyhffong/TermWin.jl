@@ -1,35 +1,3 @@
-defaultFuncHelpText = """
-PgUp/PgDn  : method list navigation
-Up/Dn      : method list navigation
-Left/Right : search term cursor control
-ctrl-a     : move cursor to start
-ctrl-e     : move cursor to end
-ctrl-k     : empty search entry
-ctrl-r     : toggle insert/overwrite
-Home       : jump to the start
-End        : jump to the end
-Shift-left/right : Navigate method list left and right
-Ctrl-Sht-lft/rgt : Jump method list to left and right edge
-F6         : explore Method as tree
-F8         : edit method
-"""
-
-mutable struct TwFuncData
-    datalist::Array{Any,1}
-    datalistlen::Int
-    datawidth::Int
-    searchbox::Any
-    currentTop::Int
-    currentLine::Int
-    currentLeft::Int
-    showLineInfo::Bool # e.g.1/100 1.0% at top right corner
-    bottomText::String
-    showHelp::Bool
-    helpText::String
-    TwFuncData() =
-        new(Method[], 0, 0, nothing, 1, 1, 1, true, "", true, defaultFuncHelpText)
-end
-
 # the ways to use it:
 # exact dimensions known: h,w,y,x, content to add later
 # exact dimensions unknown, but content known and content drives dimensions

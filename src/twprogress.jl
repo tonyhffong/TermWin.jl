@@ -125,14 +125,13 @@ function tick(o::TwObj{TwProgressData})
     return Handled
 end
 
-function inject(o::TwObj{TwProgressData}, token)
-    if token == :esc || token == :ctrl_k
-        o.data.cancelFlag[] = true
-        return Handled
-    end
-    return Ignored
+function bindings(o::TwObj{TwProgressData})
+    [
+        Binding([:esc, :ctrl_k], "request cooperative cancel",
+                action = _-> (o.data.cancelFlag[] = true; Handled)),
+    ]
 end
 
-helptext(o::TwObj{TwProgressData}) =
-    "Esc or Ctrl-K  : request cooperative cancel\n" *
-    "                 (the worker must check `cancelled()` and stop)"
+inject(o::TwObj{TwProgressData}, token) = inject_via_table(o, token)
+
+helptext(o::TwObj{TwProgressData}) = helptext_from_bindings(o)
