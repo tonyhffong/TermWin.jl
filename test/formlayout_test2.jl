@@ -16,7 +16,7 @@ using TermWin
 
 TermWin.initsession()
 
-form = @twlayout :vertical (form=true, title="Server Config", height=0.75, width=0.55) begin
+form = @twlayout :vertical (form=true, title="Server Config", height=0.75, width=0.85) begin
 
     label("Connection";  style=:header)
     entry(String; key=:host, title="Host",     width=35, titlewidth=10)

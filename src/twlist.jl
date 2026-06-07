@@ -72,7 +72,9 @@ function push_widget!(o::TwObj{TwListData}, w::TwObj)
         w.data.pad = nothing
     end
 
-    # Strip borders so the widget renders edge-to-edge inside the composed layout.
+    # Invariant: children inside a TwList render edge-to-edge on the canvas.
+    # Any box/border configured on the child widget is suppressed so that the
+    # enclosing TwList's own frame (if any) provides the single visual boundary.
     old_bsv = w.borderSizeV
     old_bsh = w.borderSizeH
     w.box = false
@@ -108,11 +110,13 @@ function update_list_canvas(o::TwObj{TwListData})
                 maximum(map(x->objtype(x)==:List ? x.data.canvaswidth : x.width, ws))
         end
         if isa(o.window, NC.Plane)
-            # Root-level list: prevent canvas from shrinking below the viewport
-            # so that late-added widgets sized as fractions of the viewport are
-            # not capped by a shrunken canvas from earlier widgets.
-            o.data.canvasheight = max(computed_h, o.height)
-            o.data.canvaswidth = max(computed_w, o.width)
+            # Root-level list: canvas floor is the content area (viewport minus
+            # borders), not the outer widget size. Children with fractional
+            # width/height resolve against canvaswidth/canvasheight as parmaxx,
+            # so using the outer width would make them 2 cols/rows too wide and
+            # cause ensure_visible_on_canvas to shift canvaslocx/y by 2.
+            o.data.canvasheight = max(computed_h, o.height - 2 * o.borderSizeV)
+            o.data.canvaswidth  = max(computed_w, o.width  - 2 * o.borderSizeH)
         else
             # Nested list (TwWindow or not yet attached): canvas = content size,
             # and the list's own height/width grows to match.
@@ -311,6 +315,98 @@ function apply_defaults!(o::TwObj{TwListData}, defaults::Dict{Symbol,Any})
     end
 end
 
+function _list_check_accept_focus(w::TwObj, stepsign::Int)
+    if w.isVisible && w.acceptsFocus
+        if objtype(w) == :List
+            r = 1:length(w.data.widgets)
+            if stepsign == -1
+                r = reverse(r)
+            end
+            for i in r
+                if _list_check_accept_focus(w.data.widgets[i], stepsign)
+                    return true
+                end
+            end
+            return false
+        else
+            return true
+        end
+    end
+    return false
+end
+
+function _list_refocus_after_nav!(o::TwObj{TwListData})
+    (w, yloc, xloc, height, width) = lowest_widget_location_area(o)
+    canvaslocx  = o.data.canvaslocx
+    canvaslocy  = o.data.canvaslocy
+    canvaslocx2 = o.data.canvaslocx + o.width - o.borderSizeH * 2
+    canvaslocy2 = o.data.canvaslocy + o.height - o.borderSizeV * 2
+    distfunc = function (to::Tuple{Int,Int,Int,Int})
+        a       = to[3] * to[4]
+        aOverlap =
+            max(0, min(to[2] + to[4], canvaslocx2) - max(to[2], canvaslocx)) *
+            max(0, min(to[1] + to[3], canvaslocy2) - max(to[1], canvaslocy))
+        d = point_from_area(yloc + height >> 1, xloc + width >> 1, to)
+        aOverlap == 0 ? d + 1000 : d + a / aOverlap
+    end
+    wdists = Any[]
+    geometric_filter(o, distfunc, 0, 0, wdists, false, 2000)
+    candidate = nothing
+    mindist   = 999999
+    for (cw, dist) in wdists
+        if dist < mindist
+            candidate = cw
+            mindist   = dist
+        end
+    end
+    if candidate !== nothing
+        w = lowest_widget(o)
+        deep_unfocus(w)
+        deep_focus(candidate)
+    end
+end
+
+function bindings(o::TwObj{TwListData})
+    isroot() = isa(o.window, NC.Plane)
+    [
+        Binding(:enter, "next field",
+            when   = _-> isroot() && o.data.isForm,
+            action = _-> Ignored),            # display-only: actual advance is in inject
+        Binding(:F10, "submit form",
+            when   = _-> isroot() && o.data.isForm,
+            action = _-> begin
+                focus = o.data.focus
+                focus != 0 && inject(lowest_widget(o), :focus_off)
+                o.value = collect_form_values(o)
+                refresh(o)
+                Accept
+            end),
+        Binding(:ctrl_F4, "toggle navigation",
+            when   = _-> isroot(),
+            action = _-> begin
+                o.data.navigationmode = !o.data.navigationmode
+                !o.data.navigationmode && _list_refocus_after_nav!(o)
+                refresh(o)
+                Handled
+            end),
+        Binding(:F1, "help",
+            when   = _-> isroot(),
+            action = _-> begin
+                helper = newTwViewer(
+                    o.screen.value,
+                    helptext(o),
+                    posy        = :center,
+                    posx        = :center,
+                    showHelp    = false,
+                    showLineInfo = false,
+                    bottomText  = "Esc to continue",
+                )
+                raiseTwObject(helper)
+                Handled
+            end),
+    ]
+end
+
 function inject(o::TwObj{TwListData}, token::Any)
     retcode = Ignored
     dorefresh = false
@@ -324,26 +420,6 @@ function inject(o::TwObj{TwListData}, token::Any)
         return Cancel
     end
 
-    function check_accept_focus(w::TwObj, stepsign::Int)
-        if w.isVisible && w.acceptsFocus
-            if objtype(w) == :List
-                r = 1:length(w.data.widgets)
-                if stepsign == -1
-                    r = reverse(r)
-                end
-                for i in r
-                    if check_accept_focus(w.data.widgets[i], stepsign)
-                        return true
-                    end
-                end
-                return false
-            else
-                return true
-            end
-        end
-        return false
-    end
-
     if !o.data.navigationmode
         result = inject(o.data.widgets[focus], token)
         if result == Cancel
@@ -355,7 +431,7 @@ function inject(o::TwObj{TwListData}, token::Any)
             i = mod1(focus + 1, length(o.data.widgets))
             while i != focus
                 w = o.data.widgets[i]
-                if check_accept_focus(w, 1)
+                if _list_check_accept_focus(w, 1)
                     deep_unfocus(prevw)
                     deep_focus(w, false)
                     break
@@ -386,7 +462,7 @@ function inject(o::TwObj{TwListData}, token::Any)
             i = mod1(focus + stp, length(o.data.widgets))
             while (i != focus)
                 w = o.data.widgets[i]
-                if check_accept_focus(w, stp)
+                if _list_check_accept_focus(w, stp)
                     deep_unfocus(prevw)
                     deep_focus(w, stp == -1) # 2nd arg is reverse
                     retcode = Handled
@@ -403,7 +479,7 @@ function inject(o::TwObj{TwListData}, token::Any)
             end
             for i in r
                 w = o.data.widgets[i]
-                if check_accept_focus(w, stp)
+                if _list_check_accept_focus(w, stp)
                     deep_unfocus(prevw)
                     deep_focus(w, stp == -1) # 2nd arg is reverse
                     retcode = Handled
@@ -520,72 +596,11 @@ function inject(o::TwObj{TwListData}, token::Any)
                 retcode = Ignored
             end
         end
-    elseif token == :ctrl_F4 && isrootlist
-        o.data.navigationmode = !o.data.navigationmode
-        # if no longer in navigationmode
-        # switch focus to the closest visible widget (% overlap with visible window makes a big difference)
-        # partially visible widgets suffer a substantial penalty
-        if !o.data.navigationmode
-            (w, yloc, xloc, height, width) = lowest_widget_location_area(o)
-            canvaslocx = o.data.canvaslocx
-            canvaslocy = o.data.canvaslocy
-            canvaslocx2 = o.data.canvaslocx + o.width - o.borderSizeH*2
-            canvaslocy2 = o.data.canvaslocy + o.height - o.borderSizeV*2
-            distfunc = function (to::Tuple{Int,Int,Int,Int})
-                # a = area of the candidate box
-                # aOverlap = area overlap between candidate box and the canvas window
-                # d = distance between the candidate box and the current box's center
-                # final distance = D * A / (AOverlap + epsilon)
-                a = to[3]*to[4]
-                aOverlap =
-                    max(0, min(to[2] + to[4], canvaslocx2)-max(to[2], canvaslocx)) *
-                    max(0, min(to[1] + to[3], canvaslocy2)-max(to[1], canvaslocy))
-                d = point_from_area(yloc + height >> 1, xloc + width >> 1, to)
-                if aOverlap == 0 # this this the best way to do effective distance?
-                    return d + 1000
-                else
-                    return d + a / aOverlap
-                end
-            end
-            wdists = Any[]
-            geometric_filter(o, distfunc, 0, 0, wdists, false, 2000)
-            candidate = nothing
-            mindist = 999999
-            for (cw, dist) in wdists
-                if dist < mindist
-                    candidate = cw
-                    mindist = dist
-                end
-            end
-            if candidate !== nothing
-                w = lowest_widget(o)
-                deep_unfocus(w)
-                deep_focus(candidate)
-            end
+    else
+        r = inject_via_table(o, token)
+        if r !== Ignored
+            retcode = r
         end
-        dorefresh = true
-        retcode = Handled
-    elseif token == :F10 && isrootlist && o.data.isForm
-        # Flush any in-progress state from the currently focused widget
-        # (e.g. multiselect Space-bar selections not yet committed via Enter)
-        if focus != 0
-            inject(lowest_widget(o), :focus_off)
-        end
-        o.value = collect_form_values(o)
-        dorefresh = true
-        retcode = Accept
-    elseif token == :F1 && isrootlist
-        helper = newTwViewer(
-            o.screen.value,
-            helptext(o),
-            posy = :center,
-            posx = :center,
-            showHelp = false,
-            showLineInfo = false,
-            bottomText = "Esc to continue",
-        )
-        raiseTwObject(helper)
-        retcode = Handled
     end
 
     if dorefresh
@@ -772,27 +787,16 @@ end
 
 function helptext(o::TwObj{TwListData})
     focus = o.data.focus
-    isrootlist = isa(o.window, NC.Plane)
-    if focus == 0
-        return ""
-    end
-    s = helptext(o.data.widgets[focus])
-    if isrootlist
-        h = """
-ctrl-F4 : toggle navigation mode
-mouse-click: activate nearest widget
-ctrl-arrows: directional focus movements
+    focus == 0 && return ""
+    child_help = helptext(o.data.widgets[focus])
+    isa(o.window, NC.Plane) || return child_help
+    nav_help = """
+mouse-click    : activate nearest widget
+ctrl-arrows    : directional focus movement
   (normal arrows work too if not consumed by the current widget)
-tab/shift-tab: cycle through all widgets
+tab/shift-tab  : cycle through all widgets
 """
-        if o.data.isForm
-            h *= "F10    : submit form\n"
-        end
-        if s == "" # just the navigation text
-            s = h
-        else # merge the help text into a single window
-            s *= "\n" * ("—"^7) * " canvas navigation " * ("—"^7) * "\n" * h
-        end
-    end
-    s
+    own_help = helptext_from_bindings(o)
+    sep = child_help == "" ? "" : "\n" * ("—"^7) * " canvas navigation " * ("—"^7) * "\n"
+    return child_help * sep * nav_help * own_help
 end
