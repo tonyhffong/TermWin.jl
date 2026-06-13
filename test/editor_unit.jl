@@ -254,6 +254,7 @@ end
         false, TW.InlineEditor(String; width = 1),
         TW.EditHistory{Any}(nothing),
         TW.Observable(""),
+        false,
     )
     o = TW.TwObj(data, Val{:DictTree})
     o.value = Dict{Any,Any}("a" => 10, "b" => "hi")

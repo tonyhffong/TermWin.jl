@@ -201,6 +201,13 @@ function activateTwObj(scr::TwObj{TwScreenData}, tokens::Any = nothing)
             if st == Accept || st == Cancel
                 if st == Accept
                     retvalue = scr.value
+                    # Export pinned values if this was the pre-exit multiselect.
+                    if focusObj !== nothing && focusObj === scr.data.pre_exit_widget
+                        selected = focusObj.value
+                        if selected !== nothing
+                            for name in selected; export_to_main!(name); end
+                        end
+                    end
                 end
                 if focusObj !== nothing
                     unregisterTwObj(scr, focusObj)
@@ -219,6 +226,11 @@ function activateTwObj(scr::TwObj{TwScreenData}, tokens::Any = nothing)
                     end
                 end
                 if focusObj === nothing
+                    # Before truly exiting, offer to export any pinned scratchpad values.
+                    if !scr.data.pre_exit_done && !scratchpad_isempty()
+                        _show_pre_exit_dialog!(scr)
+                        return nothing
+                    end
                     return :really_exit
                 end
             elseif st == Ignored
@@ -340,6 +352,48 @@ function _palette_open!(scr::TwObj{TwScreenData})
     return r   # propagate Accept/Cancel so the screen loop closes the widget
 end
 
+function _scratchpad_open!(scr::TwObj{TwScreenData})
+    panel = scr.data.scratchpad_panel
+    if panel !== nothing && any(o -> o === panel, scr.data.objects)
+        _dt_update_data!(panel)
+        raiseTwObject(panel)
+    else
+        panel = newTwDictTree(
+            scr, scratchpad_dict();
+            title  = "Scratchpad",
+            height = 30,
+            width  = 60,
+            posy   = :center,
+            posx   = :center,
+            box    = true,
+        )
+        panel.borderAttr = theme(:header)
+        panel.data.isScratchpad = true
+        scr.data.scratchpad_panel = panel
+    end
+    return Handled
+end
+
+function _show_pre_exit_dialog!(scr::TwObj{TwScreenData})
+    panel = scr.data.scratchpad_panel
+    if panel !== nothing && any(o -> o === panel, scr.data.objects)
+        unregisterTwObj(scr, panel)
+    end
+    names = sort(collect(keys(scratchpad_dict())))
+    isempty(names) && (scr.data.pre_exit_done = true; return)
+    sel = newTwMultiSelect(
+        scr, names;
+        title = "Export to Main before exit?",
+        posy  = :center,
+        posx  = :center,
+    )
+    sel.borderAttr = theme(:header)
+    sel.data.exit_disabled = true
+    scr.data.pre_exit_widget = sel
+    scr.data.pre_exit_done = true
+    raiseTwObject(sel)
+end
+
 function inject(scr::TwObj{TwScreenData}, token)
     global rootTwScreen
     result = Ignored
@@ -359,8 +413,28 @@ function inject(scr::TwObj{TwScreenData}, token)
     if token == :ctrl_p && scr.data.focus != 0
         return _palette_open!(scr)
     end
+    # Global scratchpad toggle — intercepts shift_F2 before the focused widget.
+    if token == :shift_F2
+        return _scratchpad_open!(scr)
+    end
     if scr.data.focus != 0
         result = Base.invokelatest(inject, scr.data.objects[scr.data.focus], token)
+        # Escape from the scratchpad panel: lower if other widgets exist, else pre-exit.
+        if result == Cancel &&
+           scr.data.scratchpad_panel !== nothing &&
+           scr.data.objects[scr.data.focus] === scr.data.scratchpad_panel
+            panel = scr.data.scratchpad_panel
+            other_focusable = any(
+                o -> o !== panel && o.isVisible && o.acceptsFocus,
+                scr.data.objects,
+            )
+            if other_focusable
+                lowerTwObject(panel)
+            else
+                _show_pre_exit_dialog!(scr)
+            end
+            return Handled
+        end
         if result != Ignored
             return result
         end

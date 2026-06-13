@@ -53,6 +53,7 @@ mutable struct TwDictTreeData
     editor::InlineEditor    # the active leaf's inline editor (state + parse/format)
     history::EditHistory{Any}
     selection_text::Observable{String}
+    isScratchpad::Bool
 end
 
 function newTwDictTree(
@@ -77,6 +78,7 @@ function newTwDictTree(
         false, InlineEditor(String; width = 1),
         EditHistory{Any}(deepcopy(ex)),
         Observable(""),
+        false,
     )
     obj = TwObj(data, Val{:DictTree})
     obj.value   = deepcopy(ex)
@@ -594,10 +596,18 @@ function draw(o::TwObj{TwDictTreeData})
     (viewH, viewW, fieldW) = _dt_view_dims(o)
 
     if o.box
-        box(o.window, 0, 0)
+        if o.borderAttr !== nothing
+            box_colored(o.window, 0, 0, o.borderAttr.channels)
+            wattron(o.window, o.borderAttr)
+        else
+            box(o.window, 0, 0)
+        end
     end
     if !isempty(o.title) && o.box
         mvwprintw(o.window, 0, max(0, round(Int, (o.width - length(o.title)) / 2)), "%s", o.title)
+        if o.borderAttr !== nothing
+            wattroff(o.window, o.borderAttr)
+        end
     end
     if data.showLineInfo && o.box && data.datalistlen > 0
         msg = data.datalistlen <= viewH ? "ALL" :
@@ -732,23 +742,29 @@ function bindings(o::TwObj{TwDictTreeData})
                     !in(v, [nothing, Nothing, Any]) && tshow(v, title = string(lastkey))
                     Handled
                 end),
-        Binding(:F7, "save to global",
+        Binding(:F7, o.data.isScratchpad ? "export to Main" : "pin to scratchpad",
                 action = _->begin
                     stck = copy(o.data.datalist[o.data.currentLine].stack)
                     lastkey = isempty(stck) ? o.title : stck[end]
                     v = getvaluebypath(o.value, stck)
-                    helper = newTwEntry(o.screen.value, String;
-                                       width = 34, posy = :center, posx = :center,
-                                       title = "Store as global: ")
-                    helper.data.inputText = string(lastkey)
-                    helper.data.cursorPos = length(helper.data.inputText) + 1
-                    varname = activateTwObj(helper)
-                    unregisterTwObj(o.screen.value, helper)
-                    if varname !== nothing && !isempty(strip(varname))
+                    if o.data.isScratchpad
+                        name = string(lastkey)
                         try
-                            Core.eval(Main, Expr(:(=), Symbol(strip(varname)), QuoteNode(v)))
+                            export_to_main!(name)
+                            tshow("Exported :$name to Main", title = "F7")
                         catch err
-                            tshow("Error storing variable:\n" * string(err), title = "F7 error")
+                            tshow("Error exporting variable:\n" * string(err), title = "F7 error")
+                        end
+                    else
+                        helper = newTwEntry(o.screen.value, String;
+                                           width = 34, posy = :center, posx = :center,
+                                           title = "Pin to scratchpad as: ")
+                        helper.data.inputText = string(lastkey)
+                        helper.data.cursorPos = length(helper.data.inputText) + 1
+                        varname = activateTwObj(helper)
+                        unregisterTwObj(o.screen.value, helper)
+                        if varname !== nothing && !isempty(strip(varname))
+                            pin!(strip(varname), v)
                         end
                     end
                     Handled

@@ -44,6 +44,7 @@ include("strutils.jl")
 include("twtypes.jl")
 include("twobj.jl")
 include("bindings.jl")     # Binding table (needs TwObj from twtypes)
+include("scratchpad.jl")   # session-scoped pinned-value store
 include("twscreen.jl")
 include("ccall.jl")
 include("format.jl")
@@ -71,6 +72,7 @@ include("twbuilder.jl")
 include("twstatusbar.jl")
 
 export tshow, activateTwObj, registerTwObj, unregisterTwObj
+export pin!, unpin!, export_to_main!, scratchpad_dict
 export trun # experimental
 export TwObj, TwScreen, rootTwScreen
 export newTwScreen

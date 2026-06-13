@@ -31,6 +31,7 @@ mutable struct TwObj{T,S}
     hasFocus::Bool
     grabUnusedKey::Bool
     isVisible::Bool
+    borderAttr::Union{Nothing,TwAttr} # optional colored border; nothing = default terminal color
     data::T
     value::Any # the logical "content" that this object contains (return value if editable)
     title::String
@@ -63,6 +64,7 @@ mutable struct TwObj{T,S}
             true,
             false,
             true,
+            nothing,
             data,
             nothing,
             "",
@@ -108,7 +110,10 @@ mutable struct TwScreenData
     objects::Vector{TwObj}
     focus::Int
     tickables::Vector{TwObj}
-    TwScreenData() = new(TwObj[], 0, TwObj[])
+    scratchpad_panel::Union{Nothing,TwObj}
+    pre_exit_widget::Union{Nothing,TwObj}
+    pre_exit_done::Bool
+    TwScreenData() = new(TwObj[], 0, TwObj[], nothing, nothing, false)
 end
 
 mutable struct TwListData

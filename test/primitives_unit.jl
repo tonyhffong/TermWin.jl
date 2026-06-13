@@ -280,7 +280,7 @@ end
     @test occursin("toggle expand", help)
     @test occursin("expand all",    help)
     @test occursin("search",        help)
-    @test occursin("save to global", help)
+    @test occursin("pin to scratchpad", help)
 end
 
 @testset "Calendar bindings (headless)" begin
@@ -380,6 +380,7 @@ end
         false, TW.InlineEditor(String; width = 1),  # isEditing, editor
         TW.EditHistory{Any}(nothing),
         TW.Observable(""),
+        false,                # isScratchpad
     )
     o = TW.TwObj(data, Val{:DictTree})
     o.value = Dict("a" => [1, 2], "b" => 3)
@@ -405,6 +406,7 @@ end
         false, TW.InlineEditor(String; width = 1),
         TW.EditHistory{Any}(nothing),
         TW.Observable(""),
+        false,
     ), Val{:DictTree})
     o.value  = d
     o.title  = "root"
@@ -445,7 +447,7 @@ end
     help = TW.helptext_from_bindings(o)
     @test occursin("expand / edit", help)
     @test occursin("add entry",     help)
-    @test occursin("save to global", help)
+    @test occursin("pin to scratchpad", help)
 end
 
 @testset "FileBrowser bindings table (headless)" begin
@@ -1168,6 +1170,7 @@ end
         false, TW.InlineEditor(String; width = 1),
         TW.EditHistory{Any}(nothing),
         TW.Observable(""),
+        false,
     )
     owner = TW.TwObj(data, Val{:DictTree})
 
@@ -1220,6 +1223,7 @@ end
         false, TW.InlineEditor(String; width = 1),
         TW.EditHistory{Any}(nothing),
         TW.Observable(""),
+        false,
     )
     o2 = TW.TwObj(obs2, Val{:DictTree})
     o2.value = Dict("a" => 1)

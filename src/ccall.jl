@@ -123,6 +123,16 @@ function box(win::NC.Plane, vchr, hchr)
     )
 end
 
+function box_colored(win::NC.Plane, vchr, hchr, channels::UInt64)
+    NC.LibNotcurses.ncplane_perimeter_rounded(win.ptr, UInt16(0), channels, UInt32(0))
+end
+
+function box_colored(win::TwWindow, vchr::Integer, hchr::Integer, attr::TwAttr)
+    wattron(win, attr)
+    box(win, vchr, hchr)
+    wattroff(win, attr)
+end
+
 function box(
     win::TwWindow,
     vchr::Integer,

@@ -661,7 +661,7 @@ function bindings(o::TwObj{TwTreeData})
                     !in(v, [nothing, Nothing, Any]) && tshow(typeof(v))
                     Handled
                 end),
-        Binding(:F7, "save to global",
+        Binding(:F7, "pin to scratchpad",
                 action = _->begin
                     stck = copy(o.data.datalist[o.data.currentLine].stack)
                     lastkey = isempty(stck) ? o.title : stck[end]
@@ -669,18 +669,14 @@ function bindings(o::TwObj{TwTreeData})
                     helper = newTwEntry(
                         o.screen.value, String;
                         width = 34, posy = :center, posx = :center,
-                        title = "Store as global: ",
+                        title = "Pin to scratchpad as: ",
                     )
                     helper.data.inputText = string(lastkey)
                     helper.data.cursorPos = length(helper.data.inputText) + 1
                     varname = activateTwObj(helper)
                     unregisterTwObj(o.screen.value, helper)
                     if varname !== nothing && !isempty(strip(varname))
-                        try
-                            Core.eval(Main, Expr(:(=), Symbol(strip(varname)), QuoteNode(v)))
-                        catch err
-                            tshow("Error storing variable:\n" * string(err), title = "F7 error")
-                        end
+                        pin!(strip(varname), v)
                     end
                     Handled
                 end),

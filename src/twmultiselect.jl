@@ -20,8 +20,9 @@ mutable struct TwMultiSelectData
     searchbox::Any
     scroll::ScrollState      # cursor=current line, top=first visible, left=h-scroll
     selectmode::Int
+    exit_disabled::Bool
     TwMultiSelectData(arr::Array{String,1}, selected::Array{String,1}) =
-        new(arr, selected, Any[], 0, nothing, ScrollState(), 0)
+        new(arr, selected, Any[], 0, nothing, ScrollState(), 0, false)
 end
 TwMultiSelectData(
     arr::Array{T,1},
@@ -117,10 +118,18 @@ clamp_scroll!(o::TwObj{TwMultiSelectData}) =
 function draw(o::TwObj{TwMultiSelectData})
     werase(o.window)
     if o.box
-        box(o.window, 0, 0)
+        if o.borderAttr !== nothing
+            box_colored(o.window, 0, 0, o.borderAttr.channels)
+            wattron(o.window, o.borderAttr)
+        else
+            box(o.window, 0, 0)
+        end
     end
     if !isempty(o.title) && o.box
         mvwprintw(o.window, 0, round(Int, (o.width - length(o.title))/2), "%s", o.title)
+        if o.borderAttr !== nothing
+            wattroff(o.window, o.borderAttr)
+        end
     end
     starty = o.borderSizeV
     viewContentHeight = o.height - o.borderSizeV * 2
@@ -243,7 +252,9 @@ function bindings(o::TwObj{TwMultiSelectData})
         Binding(:shift_down, "move down",
                 when   = _-> o.data.selectmode & SELECTEDORDERABLE != 0,
                 action = _-> _ms_reorder!(o,  1)),
-        Binding(:esc, "cancel", action = _->Cancel),
+        Binding(:esc, "cancel",
+                when   = _-> !o.data.exit_disabled,
+                action = _-> Cancel),
     ]
 end
 
