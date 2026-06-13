@@ -132,6 +132,35 @@ function update_list_canvas(o::TwObj{TwListData})
     end
 end
 
+# Re-place a list's children edge-to-edge by cumulative offset, using their
+# *current* sizes. Children are positioned at link time, but a nested list is
+# linked while still empty — it carries the default full-size canvas, so its
+# offset (and the alignxy-clamped offset of any sibling added after it) is wrong
+# until it shrinks to its content. The vstack/hstack builders call this once the
+# list is fully populated so nested columns/rows actually sit side by side /
+# stacked, instead of all collapsing to (0,0). Leaf children are already in the
+# right place, so re-deriving their offsets here is a no-op for them.
+function reflow_children!(o::TwObj{TwListData})
+    begx = 0
+    begy = 0
+    for c in o.data.widgets
+        if isa(c.window, TwWindow)
+            c.window.yloc   = begy
+            c.window.xloc   = begx
+            c.window.height = c.height
+            c.window.width  = c.width
+        end
+        c.ypos = begy
+        c.xpos = begx
+        if o.data.horizontal
+            begx += c.width
+        else
+            begy += c.height
+        end
+    end
+    return o
+end
+
 function clamp_scroll!(o::TwObj{TwListData})
     contentwidth = o.width - (o.box ? 2 : 0)
     contentheight = o.height - (o.box ? 2 : 0)

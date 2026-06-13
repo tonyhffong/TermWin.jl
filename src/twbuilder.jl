@@ -42,6 +42,25 @@ vstack(; title="Layout") do outer
     end
 end
 ```
+
+# Sizing
+Let content size itself; impose dimensions only on the **outermost** container —
+it is the on-screen window, and the one place `height`/`width`/`posx`/`posy`
+take effect. A nested `vstack`/`hstack` shrink-wraps to its content, so a size
+passed to an inner list is ignored. If a view is just two columns, make the
+`hstack` the root rather than wrapping it in a single-child `vstack`.
+
+Two gotchas:
+- A child whose effective size after border-stripping is ≤ 0 collapses to
+  nothing and the children after it pile on top of it. A boxed widget
+  (`borderSizeV=1`) needs `height ≥ 3`; in general leave a one-line widget's
+  height unset rather than forcing a small number.
+- A fraction-sized child (`width=1.0`) inside a shrink-wrapped list resolves
+  against the list's *default* canvas (128×80) and balloons it. Give full-width
+  helpers (e.g. a header `newTwLabel` in a column) an explicit width.
+
+See `hstack` for the horizontal counterpart; both re-place their children after
+the `do` block so nested columns/rows land in the right place.
 """
 function vstack(
     f::Function,
@@ -64,6 +83,7 @@ function vstack(
     )
     f(list)
     update_list_canvas(list)    # finalize canvas after all children are sized
+    reflow_children!(list)      # re-place children now that their sizes are settled
     defaults !== nothing && apply_defaults!(list, defaults)
     list
 end
@@ -96,6 +116,7 @@ function hstack(
     )
     f(list)
     update_list_canvas(list)
+    reflow_children!(list)      # re-place children now that their sizes are settled
     defaults !== nothing && apply_defaults!(list, defaults)
     list
 end
