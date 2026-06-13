@@ -136,16 +136,57 @@ const _TW_WIDGET_CTORS = Dict{Symbol,Symbol}(
     :calendar => :newTwCalendar,
     :spacer => :newTwSpacer,
     :label => :newTwLabel,
+    :separator => :newTwSeparator,
     :filebrowser => :newTwFileBrowser,
     :edittable => :newTwEditTable,
 )
 
 # Transform one statement from a @twlayout body.
-# Recognised widget calls: viewer(args...; kw...) → newTwViewer(list_sym, args...; kw...)
-# Everything else passes through as-is (escaped to caller scope).
+# Recognised forms:
+#   vstack(begin...end; kwargs...) / hstack(begin...end; kwargs...)
+#       → vstack(list_sym; kwargs...) do #inner; transformed_body; end
+#   viewer(args...; kw...) etc (short widget names)
+#       → newTwViewer(list_sym, args...; kw...)
+#   Everything else passes through as-is (escaped to caller scope).
 function _twlayout_transform(list_sym::Symbol, stmt)
     if stmt isa Expr && stmt.head == :call
         fname = stmt.args[1]
+
+        # ── vstack / hstack with begin...end body ───────────────────────────
+        if fname isa Symbol && fname in (:vstack, :hstack)
+            has_kw   = length(stmt.args) >= 2 &&
+                       stmt.args[2] isa Expr &&
+                       stmt.args[2].head == :parameters
+            kw_node  = has_kw ? stmt.args[2] : nothing
+            pos_args = stmt.args[(has_kw ? 3 : 2):end]
+
+            if !isempty(pos_args) &&
+               pos_args[1] isa Expr && pos_args[1].head == :block
+                block_expr = pos_args[1]
+                inner_sym  = gensym("inner")
+
+                inner_stmts = Any[]
+                for s in block_expr.args
+                    s isa LineNumberNode && continue
+                    push!(inner_stmts, _twlayout_transform(inner_sym, s))
+                end
+
+                new_call_args = Any[GlobalRef(_TWBUILDER_MODULE, fname), list_sym]
+                new_call = Expr(:call, new_call_args...)
+                if kw_node !== nothing
+                    escaped_kws = map(kw_node.args) do kw
+                        kw isa Expr && kw.head == :kw ?
+                            Expr(:kw, kw.args[1], esc(kw.args[2])) : esc(kw)
+                    end
+                    insert!(new_call.args, 2, Expr(:parameters, escaped_kws...))
+                end
+
+                lambda = Expr(:->, Expr(:tuple, inner_sym), Expr(:block, inner_stmts...))
+                return Expr(:do, new_call, lambda)
+            end
+        end
+
+        # ── short widget names ───────────────────────────────────────────────
         if fname isa Symbol && haskey(_TW_WIDGET_CTORS, fname)
             ctor = GlobalRef(_TWBUILDER_MODULE, _TW_WIDGET_CTORS[fname])
             new_args = Any[ctor]
@@ -186,22 +227,12 @@ function _twlayout_transform(list_sym::Symbol, stmt)
             return result
         end
     end
-    # Not a recognised widget call — pass through escaped (caller scope)
+    # Not a recognised call — pass through escaped (caller scope)
     return esc(stmt)
 end
 
 # Core implementation shared by both macro arities.
-function _twlayout_impl(orientation, opts, body)
-    # --- Orientation ---
-    orient_sym = if orientation isa QuoteNode
-        orientation.value
-    elseif orientation isa Symbol
-        orientation
-    else
-        error("@twlayout: first arg must be :vertical or :horizontal")
-    end
-    horizontal = (orient_sym == :horizontal)
-
+function _twlayout_impl(opts, body)
     # --- Optional options tuple (height=, width=, title=, ...) ---
     # A single kwarg: (title=x)   → Expr(:(=), :title, x)
     # Multiple kwargs: (h=x, w=y) → Expr(:tuple, Expr(:(=),:h,x), Expr(:(=),:w,y))
@@ -234,8 +265,10 @@ function _twlayout_impl(orientation, opts, body)
         arg.args[1] for arg in opt_args if arg isa Expr && arg.head in (:(=), :kw)
     )
 
-    # Build newTwList keyword args: defaults first, then user overrides
-    list_kwargs = Expr[Expr(:kw, :horizontal, horizontal)]
+    # Build newTwList keyword args: defaults first, then user overrides.
+    # Root list is always a vstack (horizontal=false); for a horizontal root,
+    # nest a single hstack(begin...end) inside the body.
+    list_kwargs = Expr[Expr(:kw, :horizontal, false)]
     :height ∉ user_kwarg_names && push!(list_kwargs, Expr(:kw, :height, 1.0))
     :width ∉ user_kwarg_names && push!(list_kwargs, Expr(:kw, :width, 1.0))
     :posy ∉ user_kwarg_names && push!(list_kwargs, Expr(:kw, :posy, QuoteNode(:top)))
@@ -263,6 +296,7 @@ function _twlayout_impl(orientation, opts, body)
     newTwList_ref = GlobalRef(_TWBUILDER_MODULE, :newTwList)
     rootTwScreen_ref = GlobalRef(_TWBUILDER_MODULE, :rootTwScreen)
     update_canvas_ref = GlobalRef(_TWBUILDER_MODULE, :update_list_canvas)
+    reflow_ref = GlobalRef(_TWBUILDER_MODULE, :reflow_children!)
     apply_defaults_ref = GlobalRef(_TWBUILDER_MODULE, :apply_defaults!)
 
     # defaults_sym holds the evaluated defaults expression (or nothing)
@@ -272,6 +306,7 @@ function _twlayout_impl(orientation, opts, body)
         local $list_sym = $newTwList_ref($rootTwScreen_ref; $(list_kwargs...))
         $(transformed...)
         $update_canvas_ref($list_sym)
+        $reflow_ref($list_sym)
         local $defaults_sym = $defaults_expr
         $defaults_sym !== nothing && $apply_defaults_ref($list_sym, $defaults_sym)
         $list_sym
@@ -279,31 +314,46 @@ function _twlayout_impl(orientation, opts, body)
 end
 
 """
-    @twlayout orientation begin ... end
-    @twlayout orientation (key=val, ...) begin ... end
+    @twlayout begin ... end
+    @twlayout (key=val, ...) begin ... end
 
-Build a full-screen TUI layout as a vertical or horizontal `TwList`.
-
-`orientation` must be `:vertical` or `:horizontal`.
+Build a full-screen TUI layout as a vertical stacking `TwList` (vstack).
 
 Inside the `begin...end` block, use short widget names as function calls —
 they are automatically rewritten to include the layout container as their
 first argument:
 
-| Short name   | Expands to          |
-|:-------------|:--------------------|
-| `viewer`     | `newTwViewer`       |
-| `dftable`    | `newTwDfTable`      |
-| `popup`      | `newTwPopup`        |
-| `entry`      | `newTwEntry`        |
-| `tree`       | `newTwTree`         |
-| `multiselect`| `newTwMultiSelect`  |
-| `calendar`   | `newTwCalendar`     |
+| Short name    | Expands to           |
+|:--------------|:---------------------|
+| `viewer`      | `newTwViewer`        |
+| `dftable`     | `newTwDfTable`       |
+| `popup`       | `newTwPopup`         |
+| `entry`       | `newTwEntry`         |
+| `tree`        | `newTwTree`          |
+| `multiselect` | `newTwMultiSelect`   |
+| `calendar`    | `newTwCalendar`      |
+| `spacer`      | `newTwSpacer`        |
+| `label`       | `newTwLabel`         |
+| `separator`   | `newTwSeparator`     |
+| `filebrowser` | `newTwFileBrowser`   |
+| `edittable`   | `newTwEditTable`     |
 
-Any other expression (including `vstack`/`hstack` calls for nesting) is
-passed through unchanged.
+**Nesting** — `vstack` and `hstack` are supported inside the body using a
+`begin...end` block as their sole positional argument. The macro injects a
+gensym parent argument automatically, so no lambda is needed:
 
-The optional second argument is a named-tuple forwarded to `newTwList` —
+```julia
+hstack(begin
+    viewer(left_text; width=0.5)
+    viewer(right_text; width=0.5)
+end)
+```
+
+Kwargs (e.g. `title=`, `box=`) may follow the block: `vstack(begin...end; title="Sub")`.
+
+Any other expression is passed through unchanged (escaped to the caller's scope).
+
+The optional first argument is a named-tuple forwarded to `newTwList` —
 useful for `height`, `width`, `title`, `box`, etc.  If omitted, the layout
 fills the entire screen (`height=1.0, width=1.0`).
 
@@ -312,32 +362,36 @@ fills the entire screen (`height=1.0, width=1.0`).
 ```julia
 # Two-panel layout filling the screen:
 function TermWin.tshow_(r::MyResult; kwargs...)
-    @twlayout :vertical begin
+    @twlayout begin
         viewer(format_summary(r); height=0.3, title="Summary")
         dftable(r.data;           height=0.7, title="Data")
     end
 end
 
 # With explicit sizing and a title for the container:
-@twlayout :vertical (height=0.9, width=0.9, title="Results") begin
+@twlayout (height=0.9, width=0.9, title="Results") begin
     viewer(text;  height=0.4)
     dftable(df;   height=0.6)
 end
 
-# Nested split — use vstack/hstack inside the body:
-@twlayout :horizontal begin
-    viewer(text; width=0.3)
-    vstack(; width=0.7) do inner
-        newTwDfTable(inner, top_df;    height=0.5)
-        newTwDfTable(inner, bottom_df; height=0.5)
-    end
+# Nested containers with begin...end syntax:
+@twlayout (title="Split view") begin
+    viewer(header; height=3)
+    hstack(begin
+        dftable(left_df;  width=0.5, title="Left")
+        vstack(begin
+            separator()
+            dftable(right_df; title="Right-top")
+            separator()
+        end)
+    end)
 end
 ```
 """
-macro twlayout(orientation, body)
-    _twlayout_impl(orientation, nothing, body)
+macro twlayout(body)
+    _twlayout_impl(nothing, body)
 end
 
-macro twlayout(orientation, opts, body)
-    _twlayout_impl(orientation, opts, body)
+macro twlayout(opts, body)
+    _twlayout_impl(opts, body)
 end

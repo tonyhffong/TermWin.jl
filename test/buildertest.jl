@@ -29,7 +29,7 @@ end
 # Comment out Option B and uncomment Option A to test the macro approach.
 
 function TermWin.tshow_(r::ModelResult; kwargs...)
-    @twlayout :vertical (title=r.name) begin
+    @twlayout (title=r.name) begin
         viewer(r.summary;         height=5, width=80, showLineInfo=false, title="Summary")
         dftable(r.coefficients;   height=0.45,width=.9, title="Coefficients")
         dftable(r.diagnostics;    height=0.35,width=.9, title="Diagnostics")

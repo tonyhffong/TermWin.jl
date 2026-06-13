@@ -93,7 +93,7 @@ using TermWin
 
 TermWin.initsession()
 
-result = @twlayout :vertical (form=true, title="New User") begin
+result = @twlayout (form=true, title="New User") begin
     entry(String; key=:username, title="Username", width=28)
     entry(Int;    key=:age,      title="Age",      width=10)
     popup(["Engineering","Sales","HR"]; key=:dept, title="Department")
@@ -268,7 +268,7 @@ the layout canvas.
 ### `@twlayout` macro
 
 ```julia
-@twlayout :vertical (title="Results") begin
+@twlayout (title="Results") begin
     viewer(summary_text;  height=0.3, title="Summary")
     dftable(results_df;   height=0.7, title="Data")
 end
@@ -289,9 +289,12 @@ Short names available inside `@twlayout`:
 | `filebrowser` | `newTwFileBrowser`   |
 | `spacer`      | `newTwSpacer`        |
 | `label`       | `newTwLabel`         |
+| `separator`   | `newTwSeparator`     |
 
-Any other expression is passed through unchanged, so you can nest `vstack`/`hstack`
-calls inside the block.
+`vstack` and `hstack` can be **nested inside `@twlayout`** using a `begin...end`
+block as their first positional argument — the macro auto-generates a gensym parent
+and links the inner container to the outer list correctly. Any other expression
+passes through unchanged to the caller's scope.
 
 ### `vstack` / `hstack`
 
@@ -315,7 +318,7 @@ end
 Inside any layout container or `@twlayout` block:
 
 ```julia
-@twlayout :vertical begin
+@twlayout begin
     label("Section header"; style=:header)        # bold yellow, acts as a title
     label("──────────────"; style=:divider)        # ruled divider line
     label("Plain note";     style=:plain)          # default unstyled text
@@ -336,7 +339,7 @@ Add `form=true` to any layout to collect a `Dict{Symbol,Any}` from the user.
 ```julia
 TermWin.initsession()
 
-form = @twlayout :vertical (form=true, title="Settings", height=0.6, width=0.5) begin
+form = @twlayout (form=true, title="Settings", height=0.6, width=0.5) begin
     entry(String; key=:host,    title="Host",    width=35)
     entry(Int;    key=:port,    title="Port",    width=10)
     popup(["dev","staging","prod"]; key=:env, title="Environment")
@@ -603,7 +606,7 @@ struct ModelResult
 end
 
 function TermWin.tshow_(r::ModelResult; kwargs...)
-    @twlayout :vertical (title=r.name) begin
+    @twlayout (title=r.name) begin
         viewer(r.summary;  height=5,   title="Summary", showLineInfo=false)
         dftable(r.data;    height=0.8, title="Data")
     end
@@ -620,7 +623,7 @@ For forms, return the form container and the caller accesses `.value` after `tsh
 
 ```julia
 function TermWin.tshow_(::UserConfig; kwargs...)
-    @twlayout :vertical (form=true, title="Configure") begin
+    @twlayout (form=true, title="Configure") begin
         entry(String; key=:host, title="Host")
         entry(Int;    key=:port, title="Port")
     end

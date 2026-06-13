@@ -82,7 +82,7 @@ export newTwCalendar, newTwCalendar2, newTwPopup, newTwMultiSelect, newTwImage
 export newTwDfTable, newTwList
 export newTwEditTable, TwEditTableCol
 export newTwDictTree
-export newTwSpacer, newTwLabel
+export newTwSpacer, newTwLabel, newTwSeparator
 export newTwStatusBar
 export Observable, set!, on, off, subscribe!
 export exprstring

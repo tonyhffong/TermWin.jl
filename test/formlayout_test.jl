@@ -18,7 +18,7 @@ using TermWin
 
 #TermWin.initsession()
 #
-# form = @twlayout :vertical (form=true, title="New User", height=0.6, width=0.5) begin
+# form = @twlayout (form=true, title="New User", height=0.6, width=0.5) begin
 #     entry(String; key=:username, title="Username",   width=28, titlewidth=10)
 #     entry(Int;    key=:age,      title="Age",        width=18, titlewidth=10)
 #     popup(["Engineering", "Sales", "Operations", "HR"];

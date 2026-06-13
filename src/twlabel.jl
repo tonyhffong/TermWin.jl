@@ -99,3 +99,47 @@ function draw(o::TwObj{TwLabelData})
         wattroff(o.window, COLOR_PAIR(13))
     end
 end
+
+# ── TwSeparator ─────────────────────────────────────────────────────────────
+
+struct TwSeparatorData
+    horizontal::Bool   # true = ─ line (sits inside a vstack), false = │ line (sits inside an hstack)
+end
+
+"""
+    newTwSeparator(parent)
+
+Insert a visible separator line into a `vstack` or `hstack`.
+
+- Inside a **vstack**: renders a full-width `─────` horizontal rule (height=1).
+- Inside an **hstack**: renders a full-height `│` vertical rule (width=1).
+
+The orientation and fixed dimension are inferred automatically from the parent container.
+"""
+function newTwSeparator(parent::TwObj)
+    is_horizontal = parent.data isa TwListData ? !parent.data.horizontal : true
+    obj = TwObj(TwSeparatorData(is_horizontal), Val{:Separator})
+    obj.acceptsFocus = false
+    obj.box          = false
+    obj.borderSizeV  = 0
+    obj.borderSizeH  = 0
+    if is_horizontal          # inside vstack: 1 row tall, full width
+        link_parent_child(parent, obj, 1, 1.0, :top, :left)
+    else                      # inside hstack: full height, 1 col wide
+        link_parent_child(parent, obj, 1.0, 1, :top, :left)
+    end
+    obj
+end
+
+function draw(o::TwObj{TwSeparatorData})
+    werase(o.window)
+    wattron(o.window, COLOR_PAIR(13))
+    if o.data.horizontal
+        mvwprintw(o.window, 0, 0, "%s", repeat("─", o.width))
+    else
+        for row in 0:(o.height - 1)
+            mvwprintw(o.window, row, 0, "%s", "│")
+        end
+    end
+    wattroff(o.window, COLOR_PAIR(13))
+end

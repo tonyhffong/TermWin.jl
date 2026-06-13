@@ -19,7 +19,7 @@ using TermWin, Dates
 function run_form(defaults = nothing)
     TermWin.initsession()
 
-    form = @twlayout :vertical (form=true, title="Edit User", height=0.75, width=0.55,
+    form = @twlayout (form=true, title="Edit User", height=0.75, width=0.55,
                                 defaults=defaults) begin
         entry(String;  key=:name,       title="Name",       width=30, titlewidth=12)
         entry(Int;     key=:age,        title="Age",        width=20, titlewidth=12)

@@ -50,7 +50,7 @@ seed_lines = DataFrame(
 
 TermWin.initsession()
 
-form = @twlayout :vertical (
+form = @twlayout (
     form    = true,
     title   = "Sales Order",
     height  = 0.88,
