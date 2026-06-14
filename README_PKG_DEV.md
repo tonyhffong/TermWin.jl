@@ -4,6 +4,24 @@ This document covers extending TermWin: building data-entry forms, authoring cus
 widgets, and hooking into `tshow` dispatch. For general usage and content display,
 see [README.md](README.md).
 
+## When to use `tshow_` dispatch vs. layout/widget development
+
+The two extension points serve different needs:
+
+**`tshow_` dispatch** (see [Extending TermWin: custom `tshow_` dispatch](#extending-termwin-custom-tshow_-dispatch)) is the right choice when:
+- you want `tshow(your_object)` to render your type in a meaningful way without changing calling code.
+- the view is a straightforward composition of existing widgets (`dftable`, `viewer`, `entry`, etc.) using `@twlayout` or `vstack`/`hstack`.
+- you own the type being displayed and can add a method to your own package.
+
+This covers the majority of real-world use cases. `@twlayout` is expressive enough to arrange multi-panel views, mixed viewer/form layouts, and labelled sections — no new widget code required.
+
+**Full layout and widget development** (composable layouts + authoring custom widgets) is needed when:
+- the visual behaviour of a cell, row, or control cannot be expressed by combining existing widgets — e.g. a custom gauge, a sparkline column, a colour swatch, or any widget with bespoke key handling.
+- you are building a reusable widget for distribution in your own package, and want it to appear as a first-class short name inside `@twlayout` (via `register_twlayout_widget!`).
+- you need the `tick` callback for background-driven refresh (progress bars, live monitors).
+
+In short: reach for `tshow_` first. Only drop down to custom widget authoring when the existing widget palette cannot express what you need.
+
 ---
 
 ## Composable layouts
