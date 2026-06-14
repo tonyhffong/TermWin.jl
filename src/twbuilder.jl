@@ -125,21 +125,62 @@ end
 # @twlayout macro — flat-layout DSL
 # ---------------------------------------------------------------------------
 
-# Short widget names recognised inside a @twlayout body
-const _TW_WIDGET_CTORS = Dict{Symbol,Symbol}(
-    :viewer => :newTwViewer,
-    :dftable => :newTwDfTable,
-    :popup => :newTwPopup,
-    :entry => :newTwEntry,
-    :tree => :newTwTree,
-    :multiselect => :newTwMultiSelect,
-    :calendar => :newTwCalendar,
-    :spacer => :newTwSpacer,
-    :label => :newTwLabel,
-    :separator => :newTwSeparator,
-    :filebrowser => :newTwFileBrowser,
-    :edittable => :newTwEditTable,
-)
+# ---------------------------------------------------------------------------
+# Widget registry — short names recognised inside @twlayout / vstack / hstack
+# ---------------------------------------------------------------------------
+#
+# Maps a short name (e.g. :viewer) to a widget *constructor function*. The DSL
+# injects the layout container as the constructor's first argument, so a
+# registered constructor must accept `ctor(parent::TwObj, args...; kwargs...)`.
+#
+# This registry is mutable and resolved at *runtime* (see `_twlayout_lookup`,
+# used by macro-generated code). That is what makes the layout DSL extensible:
+# an external package registers its own widget at load time and the short name
+# becomes usable in any subsequent @twlayout / vstack / hstack body — without
+# the constructor having to live in the TermWin module.
+const _TWLAYOUT_REGISTRY = Dict{Symbol,Function}()
+
+"""
+    register_twlayout_widget!(name::Symbol, ctor::Function)
+
+Register a widget constructor under a short `name` usable inside `@twlayout`,
+`vstack`, and `hstack` bodies. The layout container is injected automatically as
+the constructor's first positional argument, so `ctor` must have the shape
+
+    ctor(parent::TwObj, args...; kwargs...) -> TwObj
+
+and typically ends by calling [`link_parent_child`](@ref). Re-registering an
+existing name overwrites it (so a package may override a built-in).
+
+See also [`unregister_twlayout_widget!`](@ref), [`twlayout_widgets`](@ref).
+"""
+function register_twlayout_widget!(name::Symbol, ctor::Function)
+    _TWLAYOUT_REGISTRY[name] = ctor
+    return nothing
+end
+
+"""
+    unregister_twlayout_widget!(name::Symbol)
+
+Remove a short name previously added with [`register_twlayout_widget!`](@ref).
+No-op if the name is not registered.
+"""
+function unregister_twlayout_widget!(name::Symbol)
+    delete!(_TWLAYOUT_REGISTRY, name)
+    return nothing
+end
+
+"""
+    twlayout_widgets() -> Vector{Symbol}
+
+Sorted list of all short names currently registered for the layout DSL
+(built-ins plus any added via [`register_twlayout_widget!`](@ref)).
+"""
+twlayout_widgets() = sort!(collect(keys(_TWLAYOUT_REGISTRY)))
+
+# Runtime resolver used by macro-generated code; returns the constructor or
+# `nothing` (in which case the macro falls back to evaluating the call as-is).
+_twlayout_lookup(name::Symbol) = get(_TWLAYOUT_REGISTRY, name, nothing)
 
 # Transform one statement from a @twlayout body.
 # Recognised forms:
@@ -186,11 +227,18 @@ function _twlayout_transform(list_sym::Symbol, stmt)
             end
         end
 
-        # ── short widget names ───────────────────────────────────────────────
-        if fname isa Symbol && haskey(_TW_WIDGET_CTORS, fname)
-            ctor = GlobalRef(_TWBUILDER_MODULE, _TW_WIDGET_CTORS[fname])
-            new_args = Any[ctor]
-
+        # ── registered widget short name (resolved at runtime) ───────────────
+        # Any bare-symbol call that is not vstack/hstack becomes a runtime-guarded
+        # form:
+        #     let _ctor = TermWin._twlayout_lookup(:name)
+        #         _ctor === nothing ? <original call> : _ctor(list_sym, args...; kw...)
+        #     end
+        # If :name is registered (built-in or external), the parent container is
+        # injected and the widget is built. Otherwise the original call runs
+        # unchanged — so arbitrary user code (e.g. println(...)) still passes
+        # through, exactly as before. Resolution is deferred to runtime so that
+        # load-time registrations from external packages are visible.
+        if fname isa Symbol && !(fname in (:vstack, :hstack))
             # Keyword parameters node (:parameters) appears as the second arg in
             # the Julia AST when any keyword args are present: f(; k=v, pos_arg)
             kw_params = nothing
@@ -202,17 +250,13 @@ function _twlayout_transform(list_sym::Symbol, stmt)
                 pos_start = 3
             end
 
-            # First positional arg after the constructor is the list parent
-            push!(new_args, list_sym)
+            ctor_sym = gensym("ctor")
 
-            # Remaining positional args — escape them for caller scope
+            # _ctor(list_sym, escaped_pos...; escaped_kw...)
+            ctor_call = Expr(:call, ctor_sym, list_sym)
             for i = pos_start:length(stmt.args)
-                push!(new_args, esc(stmt.args[i]))
+                push!(ctor_call.args, esc(stmt.args[i]))
             end
-
-            result = Expr(:call, new_args...)
-
-            # Re-attach keyword args with their values escaped
             if kw_params !== nothing
                 escaped_kws = map(kw_params.args) do kw
                     if kw isa Expr && kw.head == :kw
@@ -221,10 +265,16 @@ function _twlayout_transform(list_sym::Symbol, stmt)
                         esc(kw)     # handle splatted kwargs: f(; pairs...)
                     end
                 end
-                insert!(result.args, 2, Expr(:parameters, escaped_kws...))
+                insert!(ctor_call.args, 2, Expr(:parameters, escaped_kws...))
             end
 
-            return result
+            lookup_call = Expr(:call,
+                GlobalRef(_TWBUILDER_MODULE, :_twlayout_lookup), QuoteNode(fname))
+            ternary = Expr(:if,
+                Expr(:call, :(===), ctor_sym, :nothing),
+                esc(stmt),       # not registered → run the original call as-is
+                ctor_call)       # registered → build with parent injected
+            return Expr(:let, Expr(:(=), ctor_sym, lookup_call), ternary)
         end
     end
     # Not a recognised call — pass through escaped (caller scope)
@@ -319,24 +369,22 @@ end
 
 Build a full-screen TUI layout as a vertical stacking `TwList` (vstack).
 
-Inside the `begin...end` block, use short widget names as function calls —
-they are automatically rewritten to include the layout container as their
-first argument:
+Inside the `begin...end` block, use short widget names as function calls — they
+are automatically rewritten to include the layout container as their first
+argument. The recognised names come from a **runtime registry**; the built-ins
+are:
 
-| Short name    | Expands to           |
-|:--------------|:---------------------|
-| `viewer`      | `newTwViewer`        |
-| `dftable`     | `newTwDfTable`       |
-| `popup`       | `newTwPopup`         |
-| `entry`       | `newTwEntry`         |
-| `tree`        | `newTwTree`          |
-| `multiselect` | `newTwMultiSelect`   |
-| `calendar`    | `newTwCalendar`      |
-| `spacer`      | `newTwSpacer`        |
-| `label`       | `newTwLabel`         |
-| `separator`   | `newTwSeparator`     |
-| `filebrowser` | `newTwFileBrowser`   |
-| `edittable`   | `newTwEditTable`     |
+`viewer` `dftable` `popup` `entry` `tree` `multiselect` `calendar` `spacer`
+`label` `separator` `filebrowser` `edittable`
+
+(`viewer` → `newTwViewer`, `dftable` → `newTwDfTable`, and so on.) Call
+[`twlayout_widgets`](@ref) for the live list.
+
+**Extensibility** — an external package can add its own short name with
+[`register_twlayout_widget!`](@ref); it then works inside any `@twlayout` /
+`vstack` / `hstack` body just like a built-in (the container is injected as the
+constructor's first argument). Resolution happens at runtime, so a name
+registered at package load time is immediately usable.
 
 **Nesting** — `vstack` and `hstack` are supported inside the body using a
 `begin...end` block as their sole positional argument. The macro injects a
@@ -395,3 +443,21 @@ end
 macro twlayout(opts, body)
     _twlayout_impl(opts, body)
 end
+
+# ---------------------------------------------------------------------------
+# Register the built-in widgets. (Their constructors are defined in files
+# included before twbuilder.jl, so they are available at module-load time.)
+# External packages add their own via register_twlayout_widget!.
+# ---------------------------------------------------------------------------
+register_twlayout_widget!(:viewer,      newTwViewer)
+register_twlayout_widget!(:dftable,     newTwDfTable)
+register_twlayout_widget!(:popup,       newTwPopup)
+register_twlayout_widget!(:entry,       newTwEntry)
+register_twlayout_widget!(:tree,        newTwTree)
+register_twlayout_widget!(:multiselect, newTwMultiSelect)
+register_twlayout_widget!(:calendar,    newTwCalendar)
+register_twlayout_widget!(:spacer,      newTwSpacer)
+register_twlayout_widget!(:label,       newTwLabel)
+register_twlayout_widget!(:separator,   newTwSeparator)
+register_twlayout_widget!(:filebrowser, newTwFileBrowser)
+register_twlayout_widget!(:edittable,   newTwEditTable)

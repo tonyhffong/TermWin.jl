@@ -92,6 +92,37 @@ export CalcPivot, discretize, topnames
 export FormatHints
 export COLOR_PAIR, A_BOLD, A_UNDERLINE, A_REVERSE
 
+# ===== Widget authoring API =====
+# Public surface for packages that define their own TwObj widgets and plug them
+# into the @twlayout / vstack / hstack DSL. See
+# design/termwin-widget-authoring-guide.md.
+#
+# Layout registry — register a short name → constructor for the DSL.
+export register_twlayout_widget!, unregister_twlayout_widget!, twlayout_widgets
+# Dispatch points to extend with your widget's data type (e.g. `draw(o::TwObj{MyData})`).
+export draw, inject, helptext, tick, clamp_scroll!, objtype
+# Construction: size/position a widget under a parent container.
+export link_parent_child
+# Drawing primitives (operate on o.window: an NC.Plane or TwWindow).
+export mvwprintw, mvwaddch, werase, wattron, wattroff, box, box_colored, beep
+# Color / attribute composition.
+export TwAttr, make_attr
+export COLOR_BLACK, COLOR_RED, COLOR_GREEN, COLOR_YELLOW
+export COLOR_BLUE, COLOR_MAGENTA, COLOR_CYAN, COLOR_WHITE
+export A_NORMAL, A_ITALIC
+# Semantic theme tokens.
+export theme, set_theme!, refresh_theme!
+# Bindings layer — declare keys once; footer + F1 help + dispatch are generated.
+export Binding, bindings, active_bindings, inject_via_table
+export footer, helptext_from_bindings, keylabel
+# Scroll viewport helper.
+export ScrollState, clamp_view!, move_cursor!, page!, scroll_left!, visible
+# Typed tree/file rows + generic sibling/parent navigation.
+export AbstractRow, TreeRow, FileRow, tree_nav, depth, parent_prefix, stack_of
+# Contracts: inject outcome + caller-facing result.
+export InjectResult, Handled, Ignored, Accept, Cancel
+export Result, Ok, Cancelled, Failed, unwrap, isok
+
 # ===== Global state =====
 nc_context = nothing   # ::Union{Nothing, NC.NotcursesObject}
 rootplane = nothing   # ::Union{Nothing, NC.Plane}

@@ -368,6 +368,69 @@ Widgets without `key=` render normally and receive focus but are excluded from t
 
 ---
 
+## Authoring custom widgets
+
+TermWin is an extensible TUI framework: your own package can define a widget and
+plug it into the `@twlayout` / `vstack` / `hstack` DSL under a short name, using
+only TermWin's public API. A widget is a data struct plus a `draw` method (and,
+optionally, key handling declared as data).
+
+```julia
+using TermWin
+import TermWin: draw, inject, bindings
+
+mutable struct GaugeData; value::Int; max::Int; end
+
+function newGauge(parent::TwObj; key=nothing, max=100, value=0,
+                  height=1, width=1.0, posy=:top, posx=:left)
+    o = TwObj(GaugeData(value, max), Val{:Gauge})
+    o.acceptsFocus = true; o.box = false; o.borderSizeV = 0; o.borderSizeH = 0
+    o.value = value; o.formkey = key
+    link_parent_child(parent, o, height, width, posy, posx)
+    o
+end
+
+function draw(o::TwObj{GaugeData})
+    werase(o.window)
+    n = round(Int, o.width * o.data.value / o.data.max)
+    o.hasFocus && wattron(o.window, theme(:selection_focused))
+    mvwprintw(o.window, 0, 0, "%s", repeat("█", n) * repeat("░", o.width - n))
+    o.hasFocus && wattroff(o.window, theme(:selection_focused))
+end
+
+function bindings(o::TwObj{GaugeData})
+    Binding[
+        Binding([:left, "h"],  "−", action = o -> (o.value = max(0, o.value-1); Handled)),
+        Binding([:right, "l"], "+", action = o -> (o.value = min(o.data.max, o.value+1); Handled)),
+        Binding(:enter, "ok", action = o -> Accept),
+    ]
+end
+inject(o::TwObj{GaugeData}, token) = inject_via_table(o, token)
+
+register_twlayout_widget!(:gauge, newGauge)   # short name → constructor
+```
+
+After registering, the short name behaves like a built-in — the container is
+injected as the constructor's first argument, and a `key=` makes it participate in
+form collection:
+
+```julia
+@twlayout (title = "Status") begin
+    label("Disk usage"; style = :header)
+    gauge(; key = :disk, max = 100, value = 72)
+end
+```
+
+Registration is resolved at runtime, so register at package load and the name is
+immediately usable. `twlayout_widgets()` lists every registered short name.
+
+See **`design/termwin-widget-authoring-guide.md`** for the full contract (the
+`draw`/`inject`/`helptext`/`tick`/`clamp_scroll!` dispatch points, theme tokens,
+the bindings/scroll/rows helpers, and forms) and `test/custom_widget_demo.jl` for
+a complete interactive example.
+
+---
+
 ## Data exploration with `tshow`
 
 `tshow` is the main entry point for interactive exploration. It wraps `initsession`,
