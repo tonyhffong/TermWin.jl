@@ -135,6 +135,11 @@ function _dt_update_data!(o::TwObj{TwDictTreeData})
     _dt_update_dimensions!(o)
 end
 
+function setvalue!(o::TwObj{TwDictTreeData}, d::AbstractDict)
+    o.value = d
+    _dt_update_data!(o)
+end
+
 function _dt_find_and_goto!(o::TwObj{TwDictTreeData}, target_stack)
     data = o.data
     for i = 1:data.datalistlen

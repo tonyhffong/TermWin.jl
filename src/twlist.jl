@@ -499,6 +499,14 @@ function inject(o::TwObj{TwListData}, token::Any)
                 end
                 i = mod1(i + stp, length(o.data.widgets))
             end
+            # Fallback: no other sibling accepted focus (single-child root list, or
+            # all siblings are non-focusable). Re-enter the current widget from the
+            # opposite end so Tab wraps within the view rather than leaking to the screen.
+            if retcode == Ignored && _list_check_accept_focus(prevw, stp)
+                deep_unfocus(prevw)
+                deep_focus(prevw, stp == -1) # stp==1 (Tab) → forward; stp==-1 → reverse
+                retcode = Handled
+            end
         else
             i = focus + stp
             if stp == 1
@@ -669,18 +677,19 @@ end
 
 function set_default_focus(w::TwObj{TwListData}, rev = false)
     if w.data.focus == 0 && !isempty(w.data.widgets)
-        if rev
-            w.data.focus = length(w.data.widgets)
-        else
-            w.data.focus = 1
-        end
-
-        subw = w.data.widgets[w.data.focus]
-        subw.hasFocus = true
-        if isa(subw, TwObj{TwListData})
-            set_default_focus(subw, rev)
-        else
-            ensure_visible_on_canvas(subw)
+        r = rev ? (length(w.data.widgets):-1:1) : (1:length(w.data.widgets))
+        for i in r
+            child = w.data.widgets[i]
+            if _list_check_accept_focus(child, rev ? -1 : 1)
+                w.data.focus = i
+                child.hasFocus = true
+                if isa(child, TwObj{TwListData})
+                    set_default_focus(child, rev)
+                else
+                    ensure_visible_on_canvas(child)
+                end
+                break
+            end
         end
     end
 end

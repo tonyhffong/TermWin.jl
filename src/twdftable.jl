@@ -174,6 +174,7 @@ mutable struct TwDfTableData
     calcpivots::Dict{Symbol,CalcPivot}
     searchText::String
     selection_text::Observable{String}
+    showRoot::Bool   # when false, the root summary row is hidden (flat-list display)
     # calculated dimension
     TwDfTableData() = new(
         TwDfTableNode(),
@@ -196,6 +197,7 @@ mutable struct TwDfTableData
         Dict{Symbol,CalcPivot}(),
         "",
         Observable(""),
+        true,
     )
 end
 
@@ -220,8 +222,10 @@ function newTwDfTable(
     bottomText = defaultTableBottomText,
     views = Dict{Symbol,Any}[],
     calcpivots = Dict{Symbol,CalcPivot}(),
+    showRoot::Bool = true,
 )
     obj = TwObj(TwDfTableData(), Val{:DfTable})
+    obj.data.showRoot = showRoot
     obj.value = df
     obj.title = title
     obj.box = true
@@ -458,7 +462,9 @@ function builddatalist(o::TwDfTableData)
             name = string(n.pivotvals[end])
         end
 
-        push!(o.datalist, (name, stack, n.isOpen ? :open : :close, skiplines, n))
+        if o.showRoot || !isempty(stack)
+            push!(o.datalist, (name, stack, n.isOpen ? :open : :close, skiplines, n))
+        end
         if n.isOpen
             if length(n.pivotcols) < length(pivots)
                 len = length(n.children)
@@ -481,6 +487,18 @@ function builddatalist(o::TwDfTableData)
     o.currentLine = min(o.currentLine, length(o.datalist))
 end
 
+# In-place DataFrame replacement — updates the displayed data without resetting
+# scroll position, column config, or sort settings.
+# Intended for live-widget update 
+# Precondition: flat (no pivot groups) DataFrame with the same schema as at construction.
+function setvalue!(o::TwObj{TwDfTableData}, df::DataFrame)
+    o.value = df
+    o.data.rootnode.subdataframe = df
+    o.data.rootnode.colvalcache  = Dict{Symbol,Any}()
+    ordernode(o.data.rootnode)
+    builddatalist(o.data)
+end
+
 function updateTableDimensions(o::TwObj)
     o.data.datalistlen = length(o.data.datalist)
     o.data.headerlines = maximum(map(x->length(split(x.displayname, "\n")), o.data.colInfo))
@@ -494,22 +512,24 @@ function draw(o::TwObj{TwDfTableData})
     viewContentHeight = o.height - 2 * o.borderSizeV - o.data.headerlines
     viewContentWidth = o.width - 2 * o.borderSizeH
 
-    box(o.window, 0, 0)
-    if !isempty(o.title)
-        titlestr = o.title
-        mvwprintw(o.window, 0, round(Int, (o.width - length(titlestr))/2), "%s", titlestr)
+    if o.box
+        box(o.window, 0, 0)
+        if !isempty(o.title)
+            titlestr = o.title
+            mvwprintw(o.window, 0, round(Int, (o.width - length(titlestr))/2), "%s", titlestr)
+        end
+        if o.data.datalistlen <= viewContentHeight
+            msg = "ALL"
+        else
+            msg = @sprintf(
+                "%d/%d %5.1f%%",
+                o.data.currentLine,
+                o.data.datalistlen,
+                o.data.currentLine / o.data.datalistlen * 100
+            )
+        end
+        mvwprintw(o.window, 0, o.width - length(msg)-3, "%s", msg)
     end
-    if o.data.datalistlen <= viewContentHeight
-        msg = "ALL"
-    else
-        msg = @sprintf(
-            "%d/%d %5.1f%%",
-            o.data.currentLine,
-            o.data.datalistlen,
-            o.data.currentLine / o.data.datalistlen * 100
-        )
-    end
-    mvwprintw(o.window, 0, o.width - length(msg)-3, "%s", msg)
     updateTableDimensions(o)
 
     # header row(s)

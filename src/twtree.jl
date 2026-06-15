@@ -317,6 +317,15 @@ function _tree_update_data!(o::TwObj{TwTreeData})
     updateTreeDimensions(o)
 end
 
+# Replace displayed value without resetting scroll position or expand/collapse state.
+# openstatemap entries for paths that no longer exist are silently ignored on next render.
+# Precondition: new value has a similar structure to the original.
+function setvalue!(o::TwObj{TwTreeData}, val)
+    o.value = val
+    _tree_update_data!(o)
+    o.data.currentLine = min(o.data.currentLine, o.data.datalistlen)
+end
+
 function _tree_checkTop!(o::TwObj{TwTreeData})
     vh = o.height - 2 * o.borderSizeV
     if o.data.currentTop < 1

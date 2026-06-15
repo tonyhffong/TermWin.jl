@@ -100,7 +100,7 @@ export COLOR_PAIR, A_BOLD, A_UNDERLINE, A_REVERSE
 # Layout registry — register a short name → constructor for the DSL.
 export register_twlayout_widget!, unregister_twlayout_widget!, twlayout_widgets
 # Dispatch points to extend with your widget's data type (e.g. `draw(o::TwObj{MyData})`).
-export draw, inject, helptext, tick, clamp_scroll!, objtype
+export draw, inject, helptext, tick, clamp_scroll!, objtype, setvalue!
 # Construction: size/position a widget under a parent container.
 export link_parent_child
 # Drawing primitives (operate on o.window: an NC.Plane or TwWindow).
