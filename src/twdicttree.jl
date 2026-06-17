@@ -932,8 +932,9 @@ function inject(o::TwObj{TwDictTreeData}, token)
         elseif mstate == :scroll_down
             _dt_moveby!(o,  round(Int, viewH / 5));  refresh(o)
         elseif mstate == :button1_pressed
-            begy, begx = getwinbegyx(o.window)
-            relx = x - begx; rely = y - begy
+            # screen_to_relative handles both an NC.Plane window and a TwWindow
+            # (embedded in a list/livewidget).
+            rely, relx = screen_to_relative(o.window, y, x)
             if 0 <= relx < o.width && 0 <= rely < o.height
                 clicked = data.currentTop + rely - o.borderSizeV
                 if 1 <= clicked <= data.datalistlen

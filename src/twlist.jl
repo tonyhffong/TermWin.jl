@@ -100,14 +100,26 @@ function update_list_canvas(o::TwObj{TwListData})
                 update_list_canvas(w)
             end
         end
+        wsz(x, dim) = objtype(x) == :List ?
+            (dim === :h ? x.data.canvasheight : x.data.canvaswidth) :
+            (dim === :h ? x.height : x.width)
+        # A leaf widget whose CROSS-axis size was given as a fraction (e.g. a
+        # separator: width=1.0 inside a vstack, height=1.0 inside an hstack) means
+        # "fill the list's cross axis". Its fraction is resolved at link time
+        # against the ultimate ancestor's *default* canvas (a nested list is linked
+        # while still empty), so it carries a bogus oversized cross dimension here.
+        # Such children must ADAPT to the cross-axis size, not DRIVE it: exclude
+        # them from the cross-axis maximum, then resolve them below. (Nested lists
+        # shrink-wrap and are always included via their own canvas size.)
+        is_fill(x, frac) = objtype(x) != :List && frac isa AbstractFloat
         if o.data.horizontal
-            computed_h =
-                maximum(map(x->objtype(x)==:List ? x.data.canvasheight : x.height, ws))
-            computed_w = sum(map(x->objtype(x)==:List ? x.data.canvaswidth : x.width, ws))
+            real_h = [wsz(x, :h) for x in ws if !is_fill(x, x.desiredHeight)]
+            computed_h = isempty(real_h) ? 1 : maximum(real_h)
+            computed_w = sum(wsz(x, :w) for x in ws)
         else
-            computed_h = sum(map(x->objtype(x)==:List ? x.data.canvasheight : x.height, ws))
-            computed_w =
-                maximum(map(x->objtype(x)==:List ? x.data.canvaswidth : x.width, ws))
+            real_w = [wsz(x, :w) for x in ws if !is_fill(x, x.desiredWidth)]
+            computed_w = isempty(real_w) ? 1 : maximum(real_w)
+            computed_h = sum(wsz(x, :h) for x in ws)
         end
         if isa(o.window, NC.Plane)
             # Root-level list: canvas floor is the content area (viewport minus
@@ -124,6 +136,19 @@ function update_list_canvas(o::TwObj{TwListData})
             o.data.canvaswidth = computed_w
             o.height = o.data.canvasheight + (o.box ? 2 : 0)
             o.width = o.data.canvaswidth + (o.box ? 2 : 0)
+        end
+        # Now that the cross-axis size is final, resize the fill leaves to match it
+        # (a separator spanning the full height of an hstack / width of a vstack).
+        crosssize = o.data.horizontal ? o.data.canvasheight : o.data.canvaswidth
+        for x in ws
+            objtype(x) == :List && continue
+            if o.data.horizontal && x.desiredHeight isa AbstractFloat
+                x.height = max(1, round(Int, crosssize * x.desiredHeight))
+                isa(x.window, TwWindow) && (x.window.height = x.height)
+            elseif !o.data.horizontal && x.desiredWidth isa AbstractFloat
+                x.width = max(1, round(Int, crosssize * x.desiredWidth))
+                isa(x.window, TwWindow) && (x.window.width = x.width)
+            end
         end
     end
     if o.data.pad !== nothing

@@ -1073,8 +1073,9 @@ function inject(o::TwObj{TwFileBrowserData}, token)
                 beep()
             end
         elseif mstate == :button1_pressed
-            begy, begx = getwinbegyx(o.window)
-            relx = x - begx; rely = y - begy
+            # screen_to_relative handles both an NC.Plane window and a TwWindow
+            # (embedded in a list/livewidget).
+            rely, relx = screen_to_relative(o.window, y, x)
             if 0 <= relx < o.width && 0 <= rely < o.height
                 newline = o.data.currentTop + rely - o.borderSizeV
                 if newline >= 1 && newline <= o.data.datalistlen

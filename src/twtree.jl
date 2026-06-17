@@ -807,9 +807,9 @@ function inject(o::TwObj{TwTreeData}, token)
         elseif mstate == :scroll_down
             _tree_moveby!(o,  round(Int, vh/5));  refresh(o)
         elseif mstate == :button1_pressed
-            begy, begx = getwinbegyx(o.window)
-            relx = x - begx
-            rely = y - begy
+            # screen_to_relative handles both an NC.Plane window (top-level tshow)
+            # and a TwWindow (embedded in a list/livewidget, e.g. ICJ's treecell).
+            rely, relx = screen_to_relative(o.window, y, x)
             if 0 <= relx < o.width && 0 <= rely < o.height
                 o.data.currentLine = o.data.currentTop + rely - o.borderSizeH + 1
                 set!(o.data.selection_text, _tw_tree_sel_text(o))
