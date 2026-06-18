@@ -65,8 +65,8 @@ the `do` block so nested columns/rows land in the right place.
 function vstack(
     f::Function,
     parent::TwObj = rootTwScreen;
-    height::Real = 1.0,
-    width::Real = 1.0,
+    height::SizeSpec = 1.0,
+    width::SizeSpec = 1.0,
     posy::Any = :top,
     posx::Any = :left,
     defaults = nothing,
@@ -84,6 +84,7 @@ function vstack(
     f(list)
     update_list_canvas(list)    # finalize canvas after all children are sized
     reflow_children!(list)      # re-place children now that their sizes are settled
+    resolve_flex!(list)         # distribute leftover space to :fill/:content children
     defaults !== nothing && apply_defaults!(list, defaults)
     list
 end
@@ -98,8 +99,8 @@ further details and examples.
 function hstack(
     f::Function,
     parent::TwObj = rootTwScreen;
-    height::Real = 1.0,
-    width::Real = 1.0,
+    height::SizeSpec = 1.0,
+    width::SizeSpec = 1.0,
     posy::Any = :top,
     posx::Any = :left,
     defaults = nothing,
@@ -117,6 +118,7 @@ function hstack(
     f(list)
     update_list_canvas(list)
     reflow_children!(list)      # re-place children now that their sizes are settled
+    resolve_flex!(list)         # distribute leftover space to :fill/:content children
     defaults !== nothing && apply_defaults!(list, defaults)
     list
 end
@@ -347,6 +349,7 @@ function _twlayout_impl(opts, body)
     rootTwScreen_ref = GlobalRef(_TWBUILDER_MODULE, :rootTwScreen)
     update_canvas_ref = GlobalRef(_TWBUILDER_MODULE, :update_list_canvas)
     reflow_ref = GlobalRef(_TWBUILDER_MODULE, :reflow_children!)
+    resolve_flex_ref = GlobalRef(_TWBUILDER_MODULE, :resolve_flex!)
     apply_defaults_ref = GlobalRef(_TWBUILDER_MODULE, :apply_defaults!)
 
     # defaults_sym holds the evaluated defaults expression (or nothing)
@@ -357,6 +360,7 @@ function _twlayout_impl(opts, body)
         $(transformed...)
         $update_canvas_ref($list_sym)
         $reflow_ref($list_sym)
+        $resolve_flex_ref($list_sym)
         local $defaults_sym = $defaults_expr
         $defaults_sym !== nothing && $apply_defaults_ref($list_sym, $defaults_sym)
         $list_sym

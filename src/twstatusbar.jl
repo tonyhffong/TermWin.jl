@@ -5,8 +5,8 @@ end
 function newTwStatusBar(
     scr::TwObj,
     obs::Observable{String};
-    height::Real = 1,
-    width::Real  = 1.0,
+    height::SizeSpec = 1,
+    width::SizeSpec  = 1.0,
     posy::Any    = :top,
     posx::Any    = :left,
 )

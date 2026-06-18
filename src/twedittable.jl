@@ -43,8 +43,8 @@ function newTwEditTable(
     scr::TwObj,
     df::DataFrame,
     colspecs::Vector{TwEditTableCol};
-    height::Real = 0.8,
-    width::Real = 0.8,
+    height::SizeSpec = 0.8,
+    width::SizeSpec = 0.8,
     posy::Any = :center,
     posx::Any = :center,
     title::String = "",
@@ -140,6 +140,14 @@ function _et_commit_cell!(data::TwEditTableData)::Bool
     else
         return false   # editor_commit set ed.incomplete
     end
+end
+
+# Natural content extent for :content / :fill layout sizing (+1 for the header row).
+function natural_height(o::TwObj{TwEditTableData})
+    nrow(o.data.df) + 1 + 2 * o.borderSizeV
+end
+function natural_width(o::TwObj{TwEditTableData})
+    sum(c.width + 1 for c in o.data.colspecs; init = 0) + 2 * o.borderSizeH
 end
 
 function _et_checkTop!(o::TwObj{TwEditTableData})

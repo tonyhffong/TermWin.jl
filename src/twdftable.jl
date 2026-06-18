@@ -205,8 +205,8 @@ end
 function newTwDfTable(
     scr::TwObj,
     df::DataFrame;
-    height::Real = 1.0,
-    width::Real = 1.0,
+    height::SizeSpec = 1.0,
+    width::SizeSpec = 1.0,
     posy::Any = :center,
     posx::Any = :center,
     pivots = Symbol[],
@@ -505,6 +505,19 @@ function updateTableDimensions(o::TwObj)
     # reminder: (name, stack, exphints, skiplines, node )
     o.data.datatreewidth =
         maximum(map(d -> 2*(length(d[2])+1) + length(d[1]) + 1, o.data.datalist))
+end
+
+# Natural content extent for :content / :fill layout sizing.
+function natural_height(o::TwObj{TwDfTableData})
+    isempty(o.data.datalist) && return o.height
+    updateTableDimensions(o)
+    o.data.datalistlen + o.data.headerlines + 2 * o.borderSizeV
+end
+function natural_width(o::TwObj{TwDfTableData})
+    isempty(o.data.datalist) && return o.width
+    updateTableDimensions(o)
+    o.data.datatreewidth + sum(c.format.width + 1 for c in o.data.colInfo; init = 0) +
+        2 * o.borderSizeH
 end
 
 function draw(o::TwObj{TwDfTableData})

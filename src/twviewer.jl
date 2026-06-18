@@ -20,13 +20,22 @@ mutable struct TwViewerData
         new(String[], 0, 0, 1, 1, 1, true, "", false, true, 4, nothing, "", 0 )
 end
 
+# Natural content extent for :content / :fill layout sizing.
+function natural_height(o::TwObj{TwViewerData})
+    o.data.msglen + 2 * o.borderSizeV +
+        (!o.box && !isempty(o.data.bottomText) ? 1 : 0)
+end
+function natural_width(o::TwObj{TwViewerData})
+    max(25, o.data.msgwidth + 2 * o.borderSizeH)
+end
+
 # the ways to use it:
 # exact dimensions known: h,w,y,x, content to add later
 # exact dimensions unknown, but content known and content drives dimensions
 function newTwViewer(
     scr::TwScreen;
-    height::Real = 0.5,
-    width::Real = 0.8,
+    height::SizeSpec = 0.5,
+    width::SizeSpec = 0.8,
     posy::Any = :staggered,
     posx::Any = :staggered,
     box = true,
@@ -58,8 +67,8 @@ end
 function newTwViewer(
     scr::TwObj,
     msgs::Array;
-    height::Real = 0,
-    width::Real = 0,
+    height::SizeSpec = 0,
+    width::SizeSpec = 0,
     posy::Any = :staggered,
     posx::Any = :staggered,
     box = true,
@@ -104,8 +113,8 @@ end
 function newTwViewer(
     scr::TwObj, msg::T;
     highlight::Bool  = false,
-    height::Real     = 0,
-    width::Real      = 0,
+    height::SizeSpec     = 0,
+    width::SizeSpec      = 0,
     posy::Any        = :staggered,
     posx::Any        = :staggered,
     box              = true,

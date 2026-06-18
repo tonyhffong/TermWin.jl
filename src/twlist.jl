@@ -7,8 +7,8 @@
 
 function newTwList(
     scr::TwObj;
-    height::Real = 25,
-    width::Real = 80,
+    height::SizeSpec = 25,
+    width::SizeSpec = 80,
     posy::Any = :center,
     posx::Any = :center,
     canvasheight = 80,
@@ -111,7 +111,7 @@ function update_list_canvas(o::TwObj{TwListData})
         # Such children must ADAPT to the cross-axis size, not DRIVE it: exclude
         # them from the cross-axis maximum, then resolve them below. (Nested lists
         # shrink-wrap and are always included via their own canvas size.)
-        is_fill(x, frac) = objtype(x) != :List && frac isa AbstractFloat
+        is_fill(x, frac) = objtype(x) != :List && cross_fill_factor(frac) !== nothing
         if o.data.horizontal
             real_h = [wsz(x, :h) for x in ws if !is_fill(x, x.desiredHeight)]
             computed_h = isempty(real_h) ? 1 : maximum(real_h)
@@ -139,15 +139,22 @@ function update_list_canvas(o::TwObj{TwListData})
         end
         # Now that the cross-axis size is final, resize the fill leaves to match it
         # (a separator spanning the full height of an hstack / width of a vstack).
+        # A fractional cross-axis size keeps its fraction; :fill / Flex span fully.
         crosssize = o.data.horizontal ? o.data.canvasheight : o.data.canvaswidth
         for x in ws
             objtype(x) == :List && continue
-            if o.data.horizontal && x.desiredHeight isa AbstractFloat
-                x.height = max(1, round(Int, crosssize * x.desiredHeight))
-                isa(x.window, TwWindow) && (x.window.height = x.height)
-            elseif !o.data.horizontal && x.desiredWidth isa AbstractFloat
-                x.width = max(1, round(Int, crosssize * x.desiredWidth))
-                isa(x.window, TwWindow) && (x.window.width = x.width)
+            if o.data.horizontal
+                f = cross_fill_factor(x.desiredHeight)
+                if f !== nothing
+                    x.height = max(1, round(Int, crosssize * f))
+                    isa(x.window, TwWindow) && (x.window.height = x.height)
+                end
+            else
+                f = cross_fill_factor(x.desiredWidth)
+                if f !== nothing
+                    x.width = max(1, round(Int, crosssize * f))
+                    isa(x.window, TwWindow) && (x.window.width = x.width)
+                end
             end
         end
     end
@@ -182,6 +189,48 @@ function reflow_children!(o::TwObj{TwListData})
         else
             begy += c.height
         end
+    end
+    return o
+end
+
+# Main-axis distribution pass — the analogue of update_list_canvas's cross-axis
+# fill pass. Sizes `:content` children to their natural extent, then splits the
+# leftover main-axis space among `:fill`/`Flex` children by weight.
+#
+# It only has space to distribute when the list owns a bounded main-axis budget,
+# i.e. it is a top-level list backed by an NC.Plane (the on-screen viewport).
+# Nested lists shrink-wrap, so there is no leftover; there a stray flex/content
+# leaf simply falls back to its natural size. Flex applies to leaf widgets only;
+# nested lists keep their shrink-wrapped size.
+function resolve_flex!(o::TwObj{TwListData})
+    ws = o.data.widgets
+    isempty(ws) && return o
+    horizontal = o.data.horizontal
+
+    # A leaf carries a hint via its main-axis desired*; a nested list never does
+    # (its desired* is overridden by its shrink-wrapped canvas), so neutralize it
+    # to a plain integer so the allocator treats it as fixed.
+    specof(c)   = objtype(c) == :List ? -1 : (horizontal ? c.desiredWidth : c.desiredHeight)
+    mainsize(c) = horizontal ? c.width : c.height
+    natof(c)    = horizontal ? natural_width(c) : natural_height(c)
+    setmain!(c, v) = horizontal ? (c.width = v) : (c.height = v)
+
+    bounded = isa(o.window, NC.Plane)
+    budget = !bounded ? 0 :
+        (horizontal ? o.width - 2 * o.borderSizeH : o.height - 2 * o.borderSizeV)
+
+    specs    = [specof(c) for c in ws]
+    presizes = [mainsize(c) for c in ws]
+    naturals = [natof(c) for c in ws]
+    sizes    = allocate_main(specs, presizes, naturals, budget)
+
+    for (c, v) in zip(ws, sizes)
+        setmain!(c, v)
+    end
+
+    reflow_children!(o)               # re-place + sync TwWindow records
+    for c in ws                       # keep each child's scroll valid after resize
+        clamp_scroll!(c)
     end
     return o
 end

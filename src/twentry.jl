@@ -45,7 +45,7 @@ end
 function newTwEntry(
     parent::TwObj,
     dt::DataType;
-    width::Real = 30,
+    width::SizeSpec = 30,
     posy::Any = :staggered,
     posx::Any = :staggered,
     box = true,

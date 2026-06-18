@@ -303,11 +303,18 @@ function updateFileBrowserDimensions(o::TwObj)
     nothing
 end
 
+# Natural content height for :content / :fill layout sizing. (Width is left to
+# the default — the preview pane makes a natural width ambiguous.)
+function natural_height(o::TwObj{TwFileBrowserData})
+    updateFileBrowserDimensions(o)
+    o.data.datalistlen + 2 * o.borderSizeV
+end
+
 function newTwFileBrowser(
     scr::TwObj,
     rootpath::String = pwd();
-    height::Real = 0.93,
-    width::Real = 0.93,
+    height::SizeSpec = 0.93,
+    width::SizeSpec = 0.93,
     posy::Any = :staggered,
     posx::Any = :staggered,
     title::String = rootpath,

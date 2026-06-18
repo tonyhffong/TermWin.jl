@@ -78,6 +78,46 @@ end
 `height` and `width` accept either an integer (rows/columns) or a float in `(0,1]`
 (fraction of the parent's size).
 
+### Flexible sizing hints
+
+Beyond literal sizes, `height`/`width` accept **hints** so variable-content
+widgets (trees, tables, the viewer) take exactly the space they need — or claim
+whatever space is left over — instead of being pinned to a magic number:
+
+| Value | Meaning (main axis = height in a `vstack`, width in an `hstack`) |
+|-------|------------------------------------------------------------------|
+| `:content` | size to the widget's natural content extent, capped at the container |
+| `:fill` | grow to consume the leftover main-axis space (weight 1) |
+| `Flex(w)` | like `:fill`, but split the leftover space by relative weight `w` |
+
+```julia
+# A header, a table sized to its rows, and a tree that soaks up the rest:
+vstack(; height=40, width=80) do s
+    newTwLabel(s, "Header"; style=:header)   # fixed: height=1
+    newTwDfTable(s, df; height=:content)     # shrinks to its row count
+    newTwTree(s, tree;  height=:fill)        # takes all remaining height
+end
+
+# Two columns splitting the width 2:1:
+hstack(; height=40, width=80) do s
+    newTwTree(s, left;  width=Flex(2))
+    newTwTree(s, right; width=Flex(1))
+end
+```
+
+`Flex` is exported. `:fill` is `Flex(1)`; two siblings with `Flex(2)`/`Flex(1)`
+divide the leftover space 2:1. On terminal resize, `:fill`/`Flex` children
+re-expand automatically.
+
+**Important limit — flex needs the *root* container.** `:fill`/`Flex` only
+distribute space inside the container that owns the on-screen viewport (the root
+`vstack`/`hstack`). A **nested** `vstack`/`hstack` shrink-wraps to its content, so
+it has no leftover to hand out — a fill child there falls back to its natural
+size. To split space across columns, make the `hstack` the **root** (as above)
+rather than nesting it inside a single-child `vstack`. Likewise, flex applies to
+leaf widgets, not to nested lists. See `design/layout-design.md` for the full
+rationale and workarounds, and `test/flex_layout.jl` for a runnable demo.
+
 ### Layout labels and spacers
 
 Inside any layout container or `@twlayout` block:
@@ -213,6 +253,29 @@ end
 
 Registration is resolved at runtime, so register at package load and the name is
 immediately usable. `twlayout_widgets()` lists every registered short name.
+
+### Making a custom widget hint-aware
+
+Your widget already accepts the sizing hints for free: `link_parent_child`
+forwards whatever `height`/`width` it is given (`:content`, `:fill`, `Flex(w)`,
+or a literal) and `alignxy!` resolves it. A fixed-height widget like the gauge
+above needs nothing more.
+
+If your widget has **variable content** and should support `:content` (or be a
+sensible `:fill` fallback), define `natural_height`/`natural_width` — the layout
+engine queries them for the widget's preferred extent. Both default to the
+widget's current size; override the relevant axis:
+
+```julia
+import TermWin: natural_height, natural_width
+
+# e.g. a list widget that wants one row per item plus its border
+natural_height(o::TwObj{MyListData}) = length(o.data.items) + 2 * o.borderSizeV
+```
+
+Both are exported. With them defined, `height=:content` sizes your widget to its
+content, and inside a nested (shrink-wrapped) container a `:fill` child falls back
+to this natural size — see "Flexible sizing hints" above.
 
 See **`design/termwin-widget-authoring-guide.md`** for the full contract (the
 `draw`/`inject`/`helptext`/`tick`/`clamp_scroll!` dispatch points, theme tokens,

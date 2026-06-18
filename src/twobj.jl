@@ -8,8 +8,8 @@ widgetStaggerPosy = 0
 function link_parent_child(
     p::TwObj{TwScreenData},
     c::TwObj,
-    height::Real,
-    width::Real,
+    height::SizeSpec,
+    width::SizeSpec,
     posy::Any,
     posx::Any,
 )
@@ -26,8 +26,8 @@ end
 function link_parent_child(
     p::TwObj{TwListData},
     c::TwObj,
-    height::Real,
-    width::Real,
+    height::SizeSpec,
+    width::SizeSpec,
     posy::Any,
     posx::Any,
 )
@@ -84,8 +84,8 @@ end
 function link_parent_child(
     p::TwObj,
     c::TwObj,
-    height::Real,
-    width::Real,
+    height::SizeSpec,
+    width::SizeSpec,
     posy::Any,
     posx::Any,
 )
@@ -151,8 +151,8 @@ end
 
 function alignxy!(
     o::TwObj,
-    h::Real,
-    w::Real,
+    h::SizeSpec,
+    w::SizeSpec,
     x::Any,
     y::Any;
     relative::Bool = false, # if true, o.xpos = parent.x + x
@@ -189,27 +189,14 @@ function alignxy!(
         log("parmaxy=" * string(parmaxy) * "parmaxx=" * string(parmaxx))
         parbegx = parbegy = 0
     end
-    if typeof(h) <: Integer
-        o.height = min(h, parmaxy)
-    elseif typeof(h) <: AbstractFloat && 0.0 < h <= 1.0
-        o.height = round(Int, parmaxy * h)
-        if o.height == 0
-            throw("height is too small")
-        end
-    else
-        throw("Illegal ysize " * string(h))
-    end
-
-    if typeof(w) <: Integer
-        o.width = min(w, parmaxx)
-    elseif typeof(w) <: AbstractFloat && 0.0 < w <= 1.0
-        o.width = round(Int, parmaxx * w)
-        if o.width == 0
-            throw("width is too small")
-        end
-    else
-        throw("Illegal xsize " * string(w))
-    end
+    # Resolve literal sizes and sizing hints (:content/:fill/Flex) on each axis.
+    # The parent's stacking direction decides which axis is "main": a fill hint
+    # on the main axis gets a provisional size here and is finalized by
+    # resolve_flex! once all siblings are known.
+    horizontal =
+        (parent isa TwObj && objtype(parent) == :List) ? parent.data.horizontal : false
+    o.height = resolve_dim(h, parmaxy, natural_height(o); main = !horizontal)
+    o.width  = resolve_dim(w, parmaxx, natural_width(o);  main = horizontal)
 
     if relative
         if typeof(x) <: Integer && typeof(y) <: Integer
@@ -425,6 +412,9 @@ function relayout!(o::TwObj)
             relayout_list_children!(o)
             # Final canvas pass after children settle.
             update_list_canvas(o)
+            # Re-distribute leftover space so :fill/:content children re-expand
+            # (or shrink) to the new viewport.
+            resolve_flex!(o)
         else
             alignxy!(
                 o,

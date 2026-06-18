@@ -55,8 +55,8 @@ end
 function newTwTree(
     scr::TwObj,
     ex;
-    height::Real = 1.0,
-    width::Real = 1.0,
+    height::SizeSpec = 1.0,
+    width::SizeSpec = 1.0,
     posy::Any = :staggered,
     posx::Any = :staggered,
     title::String = string(typeof(ex)),
@@ -502,6 +502,18 @@ function updateTreeDimensions(o::TwObj)
     o.data.datavaluewidth =
         maximum(map(x->length(x.valuestr), o.data.datalist))
     nothing
+end
+
+# Natural content extent for :content / :fill layout sizing.
+function natural_height(o::TwObj{TwTreeData})
+    isempty(o.data.datalist) && return o.height
+    updateTreeDimensions(o)
+    o.data.datalistlen + 2 * o.borderSizeV
+end
+function natural_width(o::TwObj{TwTreeData})
+    isempty(o.data.datalist) && return o.width
+    updateTreeDimensions(o)
+    o.data.datatreewidth + o.data.datatypewidth + o.data.datavaluewidth + 2 + 2 * o.borderSizeH
 end
 
 function draw(o::TwObj{TwTreeData})

@@ -19,8 +19,8 @@ In a horizontal layout pass `width=N, height=1.0`.
 """
 function newTwSpacer(
     parent::TwObj;
-    height::Real = 1,
-    width::Real = 1.0,
+    height::SizeSpec = 1,
+    width::SizeSpec = 1.0,
     posy::Any = :top,
     posx::Any = :left,
 )
@@ -57,8 +57,8 @@ Insert a static text line into a `vstack`/`hstack`/`@twlayout` layout.
 function newTwLabel(
     parent::TwObj,
     text::String = "";
-    height::Real = 1,
-    width::Real = 1.0,
+    height::SizeSpec = 1,
+    width::SizeSpec = 1.0,
     style::Symbol = :plain,
     posy::Any = :top,
     posx::Any = :left,

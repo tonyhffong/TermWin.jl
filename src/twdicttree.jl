@@ -59,8 +59,8 @@ end
 function newTwDictTree(
     scr::TwObj,
     ex::AbstractDict;
-    height::Real  = 1.0,
-    width::Real   = 1.0,
+    height::SizeSpec  = 1.0,
+    width::SizeSpec   = 1.0,
     posy::Any     = :staggered,
     posx::Any     = :staggered,
     title::String = string(typeof(ex)),
@@ -103,6 +103,18 @@ function _dt_update_dimensions!(o::TwObj{TwDictTreeData})
     data.datatreewidth  = maximum(map(x -> length(x.name) + 1 + 2*length(x.stack), data.datalist))
     data.datatypewidth  = min(treeTypeMaxWidth, max(15, maximum(map(x -> length(x.typestr), data.datalist))))
     data.datavaluewidth = maximum(map(x -> length(x.valuestr), data.datalist))
+end
+
+# Natural content extent for :content / :fill layout sizing.
+function natural_height(o::TwObj{TwDictTreeData})
+    isempty(o.data.datalist) && return o.height
+    _dt_update_dimensions!(o)
+    o.data.datalistlen + 2 * o.borderSizeV
+end
+function natural_width(o::TwObj{TwDictTreeData})
+    isempty(o.data.datalist) && return o.width
+    _dt_update_dimensions!(o)
+    o.data.datatreewidth + o.data.datatypewidth + o.data.datavaluewidth + 2 + 2 * o.borderSizeH
 end
 
 function _dt_view_dims(o::TwObj{TwDictTreeData})

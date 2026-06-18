@@ -42,6 +42,7 @@ include("rows.jl")         # AbstractRow / TreeRow / FileRow + tree_nav
 include("observable.jl")   # minimal reactive value
 include("strutils.jl")
 include("twtypes.jl")
+include("sizing.jl")       # Flex / SizeSpec / natural_* — flexible layout hints
 include("twobj.jl")
 include("bindings.jl")     # Binding table (needs TwObj from twtypes)
 include("scratchpad.jl")   # session-scoped pinned-value store
@@ -77,6 +78,7 @@ export trun # experimental
 export TwObj, TwScreen, rootTwScreen
 export newTwScreen
 export vstack, hstack, @twlayout
+export Flex, natural_height, natural_width
 export newTwEntry, newTwTree, newTwFileBrowser, newTwFunc, newTwViewer
 export newTwCalendar, newTwCalendar2, newTwPopup, newTwMultiSelect, newTwImage
 export newTwDfTable, newTwList
