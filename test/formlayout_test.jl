@@ -35,20 +35,19 @@ using TermWin
 # Option B: vstack / hstack (uncomment to use instead of Option A)
 # ---------------------------------------------------------------------------
 
-TermWin.initsession()
-
-form = vstack(rootTwScreen; form=true, title="New User", height=0.6, width=0.5) do parent
-    newTwEntry(parent, String; key=:username,    title="Username",    width=28, titlewidth=10)
-    newTwEntry(parent, Int;    key=:age,         title="Age",         width=18, titlewidth=10)
-    newTwPopup(parent, ["Engineering","Sales","Operations","HR"];
-               key=:department, title="Department")
-    newTwMultiSelect(parent, ["read","write","exec"];
-                     key=:permissions, title="Permissions")
+# withsession guarantees the terminal is restored even if anything below throws.
+result = withsession() do
+    form = vstack(rootTwScreen; form=true, title="New User", height=0.6, width=0.5) do parent
+        newTwEntry(parent, String; key=:username,    title="Username",    width=28, titlewidth=10)
+        newTwEntry(parent, Int;    key=:age,         title="Age",         width=18, titlewidth=10)
+        newTwPopup(parent, ["Engineering","Sales","Operations","HR"];
+                   key=:department, title="Department")
+        newTwMultiSelect(parent, ["read","write","exec"];
+                         key=:permissions, title="Permissions")
+    end
+    activateTwObj(rootTwScreen)
+    form.value
 end
-
-activateTwObj( rootTwScreen )
-result = form.value
-TermWin.endsession()
 
 # ---------------------------------------------------------------------------
 # Show result

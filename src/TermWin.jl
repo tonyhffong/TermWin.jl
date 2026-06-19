@@ -72,7 +72,7 @@ include("twdicttree.jl")
 include("twbuilder.jl")
 include("twstatusbar.jl")
 
-export tshow, activateTwObj, registerTwObj, unregisterTwObj
+export tshow, withsession, activateTwObj, registerTwObj, unregisterTwObj
 export pin!, unpin!, export_to_main!, scratchpad_dict
 export trun # experimental
 export TwObj, TwScreen, rootTwScreen
@@ -236,6 +236,46 @@ end
 
 function get_acs_val(c::Char)
     get(ACS_MAP, c, c)
+end
+
+"""
+    withsession(f)
+
+Run `f()` inside an initialized TermWin session and **guarantee** the terminal is
+restored, even if `f` throws. On error, `endsession()` runs first (restoring the
+terminal and flushing stdout), then the exception propagates — so its message and
+backtrace print to a clean REPL/stderr instead of a TUI-mangled terminal.
+
+This is the recommended entry point for direct (non-`tshow`) use of the toolkit:
+
+```julia
+withsession() do
+    form = @twlayout (form=true, title="New User") begin
+        entry(String; key=:name, title="Name")
+    end
+    activateTwObj(rootTwScreen)
+    form.value
+end
+```
+
+A nested call (already inside a session, e.g. from a `tshow_` override) just runs
+`f` without re-initializing or tearing down — the outermost owner handles teardown.
+`tshow` and `trun` are themselves implemented on top of `withsession`.
+"""
+function withsession(f)
+    global callcount, rootplane
+    if callcount != 0
+        return f()                      # nested: outer owner handles teardown
+    end
+    initsession()
+    callcount += 1
+    try
+        werase(rootplane)
+        return f()
+    finally
+        callcount -= 1
+        endsession()                    # always runs; restores terminal + flush(stdout)
+    end
 end
 
 function endsession()
@@ -435,22 +475,16 @@ function tshow(x...; kwargs...)
     title = extractkwarg!(kwargs, :title, titleof(x))
     widget = nothing
     if callcount == 0
-        initsession()
-        callcount += 1
-        werase(rootplane)
-        try
+        # withsession guarantees endsession() runs (terminal restored) even if the
+        # widget construction or the event loop throws; the error then propagates
+        # to a clean REPL/stderr.
+        return withsession() do
             widget = Base.invokelatest(tshow_, x...; title = title, kwargs...)
             if widget !== nothing
                 activateTwObj(rootTwScreen)
             end
-        catch err
-            callcount -= 1
-            endsession()
-            rethrow(err)
+            widget
         end
-        callcount -= 1
-        endsession()
-        return widget
     else
         found = false
         for o in rootTwScreen.data.objects
@@ -512,11 +546,8 @@ function trun(
     task = Threads.@spawn f(report, cancelled)
 
     if callcount == 0
-        initsession()
-        callcount += 1
-        werase(rootplane)
-        ret = nothing
-        try
+        # withsession guarantees terminal teardown even on error.
+        return withsession() do
             o = newTwProgress(
                 rootTwScreen;
                 updates = updates,
@@ -530,14 +561,13 @@ function trun(
             register_tickable!(rootTwScreen, o)
             activateTwObj(rootTwScreen)
             ret = o.value
-        catch er
-            callcount -= 1
-            endsession()
-            rethrow(er)
+            # Surface a worker that threw: otherwise its exception is swallowed
+            # (the spawned task is never otherwise waited on) and trun returns
+            # nothing silently. fetch rethrows it (wrapped) with the worker's
+            # stacktrace, on a clean terminal thanks to withsession's teardown.
+            istaskfailed(task) && fetch(task)
+            ret
         end
-        callcount -= 1
-        endsession()
-        return ret
     else
         # Nested call inside an existing session: register and let the
         # outer activateTwObj loop drive ticks.
