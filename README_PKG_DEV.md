@@ -1,5 +1,8 @@
 # TermWin.jl — Package Development Guide
 
+This document is for Julia package developers who want to use TermWin to compose terminal widgets
+to present their data structures, and to compose widgets to interact with users.
+
 This document covers extending TermWin: building data-entry forms, authoring custom
 widgets, and hooking into `tshow` dispatch. For general usage and content display,
 see [README.md](README.md).
@@ -109,14 +112,28 @@ end
 divide the leftover space 2:1. On terminal resize, `:fill`/`Flex` children
 re-expand automatically.
 
-**Important limit — flex needs the *root* container.** `:fill`/`Flex` only
-distribute space inside the container that owns the on-screen viewport (the root
-`vstack`/`hstack`). A **nested** `vstack`/`hstack` shrink-wraps to its content, so
-it has no leftover to hand out — a fill child there falls back to its natural
-size. To split space across columns, make the `hstack` the **root** (as above)
-rather than nesting it inside a single-child `vstack`. Likewise, flex applies to
-leaf widgets, not to nested lists. See `design/layout-design.md` for the full
-rationale and workarounds, and `test/flex_layout.jl` for a runnable demo.
+**Nesting works at any depth.** Flex is honored inside nested `vstack`/`hstack`,
+including perpendicular nesting — `hstack` columns sized `Flex(2)`/`Flex(1)` split
+the width *and* a `:fill` tree inside a column fills the column's full height:
+
+```julia
+hstack(; height=40, width=90) do s
+    vstack(s; width=Flex(2)) do col       # column takes 2/3 of the width
+        newTwLabel(col, "left"; style=:header)   # :content header
+        newTwTree(col, a; height=:fill)          # fills the column's height
+    end
+    vstack(s; width=Flex(1)) do col       # column takes 1/3
+        newTwLabel(col, "right"; style=:header)
+        newTwTree(col, b; height=:fill)
+    end
+end
+```
+
+A nested `vstack`/`hstack` opts into this **only** when you give it an explicit
+`:fill`/`Flex`/`:content` size; a nested list with a numeric or default size still
+shrink-wraps to its content (unchanged). See `design/layout-design.md` for the
+two-pass (measure → allocate) design and `test/flex_layout.jl` (Demo 4) for a
+runnable version.
 
 ### Layout labels and spacers
 

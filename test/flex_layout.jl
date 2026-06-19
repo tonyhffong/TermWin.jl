@@ -57,4 +57,24 @@ function TermWin.tshow_(::_FlexViewerDemo; title = "", kwargs...)
         newTwTree(s, bigtree;   height = :fill, title = "details (:fill)")
     end
 end
-tshow(_FlexViewerDemo(); title = ":content viewer + :fill tree  (Esc to exit)")
+tshow(_FlexViewerDemo(); title = ":content viewer + :fill tree  (Esc to advance)")
+
+# ── Demo 4: nested flex — root hstack of two vstack columns ───────────────────
+# Perpendicular nesting: the columns split the WIDTH 2:1 (Flex on the hstack),
+# and inside each column a :content header sits over a :fill tree that fills the
+# column's full HEIGHT. This is the case that only works once flex is honored
+# inside nested vstack/hstack.
+struct _FlexNestedDemo end
+function TermWin.tshow_(::_FlexNestedDemo; title = "", kwargs...)
+    hstack(; title = title, height = 40, width = 90) do s
+        vstack(s; width = Flex(2)) do col
+            newTwLabel(col, "left column — Flex(2)"; style = :header)
+            newTwTree(col, bigtree; height = :fill, title = "fills column height")
+        end
+        vstack(s; width = Flex(1)) do col
+            newTwLabel(col, "right — Flex(1)"; style = :header)
+            newTwTree(col, shorttree; height = :fill, title = "fills column height")
+        end
+    end
+end
+tshow(_FlexNestedDemo(); title = "nested flex: columns split width 2:1, trees fill height  (Esc to exit)")

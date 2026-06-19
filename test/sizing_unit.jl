@@ -13,6 +13,33 @@ const TW = TermWin
 # A widget data type with no natural_* override, for the generic-fallback test.
 struct _NoNatData end
 
+# ── headless builders for the recursive resolve_flex! tests ───────────────────
+# resolve_flex! takes an explicit `budget` kwarg, so the whole top-down solve can
+# be driven without a TTY (no NC.Plane needed).
+function _mkleaf(; dh, dw, h = 1, w = 1)
+    o = TW.TwObj(_NoNatData(), Val{:Leaf})
+    o.height = h; o.width = w
+    o.desiredHeight = dh; o.desiredWidth = dw
+    o.box = false; o.borderSizeV = 0; o.borderSizeH = 0
+    o
+end
+function _mklist(horizontal; dh, dw, h = 1, w = 1)
+    o = TW.TwObj(TW.TwListData(), Val{:List})
+    o.data.horizontal = horizontal
+    o.height = h; o.width = w
+    o.desiredHeight = dh; o.desiredWidth = dw
+    o.data.canvasheight = h; o.data.canvaswidth = w
+    o.box = false; o.borderSizeV = 0; o.borderSizeH = 0
+    o
+end
+function _attach!(parent, kids...)
+    for k in kids
+        k.window = TW.TwWindow(WeakRef(parent), 0, 0, k.height, k.width)
+        push!(parent.data.widgets, k)
+    end
+    parent
+end
+
 @testset "spec predicates" begin
     @test TW.is_flex(:fill)
     @test TW.is_flex(TW.Flex(2))
@@ -148,4 +175,72 @@ end
     out = TW.allocate_main(specs, presizes, naturals, 12)       # used 15 > budget
     @test out[1] == 15
     @test out[2] == 1                                           # floor, even with no room
+end
+
+@testset "resolve_flex! recursion — same-axis nested vstack" begin
+    # root vstack (budget 20, canvas width 40):
+    #   leaf A: fixed height 3
+    #   nested vstack B: height=:fill  → gets 20-3 = 17, then splits 17 to its
+    #                    two :fill leaves (8 / 9)
+    root = _mklist(false; dh = 1.0, dw = 1.0)
+    root.data.canvasheight = 20
+    root.data.canvaswidth  = 40
+    a = _mkleaf(; dh = 3, dw = 1.0, h = 3)
+    b = _mklist(false; dh = :fill, dw = 1.0)
+    b1 = _mkleaf(; dh = :fill, dw = 1.0)
+    b2 = _mkleaf(; dh = :fill, dw = 1.0)
+    _attach!(b, b1, b2)
+    _attach!(root, a, b)
+
+    TW.resolve_flex!(root; budget = 20)
+
+    @test a.height == 3
+    @test b.height == 17                 # :fill share of the root
+    @test b.width  == 40                 # pinned to the parent's cross extent
+    @test (b1.height, b2.height) == (8, 9)   # 17 split, last absorbs remainder
+    @test b1.width == 40 && b2.width == 40    # leaf cross-fill to B's width
+    @test b.ypos == 3                    # stacked below A
+end
+
+@testset "resolve_flex! recursion — perpendicular (columns fill row height)" begin
+    # root hstack (width budget 30, height 10):
+    #   col1 vstack width=Flex(2) → 20 wide, pinned to 10 tall
+    #   col2 vstack width=Flex(1) → 10 wide, pinned to 10 tall
+    #   each column's lone :fill leaf fills the column's full height (10)
+    root = _mklist(true; dh = 1.0, dw = 1.0)
+    root.data.canvasheight = 10
+    root.data.canvaswidth  = 30
+    col1 = _mklist(false; dh = 1.0, dw = TW.Flex(2))
+    col2 = _mklist(false; dh = 1.0, dw = TW.Flex(1))
+    l1 = _mkleaf(; dh = :fill, dw = 1.0)
+    l2 = _mkleaf(; dh = :fill, dw = 1.0)
+    _attach!(col1, l1)
+    _attach!(col2, l2)
+    _attach!(root, col1, col2)
+
+    TW.resolve_flex!(root; budget = 30)
+
+    @test (col1.width, col2.width) == (20, 10)   # 2:1 width split
+    @test col1.height == 10 && col2.height == 10 # cross-pinned to row height
+    @test l1.height == 10 && l2.height == 10     # :fill leaf fills column height
+    @test l1.width == 20 && l2.width == 10       # leaf cross-fill to column width
+    @test col2.xpos == 20                        # placed after col1
+end
+
+@testset "resolve_flex! — numeric/default nested list stays shrink-wrapped" begin
+    # B has the default size (1.0): it must NOT participate or be recursed, so its
+    # own :fill leaf is left untouched (today's behavior — no regression).
+    root = _mklist(false; dh = 1.0, dw = 1.0)
+    root.data.canvasheight = 20
+    root.data.canvaswidth  = 40
+    b = _mklist(false; dh = 1.0, dw = 1.0, h = 5, w = 12)
+    inner = _mkleaf(; dh = :fill, dw = 1.0, h = 1, w = 12)
+    _attach!(b, inner)
+    _attach!(root, b)
+
+    TW.resolve_flex!(root; budget = 20)
+
+    @test b.height == 5      # kept its shrink-wrapped height (treated as fixed)
+    @test b.width  == 12     # NOT pinned to the parent's cross extent
+    @test inner.height == 1  # NOT distributed — B never recursed into
 end

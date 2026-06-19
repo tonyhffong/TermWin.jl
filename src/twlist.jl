@@ -193,39 +193,76 @@ function reflow_children!(o::TwObj{TwListData})
     return o
 end
 
-# Main-axis distribution pass — the analogue of update_list_canvas's cross-axis
-# fill pass. Sizes `:content` children to their natural extent, then splits the
-# leftover main-axis space among `:fill`/`Flex` children by weight.
+# Main-axis distribution pass — the top-down "allocate" half of the two-pass
+# layout (the bottom-up "measure" half is update_list_canvas, which shrink-wraps
+# every list to a natural size). Sizes `:content` children to their natural
+# extent, splits the leftover main-axis space among `:fill`/`Flex` children by
+# weight, then **recurses** into any participating nested list so flex works at
+# any nesting depth. See design/layout-design.md.
 #
-# It only has space to distribute when the list owns a bounded main-axis budget,
-# i.e. it is a top-level list backed by an NC.Plane (the on-screen viewport).
-# Nested lists shrink-wrap, so there is no leftover; there a stray flex/content
-# leaf simply falls back to its natural size. Flex applies to leaf widgets only;
-# nested lists keep their shrink-wrapped size.
-function resolve_flex!(o::TwObj{TwListData})
+# Budget: the main-axis space available to distribute. A top-level list (window is
+# an NC.Plane) derives it from its own viewport; a nested list is handed one by its
+# parent via the `budget` kwarg. A nested list reached without a budget (its own
+# builder's call, before its parent has sized it) gets 0 → no distribution, so its
+# flex/content leaves fall back to natural size until the parent re-solves it.
+#
+# Participation (opt-in): a nested list joins its parent's distribution only when
+# its main-axis spec is `:fill`/`Flex`/`:content`. allocate_main treats any
+# numeric/fraction spec as fixed, so a default-sized (1.0) nested list keeps
+# shrink-wrapping exactly as before — no regression.
+function resolve_flex!(o::TwObj{TwListData}; budget::Union{Nothing,Int} = nothing)
     ws = o.data.widgets
     isempty(ws) && return o
     horizontal = o.data.horizontal
 
-    # A leaf carries a hint via its main-axis desired*; a nested list never does
-    # (its desired* is overridden by its shrink-wrapped canvas), so neutralize it
-    # to a plain integer so the allocator treats it as fixed.
-    specof(c)   = objtype(c) == :List ? -1 : (horizontal ? c.desiredWidth : c.desiredHeight)
+    mainspec(c) = horizontal ? c.desiredWidth : c.desiredHeight
     mainsize(c) = horizontal ? c.width : c.height
     natof(c)    = horizontal ? natural_width(c) : natural_height(c)
     setmain!(c, v) = horizontal ? (c.width = v) : (c.height = v)
+    setcross!(c, v) = horizontal ? (c.height = v) : (c.width = v)
+    participates(c) = objtype(c) == :List && (is_flex(mainspec(c)) || is_content(mainspec(c)))
 
-    bounded = isa(o.window, NC.Plane)
-    budget = !bounded ? 0 :
-        (horizontal ? o.width - 2 * o.borderSizeH : o.height - 2 * o.borderSizeV)
+    b = budget !== nothing ? budget :
+        isa(o.window, NC.Plane) ?
+            (horizontal ? o.width - 2 * o.borderSizeH : o.height - 2 * o.borderSizeV) : 0
 
-    specs    = [specof(c) for c in ws]
+    specs    = [mainspec(c) for c in ws]
     presizes = [mainsize(c) for c in ws]
     naturals = [natof(c) for c in ws]
-    sizes    = allocate_main(specs, presizes, naturals, budget)
+    sizes    = allocate_main(specs, presizes, naturals, b)
+
+    # Parent's cross extent — a participating nested list spans it (so a column
+    # fills the row's height, and vice-versa).
+    crosssize = horizontal ? o.data.canvasheight : o.data.canvaswidth
 
     for (c, v) in zip(ws, sizes)
         setmain!(c, v)
+        if objtype(c) == :List
+            if b > 0 && participates(c)
+                setcross!(c, crosssize)
+                if isa(c.window, TwWindow)
+                    c.window.height = c.height
+                    c.window.width  = c.width
+                end
+                # The nested list's canvas must match its newly allocated box so
+                # its own children fit and its scroll/line-info read correctly.
+                c.data.canvasheight = c.height
+                c.data.canvaswidth  = c.width
+                # Recurse: distribute along the child's *own* main axis in its box.
+                childbudget = c.data.horizontal ? c.width : c.height
+                resolve_flex!(c; budget = childbudget)
+            end
+        else
+            # Leaf cross-fill: a fill spec spans the cross axis, a fraction takes
+            # its share. Re-applied here (not just in update_list_canvas) so leaves
+            # inside a nested list that *grew* via allocation re-span the new size.
+            cf = cross_fill_factor(horizontal ? c.desiredHeight : c.desiredWidth)
+            if cf !== nothing
+                setcross!(c, max(1, round(Int, crosssize * cf)))
+                isa(c.window, TwWindow) &&
+                    (horizontal ? (c.window.height = c.height) : (c.window.width = c.width))
+            end
+        end
     end
 
     reflow_children!(o)               # re-place + sync TwWindow records
