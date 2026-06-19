@@ -129,6 +129,9 @@ mutable struct TwListData
     navigationmode::Bool
     isForm::Bool
     bottomText::String
+    # Caller-supplied custom key Bindings (see on_key / newTwList `keys` kwarg).
+    # Typed Any because Binding is defined in bindings.jl, included after this file.
+    userbindings::Vector{Any}
     session_id::Int
     function TwListData()
         ret = new(
@@ -144,6 +147,7 @@ mutable struct TwListData
             false,
             false,
             "",
+            Any[],
             current_session_id,
         )
         finalizer(

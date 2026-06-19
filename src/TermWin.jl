@@ -115,7 +115,7 @@ export A_NORMAL, A_ITALIC
 # Semantic theme tokens.
 export theme, set_theme!, refresh_theme!
 # Bindings layer — declare keys once; footer + F1 help + dispatch are generated.
-export Binding, bindings, active_bindings, inject_via_table
+export Binding, on_key, bindings, active_bindings, inject_via_table
 export footer, helptext_from_bindings, keylabel
 # Scroll viewport helper.
 export ScrollState, clamp_view!, move_cursor!, page!, scroll_left!, visible

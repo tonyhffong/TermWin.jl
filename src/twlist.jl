@@ -19,6 +19,7 @@ function newTwList(
     showLineInfo = true,
     form = false,
     bottomText::String = "",
+    keys::AbstractVector = Binding[],
 )
     obj = TwObj(TwListData(), Val{:List})
     obj.box = box
@@ -29,6 +30,7 @@ function newTwList(
     obj.data.showLineInfo = showLineInfo
     obj.data.isForm = form
     obj.data.bottomText = bottomText
+    obj.data.userbindings = collect(Any, keys)
     obj.data.canvasheight = canvasheight
     obj.data.canvaswidth = canvaswidth
 
@@ -433,6 +435,45 @@ function ensure_visible_on_canvas(o::TwObj)
     log(@sprintf("  canvas  new orig: %d %d", par.data.canvaslocy, par.data.canvaslocx))
 end
 
+"""
+    on_key(keys, label, callback; when=_->true, scope=:global) -> Binding
+
+Build a custom key [`Binding`](@ref) for a layout container (`@twlayout`,
+`vstack`, `hstack`) — pass a vector of these via the `keys=` keyword.
+
+`keys` is a single token or a vector of tokens (`:F5`, `"d"`, `[:ctrl_s, :F2]`).
+`callback` is invoked with the current **data snapshot** — the
+`Dict{Symbol,Any}` produced by [`collect_form_values`](@ref), i.e. every keyed
+widget's current value (the same dict F10-submit returns).
+
+The callback's return value sets the outcome:
+- an [`InjectResult`](@ref) (`Handled`/`Accept`/`Cancel`/`Ignored`) is used as-is;
+  returning `Accept` stores the snapshot into the container's value, so
+  `activateTwObj` returns it (an early-submit key).
+- anything else (e.g. `nothing`) is treated as `Handled` — the key is consumed,
+  the view redraws, and the layout stays open.
+
+# Example
+```julia
+@twlayout (form=true, keys=[
+    on_key(:F5,     "Preview", snap -> show_preview(snap)),         # stays open
+    on_key(:ctrl_s, "Save",    snap -> (save_draft(snap); Accept)), # exits, returns snap
+]) begin
+    entry(String; key=:title, title="Title")
+end
+```
+"""
+function on_key(keys, label::AbstractString, callback;
+                when::Function = _ -> true, scope::Symbol = :global)
+    Binding(keys, label; scope = scope, when = when,
+        action = o -> begin
+            snap = collect_form_values(o)
+            r = callback(snap)
+            r === Accept && (o.value = snap)
+            r isa InjectResult ? r : Handled
+        end)
+end
+
 function collect_form_values(o::TwObj{TwListData})::Dict{Symbol,Any}
     result = Dict{Symbol,Any}()
     for w in o.data.widgets
@@ -508,7 +549,7 @@ end
 
 function bindings(o::TwObj{TwListData})
     isroot() = isa(o.window, NC.Plane)
-    [
+    builtins = [
         Binding(:enter, "next field",
             when   = _-> isroot() && o.data.isForm,
             action = _-> Ignored),            # display-only: actual advance is in inject
@@ -545,6 +586,11 @@ function bindings(o::TwObj{TwListData})
                 Handled
             end),
     ]
+    # Caller-supplied custom bindings come after the built-ins, so they cannot
+    # accidentally shadow Tab/F1/F10. They still dispatch (inject_via_table),
+    # show up in F1 help, and contribute to the footer.
+    isempty(o.data.userbindings) ? builtins :
+        vcat(builtins, collect(Binding, o.data.userbindings))
 end
 
 function inject(o::TwObj{TwListData}, token::Any)
