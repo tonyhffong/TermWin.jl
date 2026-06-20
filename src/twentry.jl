@@ -22,7 +22,7 @@ const _ENTRY_EDITOR_FIELDS = Dict{Symbol,Symbol}(
     :inputText => :buffer, :cursorPos => :cursorPos, :fieldLeftPos => :fieldLeftPos,
     :overwriteMode => :overwriteMode, :incomplete => :incomplete, :valueType => :valuetype,
     :tickSize => :tickSize, :precision => :precision, :commas => :commas,
-    :stripzeros => :stripzeros, :conversion => :conversion,
+    :stripzeros => :stripzeros, :conversion => :conversion, :enumvalues => :enumvalues,
 )
 function Base.getproperty(d::TwEntryData, s::Symbol)
     f = get(_ENTRY_EDITOR_FIELDS, s, nothing)
@@ -56,6 +56,7 @@ function newTwEntry(
     precision = -1,
     stripzeros = (precision == -1),
     conversion = "",
+    enumvalues::Union{Nothing,Vector{String}} = nothing,
     key::Union{Nothing,Symbol} = nothing,
 )
 
@@ -68,6 +69,7 @@ function newTwEntry(
     if conversion != ""
         data.conversion = conversion # forwarded to editor.conversion
     end
+    data.enumvalues = enumvalues     # forwarded to editor.enumvalues; non-nothing → popup picker
 
     obj = TwObj(data, Val{:Entry})
 
@@ -138,11 +140,57 @@ const _ENTRY_DATE_FORMAT_HELP =
     "Date formats: YYYY-MM-DD, 20140101, 1Jan2014, 1/1/2014, 2014.01.01\n" *
     ",  : reformat to canonical form\n"
 
+# Enum field (`enumvalues` set): open a substring-searchable popup picker
+# instead of free-text entry. Picking a value commits and closes the entry
+# immediately (there is no separate "confirm" step for an atomic pick);
+# cancelling the popup (Esc) leaves the entry's current value untouched.
+function _entry_open_enum_popup!(o::TwObj{TwEntryData})
+    global rootTwScreen
+    ed = o.data.editor
+    (fieldcount, _) = getFieldDimension(o)
+    popup = newTwPopup(rootTwScreen, ed.enumvalues;
+        posy = :center, posx = :center,
+        substrsearch = true,
+        maxheight = min(length(ed.enumvalues) + 2, 12),
+        maxwidth = max(fieldcount + 4, 20),
+    )
+    apply_default!(popup, ed.buffer)
+    result = activateTwObj(popup)
+    unregisterTwObj(rootTwScreen, popup)
+    result === nothing && return Handled
+    editor_set_buffer!(ed, result)
+    (v, ok) = editor_commit(ed)
+    if ok
+        o.value = v
+        return Accept
+    else
+        beep()
+        return Handled
+    end
+end
+
+# Enum fields skip the free-text box entirely: activating the entry goes
+# straight to the popup picker instead of waiting for a keypress first (Enter
+# inside an empty/non-editable text box, then Enter again, would be a
+# pointless two-step). Non-interactive callers (`tokens` given, e.g. scripted
+# replay) fall back to the generic loop.
+function activateTwObj(o::TwObj{TwEntryData}, tokens::Any = nothing)
+    if tokens === nothing && o.data.enumvalues !== nothing
+        status = _entry_open_enum_popup!(o)
+        return status == Accept ? o.value : nothing
+    end
+    invoke(activateTwObj, Tuple{TwObj,Any}, o, tokens)
+end
+
 function bindings(o::TwObj{TwEntryData})
     ed = o.data.editor
     [
         Binding(:esc, "cancel", action = _->Cancel),
+        Binding([:enter, Symbol("return")], "pick",
+                when   = _-> ed.enumvalues !== nothing,
+                action = _-> _entry_open_enum_popup!(o)),
         Binding([:enter, Symbol("return")], "confirm",
+                when   = _-> ed.enumvalues === nothing,
                 action = _->begin
                     (v, ok) = editor_commit(ed)
                     ok ? (o.value = v; Accept) : (beep(); Handled)
@@ -225,6 +273,10 @@ function inject(o::TwObj{TwEntryData}, token)
         refresh(o); return Handled
     elseif r2 === :rejected || r2 === :at_left_edge || r2 === :at_right_edge
         beep(); return Handled
+    elseif r2 === :open_enum
+        res = _entry_open_enum_popup!(o)
+        refresh(o)
+        return res
     elseif r2 === :open_calendar
         (v0, _) = evalNFormat(ed, ed.buffer, fieldcount)
         initd = v0 isa Date ? v0 : today()

@@ -288,7 +288,6 @@ end
     # Build the data object directly; inject_via_table runs the binding actions
     # without touching o.window (refresh only happens in inject, which we bypass).
     o = TW.TwObj(TW.TwCalendarData(Date(2026, 6, 15)), Val{:Calendar})
-    o.data.ncalStyle = true   # newTwCalendar sets this; the raw ctor defaults false
 
     # Pure date-transform commands (String tokens) dispatch through the table.
     @test TW.inject_via_table(o, "d") === TW.Handled
@@ -314,9 +313,9 @@ end
     @test o.data.date == Date(2027, 6, 15)
     TW.inject_via_table(o, "Y");  @test o.data.date == Date(2026, 6, 15)
 
-    # Arrow navigation (ncalStyle default true): left/right move by a week.
+    # Arrow navigation: left/right = ±1 day; up/down = ±1 week.
     @test TW.inject_via_table(o, :left)  === TW.Handled
-    @test o.data.date == Date(2026, 6, 8)
+    @test o.data.date == Date(2026, 6, 14)
     TW.inject_via_table(o, :right)
     @test o.data.date == Date(2026, 6, 15)
 

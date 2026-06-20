@@ -3,7 +3,7 @@ using Dates
 
 TermWin.initsession()
 #s = "a test"
-v = newTwCalendar( rootTwScreen, today(), posy=:random, posx=:random )
+v = newTwCalendar(rootTwScreen, today(), posy=:random, posx=:random)
 v.title = "Input: "
 activateTwObj( rootTwScreen )
 ret = v.value

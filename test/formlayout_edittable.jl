@@ -61,8 +61,8 @@ form = @twlayout (
     label("Order Header"; style=:header)
     entry(String; key=:customer,   title="Customer",   width=36, titlewidth=12)
     entry(Date;   key=:order_date, title="Order Date", width=36, titlewidth=12)
-    popup(["North", "South", "East", "West"];
-          key=:region, title="Region", maxheight=4)
+    entry(String; enumvalues = ["North", "South", "East", "West"], width=36, titlewidth=12,
+          key=:region, title="Region")
 
     label("Order Lines  (Ctrl-N: new row · Ctrl-D: delete row)"; style=:divider)
     edittable(seed_lines, ORDER_LINE_COLS; key=:lines, height=0.5)
