@@ -77,6 +77,8 @@ function _evalNFormat(dt::DataType, s::AbstractString, fieldcount::Int,
     fmtnum = v -> _myNumFormat(v, fieldcount, precision, commas, stripzeros, conversion)
     if dt <: AbstractString
         return (s, s)
+    elseif dt == Symbol
+        return (Symbol(s), s)
     elseif dt == Bool
         if s == "true"
             v = true
@@ -214,7 +216,7 @@ evalNFormat(ie::InlineEditor, s::AbstractString, fieldcount::Int) =
 
 function editor_value_to_buf(val, ie::InlineEditor)::String
     val === missing && return ""
-    if ie.enumvalues !== nothing || ie.valuetype <: AbstractString
+    if ie.enumvalues !== nothing || ie.valuetype <: AbstractString || ie.valuetype == Symbol
         return string(val)
     elseif ie.valuetype == Bool
         return string(val)                       # "true" / "false"
@@ -244,7 +246,7 @@ function editor_checkcursor!(ie::InlineEditor)
     else
         ie.cursorPos = max(1, min(length(ie.buffer) + 1, ie.cursorPos))
     end
-    if ie.valuetype <: AbstractString || ie.enumvalues !== nothing
+    if ie.valuetype <: AbstractString || ie.valuetype == Symbol || ie.enumvalues !== nothing
         fieldcount = ie.width
         remainspace = fieldcount - textwidth(ie.buffer)
         if remainspace <= 0
@@ -377,7 +379,7 @@ function editor_handle(ie::InlineEditor, token)
 
     # printable characters: type-specific
     if token isa AbstractString
-        if ie.valuetype <: AbstractString
+        if ie.valuetype <: AbstractString || ie.valuetype == Symbol
             editor_insert!(ie, token); editor_checkcursor!(ie); return :handled
         elseif ie.valuetype == Bool
             if token == "t"
@@ -491,7 +493,7 @@ function editor_render(ie::InlineEditor)
             rcursPos = ie.cursorPos
         end
     end
-    hscroll = ie.valuetype <: AbstractString || ie.enumvalues !== nothing
+    hscroll = ie.valuetype <: AbstractString || ie.valuetype == Symbol || ie.enumvalues !== nothing
     leftMore = hscroll && ie.fieldLeftPos > 1
     rightMore = hscroll && (ie.fieldLeftPos + fieldcount <= textwidth(buffer))
     return (outstr, rcursPos, leftMore, rightMore)
