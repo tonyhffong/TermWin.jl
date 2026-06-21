@@ -360,8 +360,9 @@ end
 function _scratchpad_open!(scr::TwObj{TwScreenData})
     panel = scr.data.scratchpad_panel
     if panel !== nothing && any(o -> o === panel, scr.data.objects)
-        _dt_update_data!(panel)
-        raiseTwObject(panel)
+        # The dict tree edits its own deepcopy, so it doesn't see pins made since
+        # it was created. Re-sync from the live scratchpad before showing it.
+        setvalue!(panel, deepcopy(scratchpad_dict()))
     else
         panel = newTwDictTree(
             scr, scratchpad_dict();
@@ -376,6 +377,7 @@ function _scratchpad_open!(scr::TwObj{TwScreenData})
         panel.data.isScratchpad = true
         scr.data.scratchpad_panel = panel
     end
+    raiseTwObject(panel)
     return Handled
 end
 
@@ -504,22 +506,10 @@ function inject(scr::TwObj{TwScreenData}, token)
     end
     if scr.data.focus != 0
         result = Base.invokelatest(inject, scr.data.objects[scr.data.focus], token)
-        # Escape from the scratchpad panel: lower if other widgets exist, else pre-exit.
-        if result == Cancel &&
-           scr.data.scratchpad_panel !== nothing &&
-           scr.data.objects[scr.data.focus] === scr.data.scratchpad_panel
-            panel = scr.data.scratchpad_panel
-            other_focusable = any(
-                o -> o !== panel && o.isVisible && o.acceptsFocus,
-                scr.data.objects,
-            )
-            if other_focusable
-                lowerTwObject(panel)
-            else
-                _show_pre_exit_dialog!(scr)
-            end
-            return Handled
-        end
+        # The scratchpad panel is dismissed on Esc like any other widget: its
+        # Cancel propagates to activateTwObj's handleStatus, which unregisters it
+        # and refocuses the next widget (or runs the pre-exit dialog if it was the
+        # last one). Pins live in the global scratchpad dict, so nothing is lost.
         if result != Ignored
             return result
         end

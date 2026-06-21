@@ -1391,19 +1391,26 @@ function bindings(o::TwObj{TwDfTableData})
         Binding(:ctrl_y, "export",          action = _-> (_dt_export_menu!(o); Handled)),
         Binding(:F2, "describe all cols",
             action = _-> begin
-                df_desc = string(DataFrames.describe(o.value))
+                df_desc = string(DataFrames.describe(o.data.rootnode.subdataframe))
                 tshow(df_desc; title=o.title * " columns", posx=:center, posy=:center)
                 Handled
             end),
-        Binding(:shift_F2, "describe current col",
+        Binding(:shift_F3, "describe current col",
             action = _-> begin
-                colsym     = o.data.colInfo[o.data.currentCol].name
-                d          = DataFrames.describe(o.value, :all, cols=[colsym])
-                stat_names = String.(names(d)[2:end])
-                stat_vals  = [string(d[1, n]) for n in names(d)[2:end]]
-                stats_df   = DataFrame(stat=stat_names, value=stat_vals)
-                tshow(stats_df; title=string(colsym) * " full stats",
-                      posx=:center, posy=:center, width=50, height=35)
+                basedf = o.data.rootnode.subdataframe
+                colsym = o.data.colInfo[o.data.currentCol].name
+                # Calculated-pivot columns (e.g. discretize buckets) aren't real
+                # columns of the source frame, so describe can't stat them.
+                if !(string(colsym) in names(basedf))
+                    beep()
+                else
+                    d          = DataFrames.describe(basedf, :all, cols=[colsym])
+                    stat_names = String.(names(d)[2:end])
+                    stat_vals  = [string(d[1, n]) for n in names(d)[2:end]]
+                    stats_df   = DataFrame(stat=stat_names, value=stat_vals)
+                    tshow(stats_df; title=string(colsym) * " full stats",
+                          posx=:center, posy=:center, width=50, height=35)
+                end
                 Handled
             end),
         Binding(:F6, "show cell value",

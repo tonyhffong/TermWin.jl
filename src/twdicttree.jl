@@ -150,6 +150,7 @@ end
 function setvalue!(o::TwObj{TwDictTreeData}, d::AbstractDict)
     o.value = d
     _dt_update_data!(o)
+    o.data.currentLine = clamp(o.data.currentLine, 1, max(1, o.data.datalistlen))
 end
 
 function _dt_find_and_goto!(o::TwObj{TwDictTreeData}, target_stack)
