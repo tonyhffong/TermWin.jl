@@ -18,7 +18,10 @@ struct TwEditTableCol
     width::Int                                 # Display width in chars
     editable::Bool                             # Whether user may edit
     valuetype::DataType                        # String, Int, Float64, Date, ...
-    enumvalues::Union{Nothing,Vector{String}}  # Non-nothing → popup picker
+    enumvalues::Union{Nothing,Vector{String}}  # Non-nothing → popup picker; always Vector{String}
+                                               # even if the underlying column holds Symbols —
+                                               # the selected string is converted back to Symbol
+                                               # by the caller when writing to the DataFrame.
     missingok::Bool                            # missing is ok
 end
 
