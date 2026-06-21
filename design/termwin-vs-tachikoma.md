@@ -17,7 +17,7 @@ That difference dictates everything else.
 | Dimension | TermWin | Tachikoma |
 |---|---|---|
 | Interaction model | Modal "summon → return a value" | Continuous full-screen app loop |
-| Best for | Embedded REPL/ICJ data exploration, dialogs, forms | Standalone dashboards, monitors, games, live UIs |
+| Best for | Embedded REPL data exploration, dialogs, forms | Standalone dashboards, monitors, games, live UIs |
 | Rendering backend | Notcurses (C) — pixel/sixel/kitty + Unicode fallback | Pure-Julia ANSI + braille/quadrant/sixel/kitty |
 | Native dependency | Yes — Notcurses must be present/pinned | None (dependency-light) |
 | Compile to binary | No (needs Notcurses + Julia) | Yes (juliac target is a stated goal) |
@@ -33,12 +33,10 @@ TermWin's most valuable, hardest-to-replace code is the **analytical data layer*
 the grouped/pivot DataFrame tree viewer (`twdftable.jl`, the aggregation/`CalcPivot` machinery in `dfutils.jl`), 
 the editable DataFrame table with enum/date/missing cell editors, the editable dict/vector tree, 
 and the `Expr`-aware highlighting. These exist because TermWin is a 
-*data analyst's interactive toolkit embedded in a REPL/ICJ workflow* 
+*data analyst's interactive toolkit embedded in a REPL workflow* 
 
-There's also a **paradigm mismatch with how you use it**. ICJ calls `tshow(model)` and expects a value back. 
 That modal "open a browser, return a selection" ergonomics is native to TermWin and 
 *awkward* in Tachikoma's run-until-quit app model.
-
 
 Longer term, TermWin may harvest Tachikoma's strongest ideas — constraint-based layout (Fixed/Fill/Percent/Min/Max/Ratio), 
 hot-swappable themes, and the continuous-loop model for *new* live views 
