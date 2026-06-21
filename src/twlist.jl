@@ -782,12 +782,22 @@ function inject(o::TwObj{TwListData}, token::Any)
                     w = lowest_widget(o)
                     deep_unfocus(w)
                     deep_focus(candidate)
+                    if o.data.focus != 0
+                        inject(lowest_widget(o), :KEY_MOUSE)
+                    end
                     dorefresh = true
                     retcode = Handled
                     o.data.navigationmode = false
                 end
             else
                 retcode = Ignored
+            end
+        elseif mstate in (:scroll_up, :scroll_down)
+            if o.data.focus != 0
+                focused = lowest_widget(o)
+                inject(focused, mstate == :scroll_up ? :up : :down)
+                dorefresh = true
+                retcode = Handled
             end
         end
     else

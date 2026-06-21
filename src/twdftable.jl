@@ -1461,11 +1461,14 @@ function inject(o::TwObj{TwDfTableData}, token)
             return Handled
         elseif mstate == :button1_pressed
             rely, relx = screen_to_relative(o.window, y, x)
+            if isa(o.window, TwWindow)
+                rely -= o.window.yloc; relx -= o.window.xloc
+            end
             did = false
             if 1<=relx<o.width-1 && o.data.headerlines<rely<o.height-1
-                o.data.currentLine = min(
-                    o.data.datalistlen,
-                    o.data.currentTop + rely - o.borderSizeH + 1 - o.data.headerlines,
+                o.data.currentLine = clamp(
+                    o.data.currentTop + rely - o.borderSizeV - o.data.headerlines,
+                    1, o.data.datalistlen,
                 )
                 _dft_check_top!(o)
                 did = true

@@ -394,6 +394,25 @@ function _show_pre_exit_dialog!(scr::TwObj{TwScreenData})
     raiseTwObject(sel)
 end
 
+# Move the widget currently captured in _drag_state to follow the cursor.
+# (cy, cx) is the current cursor position in screen (row, col).  The new window
+# origin is the original origin plus the offset from the fixed initial anchor,
+# clamped to stay on-screen.  Notcurses recomposites all planes on the next
+# render, so the vacated cells redraw from whatever sits beneath.
+function _drag_move!(cy::Int, cx::Int)
+    _drag_state[] === nothing && return
+    (widget, ay, ax, oy, ox) = _drag_state[]
+    new_y = max(0, oy + (cy - ay))
+    new_x = max(0, ox + (cx - ax))
+    if new_y != widget.ypos || new_x != widget.xpos
+        NC.move_yx(widget.window, new_y, new_x)
+        widget.ypos = new_y
+        widget.xpos = new_x
+        refresh(widget)
+    end
+    return
+end
+
 function inject(scr::TwObj{TwScreenData}, token)
     global rootTwScreen
     result = Ignored
@@ -406,8 +425,50 @@ function inject(scr::TwObj{TwScreenData}, token)
     if token == :ctrl_c
         return Cancel
     end
+    # Mouse-driven window drag. Terminals disagree on how button-held motion is
+    # reported: some send NCKEY_MOTION / a REPEAT of the held button (→
+    # :KEY_MOUSE_MOTION), others (e.g. macOS Terminal/iTerm2 SGR mode) send a
+    # fresh BUTTON1 PRESS at each new cell (→ :button1_pressed).  We handle both:
+    # once a drag is armed, any motion-ish event moves the window by the offset
+    # from the fixed initial anchor; the drag ends on button1 release.
+    if token == :KEY_MOUSE_MOTION
+        if _drag_state[] !== nothing
+            (_, mx, my, _) = getmouse()
+            _drag_move!(my, mx)
+            return Handled
+        end
+        return Ignored
+    end
     if token == :KEY_MOUSE
         (mstate, x, y, bs) = getmouse()
+        if mstate == :button1_released
+            _drag_state[] = nothing
+            return Handled
+        end
+        if mstate == :button1_pressed
+            # Mid-drag: this press at a new position is drag motion → move.
+            if _drag_state[] !== nothing
+                _drag_move!(y, x)
+                return Handled
+            end
+            # Not dragging yet: arm a drag if the press lands on the box top row
+            # (the title bar) of the topmost visible widget at the click point.
+            for i = length(scr.data.objects):-1:1
+                o = scr.data.objects[i]
+                if !o.isVisible
+                    continue
+                end
+                rely, relx = screen_to_relative(o.window, y, x)
+                if 0 <= relx < o.width && 0 <= rely < o.height
+                    if rely == 0 && o.box
+                        _drag_state[] = (o, y, x, o.ypos, o.xpos)
+                        raiseTwObject(o)
+                        return Handled
+                    end
+                    break  # topmost widget found but click not on title bar
+                end
+            end
+        end
     end
     # Global command palette — intercepts Ctrl-P before the focused widget.
     if token == :ctrl_p && scr.data.focus != 0

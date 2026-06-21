@@ -72,17 +72,59 @@ const NC_KEY_TO_SYMBOL = Dict{NC.Key.T,Symbol}(
     NC.Key.RESIZE => :KEY_RESIZE,
 )
 
+# One-slot lookahead buffer: holds the (key, ni) event that terminated a drag
+# coalescing drain, so it is translated on the next readtoken call, not lost.
+const _readtoken_pushback = Ref{Any}(nothing)
+
+# A position-bearing event that should be collapsed during a window drag:
+# button1 still down (any non-release evtype) or a bare pointer move.
+_is_drag_motion(key, ni) =
+    key isa NC.Key.T &&
+    ((key == NC.Key.BUTTON1 && ni.evtype != NC.LibNotcurses.NCTYPE_RELEASE) ||
+     key == NC.Key.MOTION)
+
 # returns either a string or a symbol
 function readtoken(nc::NC.NotcursesObject)
-    result = NC.get_nblock(nc)
-
-    if result === nothing
-        return :nochar
+    local key, ni
+    if _readtoken_pushback[] !== nothing
+        (key, ni) = _readtoken_pushback[]
+        _readtoken_pushback[] = nothing
+    else
+        result = NC.get_nblock(nc)
+        if result === nothing
+            return :nochar
+        end
+        (key, ni) = result
     end
 
-    key, ni = result
+    # Drag coalescing: while a window drag is active, collapse a backlog of
+    # position updates into only the most recent one so the window tracks the
+    # cursor instead of trailing.  The first non-motion event (e.g. the button
+    # release) is stashed for the next call so it is still processed.
+    if _drag_state[] !== nothing && _is_drag_motion(key, ni)
+        while true
+            nxt = NC.get_nblock(nc)
+            nxt === nothing && break
+            if _is_drag_motion(nxt[1], nxt[2])
+                (key, ni) = nxt
+            else
+                _readtoken_pushback[] = nxt
+                break
+            end
+        end
+    end
 
-    # Skip key release events — only process press and repeat
+    return _translate_token(key, ni)
+end
+
+function _translate_token(key, ni)
+    # Let BUTTON1 release through before the blanket release skip (for drag end detection)
+    if ni.evtype == NC.LibNotcurses.NCTYPE_RELEASE && key == NC.Key.BUTTON1
+        _last_mouse_event[] = (:button1_released, Int(ni.x), Int(ni.y), nothing)
+        return :KEY_MOUSE
+    end
+
+    # Skip all other key release events — only process press and repeat
     if ni.evtype == NC.LibNotcurses.NCTYPE_RELEASE
         return :nochar
     end
@@ -111,8 +153,16 @@ function readtoken(nc::NC.NotcursesObject)
     # Mouse events
     if key isa NC.Key.T
         if key == NC.Key.BUTTON1
-            _last_mouse_event[] = (:button1_pressed, Int(ni.x), Int(ni.y), nothing)
-            return :KEY_MOUSE
+            # Notcurses reports button-held motion (a drag) as the held button
+            # with evtype REPEAT — NCKEY_MOTION fires only when *no* button is down.
+            # Route a drag to the motion path so the screen can move the dragged widget.
+            if ni.evtype == NC.LibNotcurses.NCTYPE_REPEAT
+                _last_mouse_event[] = (:button1_dragged, Int(ni.x), Int(ni.y), nothing)
+                return :KEY_MOUSE_MOTION
+            else
+                _last_mouse_event[] = (:button1_pressed, Int(ni.x), Int(ni.y), nothing)
+                return :KEY_MOUSE
+            end
         elseif key == NC.Key.BUTTON4 || key == NC.Key.SCROLL_UP
 	    _last_mouse_event[] = ( Symbol( modifierprefix * "scroll_up" ), Int(ni.x), Int(ni.y), nothing)
             return :KEY_MOUSE
@@ -120,7 +170,8 @@ function readtoken(nc::NC.NotcursesObject)
 	    _last_mouse_event[] = ( Symbol( modifierprefix * "scroll_down"), Int(ni.x), Int(ni.y), nothing)
             return :KEY_MOUSE
         elseif key == NC.Key.MOTION
-            return :nochar  # Ignore pure mouse motion
+            _last_mouse_event[] = (:motion, Int(ni.x), Int(ni.y), nothing)
+            return :KEY_MOUSE_MOTION
         end
     end
 

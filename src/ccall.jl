@@ -286,6 +286,10 @@ function getmouse()
     return _last_mouse_event[]
 end
 
+# Popup drag state: nothing when idle, or
+# (widget, anchor_screen_y, anchor_screen_x, widget_orig_y, widget_orig_x)
+const _drag_state = Ref{Any}(nothing)
+
 function screen_to_relative(w::NC.Plane, y::Integer, x::Integer)
     pos = NC.yx(w)
     begy = Int(pos.y)

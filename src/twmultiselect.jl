@@ -321,10 +321,16 @@ function inject(o::TwObj{TwMultiSelectData}, token)
         elseif mstate == :scroll_down
             move_cursor!(o.data.scroll, round(Int, vph/10), length(o.data.datalist), vph)
             refresh(o)
-        elseif mstate == :button1_pressed && o.data.trackLine
+        elseif mstate == :button1_pressed
             (rely, relx) = screen_to_relative(o.window, y, x)
-            if 0 <= relx < o.width && 0 <= rely < o.height
-                o.data.scroll.cursor = o.data.scroll.top + rely - o.borderSizeH + 1
+            if isa(o.window, TwWindow)
+                rely -= o.window.yloc; relx -= o.window.xloc
+            end
+            if 0 <= relx < o.width && o.borderSizeV <= rely < o.height - o.borderSizeV
+                o.data.scroll.cursor = clamp(
+                    o.data.scroll.top + rely - o.borderSizeV,
+                    1, length(o.data.datalist),
+                )
                 refresh(o)
             else
                 return Ignored
