@@ -1,5 +1,10 @@
 # bookkeeping data for a screen
 
+# How long a popup drag may go without a motion/press update before it's
+# considered abandoned (e.g. the terminal dropped the button1_released that
+# should have ended it). See the comment on _drag_state in ccall.jl.
+const _drag_stale_seconds = 1.5
+
 # Screen is unique also in that its instantiation requires a plane. It's because often we'd simply
 # supply the rootplane that has already been created.
 function newTwScreen(plane::NC.Plane, maxy::Int, maxx::Int)
@@ -394,14 +399,30 @@ function _show_pre_exit_dialog!(scr::TwObj{TwScreenData})
     raiseTwObject(sel)
 end
 
+# Returns the live _drag_state tuple, or `nothing` if no drag is active or the
+# active one has gone stale (cleared as a side effect when stale). A drag is
+# stale once `_drag_stale_seconds` pass without a motion/press refreshing it —
+# guards against a terminal that drops the button1_released which should have
+# ended it (see the comment on _drag_state in ccall.jl).
+function _drag_state_live()
+    st = _drag_state[]
+    st === nothing && return nothing
+    if time() - st[6] > _drag_stale_seconds
+        _drag_state[] = nothing
+        return nothing
+    end
+    return st
+end
+
 # Move the widget currently captured in _drag_state to follow the cursor.
 # (cy, cx) is the current cursor position in screen (row, col).  The new window
 # origin is the original origin plus the offset from the fixed initial anchor,
 # clamped to stay on-screen.  Notcurses recomposites all planes on the next
 # render, so the vacated cells redraw from whatever sits beneath.
 function _drag_move!(cy::Int, cx::Int)
-    _drag_state[] === nothing && return
-    (widget, ay, ax, oy, ox) = _drag_state[]
+    st = _drag_state[]
+    st === nothing && return
+    (widget, ay, ax, oy, ox, _) = st
     new_y = max(0, oy + (cy - ay))
     new_x = max(0, ox + (cx - ax))
     if new_y != widget.ypos || new_x != widget.xpos
@@ -410,6 +431,7 @@ function _drag_move!(cy::Int, cx::Int)
         widget.xpos = new_x
         refresh(widget)
     end
+    _drag_state[] = (widget, ay, ax, oy, ox, time())
     return
 end
 
@@ -432,7 +454,7 @@ function inject(scr::TwObj{TwScreenData}, token)
     # once a drag is armed, any motion-ish event moves the window by the offset
     # from the fixed initial anchor; the drag ends on button1 release.
     if token == :KEY_MOUSE_MOTION
-        if _drag_state[] !== nothing
+        if _drag_state_live() !== nothing
             (_, mx, my, _) = getmouse()
             _drag_move!(my, mx)
             return Handled
@@ -447,7 +469,9 @@ function inject(scr::TwObj{TwScreenData}, token)
         end
         if mstate == :button1_pressed
             # Mid-drag: this press at a new position is drag motion → move.
-            if _drag_state[] !== nothing
+            # (Stale drags fall through to the arm logic below instead, so a
+            # terminal that dropped the release doesn't hijack this click.)
+            if _drag_state_live() !== nothing
                 _drag_move!(y, x)
                 return Handled
             end
@@ -461,7 +485,7 @@ function inject(scr::TwObj{TwScreenData}, token)
                 rely, relx = screen_to_relative(o.window, y, x)
                 if 0 <= relx < o.width && 0 <= rely < o.height
                     if rely == 0 && o.box
-                        _drag_state[] = (o, y, x, o.ypos, o.xpos)
+                        _drag_state[] = (o, y, x, o.ypos, o.xpos, time())
                         raiseTwObject(o)
                         return Handled
                     end

@@ -433,6 +433,27 @@ Switch views inside the DataFrame viewer with the **v** key.
 | Esc | Exit / cancel |
 | Tab / Shift-Tab | Cycle focus between widgets |
 
+### Mouse
+
+| Action | Effect |
+|:-------|:-------|
+| Click inside a widget | Focus that widget; tables, trees and lists also move the cursor to the clicked row |
+| Scroll wheel | Scroll the focused widget up / down |
+| **Drag a popup's top border** | **Reposition a floating window** — press and hold the left button on the title-bar row (the box's top edge) of a popup / overlay (e.g. the F1 help viewer, `newTwPopup`, `newTwViewer`), then drag and release |
+
+Window dragging applies to free-floating overlays — any widget shown directly on
+the screen with its own border (`box=true`). The drag grab zone is **only the top
+border row**; clicking elsewhere in the body selects content as usual. Full-screen
+layout panels (the children of a `@twlayout` / `vstack` / `hstack`) are tiled rather
+than floating and are not draggable — resize them with the layout's sizing hints
+(`:content` / `:fill` / `Flex`) instead.
+
+> Mouse reporting must reach the application. TermWin enables all mouse events at
+> session start, but some terminals or multiplexers (e.g. tmux, or a host terminal
+> that claims drag for its own text selection) intercept the drag first — pass mouse
+> reporting through, or hold the terminal's "bypass" modifier, if a drag does not move
+> the window.
+
 ### Layout canvas (inside `@twlayout` / `vstack` / `hstack`)
 
 | Key | Action |

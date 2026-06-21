@@ -287,7 +287,14 @@ function getmouse()
 end
 
 # Popup drag state: nothing when idle, or
-# (widget, anchor_screen_y, anchor_screen_x, widget_orig_y, widget_orig_x)
+# (widget, anchor_screen_y, anchor_screen_x, widget_orig_y, widget_orig_x, last_active_time)
+# `last_active_time` (from `time()`) is refreshed on every motion/press while the
+# drag is alive. Some terminals silently drop the button1_released that should
+# end a drag (observed in practice); without a staleness check, a dropped
+# release leaves this Ref permanently non-nothing, and EVERY future click
+# anywhere on screen — on any widget — gets reinterpreted as "continue this
+# drag" and silently relocates the stale widget instead of reaching whatever
+# the user actually clicked. See _drag_stale_seconds in twscreen.jl.
 const _drag_state = Ref{Any}(nothing)
 
 function screen_to_relative(w::NC.Plane, y::Integer, x::Integer)

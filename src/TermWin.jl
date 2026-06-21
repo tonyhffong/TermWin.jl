@@ -152,6 +152,7 @@ function initsession()
 
     widgetStaggerPosx = 0
     widgetStaggerPosy = 0
+    _drag_state[] = nothing   # belt-and-suspenders: no popup drag survives a (re)init
     if nc_context === nothing
         current_session_id += 1
         nc_context = NC.NotcursesObject(
