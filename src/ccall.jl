@@ -297,6 +297,14 @@ end
 # the user actually clicked. See _drag_stale_seconds in twscreen.jl.
 const _drag_state = Ref{Any}(nothing)
 
+# Corner-resize state: nothing when idle, or
+# (widget, corner::Symbol, anchor_screen_y, anchor_screen_x,
+#  widget_orig_height, widget_orig_width, widget_orig_ypos, widget_orig_xpos,
+#  last_active_time)
+# `corner` is :bottom_right or :bottom_left. Same staleness rationale as
+# _drag_state above (see _drag_stale_seconds in twscreen.jl).
+const _resize_state = Ref{Any}(nothing)
+
 function screen_to_relative(w::NC.Plane, y::Integer, x::Integer)
     pos = NC.yx(w)
     begy = Int(pos.y)

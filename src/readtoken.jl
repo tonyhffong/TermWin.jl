@@ -97,11 +97,14 @@ function readtoken(nc::NC.NotcursesObject)
         (key, ni) = result
     end
 
-    # Drag coalescing: while a window drag is active, collapse a backlog of
-    # position updates into only the most recent one so the window tracks the
-    # cursor instead of trailing.  The first non-motion event (e.g. the button
-    # release) is stashed for the next call so it is still processed.
-    if _drag_state[] !== nothing && _is_drag_motion(key, ni)
+    # Drag/resize coalescing: while a window drag or corner-resize is active,
+    # collapse a backlog of position updates into only the most recent one so
+    # the window tracks the cursor instead of trailing.  The first non-motion
+    # event (e.g. the button release) is stashed for the next call so it is
+    # still processed.  Resize motion is pricier per-event than a plain move
+    # (relayout! reflows children and rebuilds the list pad), so without this
+    # a queued backlog of stale positions makes resize visibly laggier than move.
+    if (_drag_state[] !== nothing || _resize_state[] !== nothing) && _is_drag_motion(key, ni)
         while true
             nxt = NC.get_nblock(nc)
             nxt === nothing && break

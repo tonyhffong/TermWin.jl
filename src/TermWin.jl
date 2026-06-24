@@ -9,6 +9,7 @@ using Printf
 using BusinessDays
 import Notcurses as NC
 import JuliaSyntaxHighlighting
+using PrecompileTools: @setup_workload, @compile_workload
 using Base.Meta
 
 debugloghandle = nothing
@@ -70,6 +71,7 @@ include("twedittable.jl")
 include("twdicttree.jl")
 include("twbuilder.jl")
 include("twstatusbar.jl")
+include("precompile.jl")  # PrecompileTools workload — must come last (needs every widget defined)
 
 export tshow, withsession, activateTwObj, registerTwObj, unregisterTwObj
 export pin!, unpin!, export_to_main!, scratchpad_dict

@@ -437,6 +437,79 @@ function _drag_move!(cy::Int, cx::Int)
     return
 end
 
+const RESIZE_MIN_HEIGHT = 3
+const RESIZE_MIN_WIDTH  = 15
+const _resize_tol_x = 2   # horizontal grab tolerance, in chars
+const _resize_tol_y = 1   # vertical grab tolerance, in chars
+
+# Returns :bottom_right / :bottom_left if (rely, relx) — coordinates relative to
+# o's own window, as returned by screen_to_relative — fall within tolerance of
+# one of o's two lower corners, else `nothing`. Resize requires a border (same
+# gate as title-bar move). The vertical range is clamped to never include row 0,
+# so a tiny window's resize zone can't be confused with the title-bar drag row.
+function _resize_corner_at(o::TwObj, rely::Int, relx::Int)
+    o.box || return nothing
+    rely_lo = max(1, o.height - 1 - _resize_tol_y)
+    rely_lo <= rely <= o.height - 1 || return nothing
+    if o.width - 1 - _resize_tol_x <= relx <= o.width - 1
+        return :bottom_right
+    elseif 0 <= relx <= _resize_tol_x
+        return :bottom_left
+    end
+    return nothing
+end
+
+# Returns the live _resize_state tuple, or `nothing` if no resize is active or
+# the active one has gone stale. Mirrors _drag_state_live above.
+function _resize_state_live()
+    st = _resize_state[]
+    st === nothing && return nothing
+    if time() - st[end] > _drag_stale_seconds
+        _resize_state[] = nothing
+        return nothing
+    end
+    return st
+end
+
+# Resize the widget currently captured in _resize_state to follow the cursor.
+# (cy, cx) is the current cursor position in screen (row, col). The top edge is
+# fixed for both lower corners. For :bottom_right only the width/height track
+# the cursor (left edge fixed); for :bottom_left the right edge is held fixed
+# and the left edge + width are re-derived from the new width, so a width floor
+# anchors the right edge instead of letting the left edge overshoot it.
+# Geometry is written through desiredHeight/desiredWidth/desiredPosy/desiredPosx
+# (not just height/width/ypos/xpos) so a later terminal resize re-derives from
+# the resized geometry instead of snapping back to the construction-time size —
+# then relayout! does the actual move/resize/child-reflow, exactly as it does
+# for a terminal :KEY_RESIZE.
+function _resize_move!(cy::Int, cx::Int)
+    st = _resize_state[]
+    st === nothing && return
+    (widget, corner, ay, ax, oh, ow, oy, ox, _) = st
+    dy = cy - ay
+    dx = cx - ax
+    new_height = max(RESIZE_MIN_HEIGHT, oh + dy)
+    new_ypos = oy
+    if corner === :bottom_right
+        new_width = max(RESIZE_MIN_WIDTH, ow + dx)
+        new_xpos = ox
+    else
+        right_edge = ox + ow
+        new_width = max(RESIZE_MIN_WIDTH, ow - dx)
+        new_xpos = right_edge - new_width
+    end
+    if new_height != widget.height || new_width != widget.width || new_xpos != widget.xpos
+        widget.desiredHeight = new_height
+        widget.desiredWidth = new_width
+        widget.desiredPosy = new_ypos
+        widget.desiredPosx = new_xpos
+        relayout!(widget)
+        refresh(widget)
+    end
+    _resize_state[] = (widget, corner, ay, ax, oh, ow, oy, ox, time())
+    return
+end
+
 function inject(scr::TwObj{TwScreenData}, token)
     global rootTwScreen
     result = Ignored
@@ -456,6 +529,11 @@ function inject(scr::TwObj{TwScreenData}, token)
     # once a drag is armed, any motion-ish event moves the window by the offset
     # from the fixed initial anchor; the drag ends on button1 release.
     if token == :KEY_MOUSE_MOTION
+        if _resize_state_live() !== nothing
+            (_, mx, my, _) = getmouse()
+            _resize_move!(my, mx)
+            return Handled
+        end
         if _drag_state_live() !== nothing
             (_, mx, my, _) = getmouse()
             _drag_move!(my, mx)
@@ -467,18 +545,25 @@ function inject(scr::TwObj{TwScreenData}, token)
         (mstate, x, y, bs) = getmouse()
         if mstate == :button1_released
             _drag_state[] = nothing
+            _resize_state[] = nothing
             return Handled
         end
         if mstate == :button1_pressed
-            # Mid-drag: this press at a new position is drag motion → move.
-            # (Stale drags fall through to the arm logic below instead, so a
+            # Mid-resize/drag: this press at a new position is motion → apply.
+            # (Stale state falls through to the arm logic below instead, so a
             # terminal that dropped the release doesn't hijack this click.)
+            if _resize_state_live() !== nothing
+                _resize_move!(y, x)
+                return Handled
+            end
             if _drag_state_live() !== nothing
                 _drag_move!(y, x)
                 return Handled
             end
-            # Not dragging yet: arm a drag if the press lands on the box top row
-            # (the title bar) of the topmost visible widget at the click point.
+            # Not dragging/resizing yet: arm a resize if the press lands within
+            # tolerance of a lower corner, else arm a drag if it lands on the
+            # box top row (the title bar), of the topmost visible widget at the
+            # click point.
             for i = length(scr.data.objects):-1:1
                 o = scr.data.objects[i]
                 if !o.isVisible
@@ -486,12 +571,18 @@ function inject(scr::TwObj{TwScreenData}, token)
                 end
                 rely, relx = screen_to_relative(o.window, y, x)
                 if 0 <= relx < o.width && 0 <= rely < o.height
+                    corner = _resize_corner_at(o, rely, relx)
+                    if corner !== nothing
+                        _resize_state[] = (o, corner, y, x, o.height, o.width, o.ypos, o.xpos, time())
+                        raiseTwObject(o)
+                        return Handled
+                    end
                     if rely == 0 && o.box
                         _drag_state[] = (o, y, x, o.ypos, o.xpos, time())
                         raiseTwObject(o)
                         return Handled
                     end
-                    break  # topmost widget found but click not on title bar
+                    break  # topmost widget found but click not on title bar/corner
                 end
             end
         end
