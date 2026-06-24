@@ -440,6 +440,7 @@ Switch views inside the DataFrame viewer with the **v** key.
 | Click inside a widget | Focus that widget; tables, trees and lists also move the cursor to the clicked row |
 | Scroll wheel | Scroll the focused widget up / down |
 | **Drag a popup's top border** | **Reposition a floating window** — press and hold the left button on the title-bar row (the box's top edge) of a popup / overlay (e.g. the F1 help viewer, `newTwPopup`, `newTwViewer`), then drag and release |
+| **Drag a popup's lower corner** | **Resize a floating window** — press and hold the left button near the bottom-left or bottom-right corner, then drag and release. The opposite edges (top, and the far side for that corner) stay fixed |
 
 Window dragging applies to free-floating overlays — any widget shown directly on
 the screen with its own border (`box=true`). The drag grab zone is **only the top
@@ -447,6 +448,15 @@ border row**; clicking elsewhere in the body selects content as usual. Full-scre
 layout panels (the children of a `@twlayout` / `vstack` / `hstack`) are tiled rather
 than floating and are not draggable — resize them with the layout's sizing hints
 (`:content` / `:fill` / `Flex`) instead.
+
+Window resizing uses the same `box=true` floating-overlay grab as the title-bar
+drag, but at the two **lower** corners instead of the top edge. The grab zone has
+some tolerance so you don't have to hit the exact corner cell: **2 characters
+horizontally and 1 character vertically**. Dragging the bottom-right corner grows
+or shrinks height/width with the top-left corner fixed; dragging the bottom-left
+corner does the same while keeping the top-right corner fixed (so the window's
+right edge stays put as its left edge and width track the cursor). A window can't
+be resized smaller than **3 rows tall** or **15 columns wide**.
 
 > Mouse reporting must reach the application. TermWin enables all mouse events at
 > session start, but some terminals or multiplexers (e.g. tmux, or a host terminal
