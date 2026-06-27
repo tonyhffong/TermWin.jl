@@ -68,6 +68,29 @@ function _precompile_workload_session()
         inject(scr, :tab)
         inject(scr, :shift_tab)
         inject(scr, :F1)
+
+        # Mouse-driven move/resize: arm + drive a corner resize (exercises
+        # _resize_corner_at, _resize_move! → relayout!) and a title-bar drag
+        # (_drag_move!), then release. Same headless path as
+        # test/window_resize_unit.jl / window_raise_unit.jl — poke the cache
+        # readtoken fills, then inject the synthetic mouse tokens.
+        raiseTwObject(popup)
+        let cy = popup.ypos + popup.height - 1, cx = popup.xpos + popup.width - 1
+            _last_mouse_event[] = (:button1_pressed, cx, cy, nothing)
+            inject(scr, :KEY_MOUSE)
+            _last_mouse_event[] = (:motion, cx + 2, cy + 2, nothing)
+            inject(scr, :KEY_MOUSE_MOTION)
+            _last_mouse_event[] = (:button1_released, cx + 2, cy + 2, nothing)
+            inject(scr, :KEY_MOUSE)
+        end
+        let ty = popup.ypos, tx = popup.xpos + 1
+            _last_mouse_event[] = (:button1_pressed, tx, ty, nothing)
+            inject(scr, :KEY_MOUSE)
+            _last_mouse_event[] = (:motion, tx + 2, ty + 1, nothing)
+            inject(scr, :KEY_MOUSE_MOTION)
+            _last_mouse_event[] = (:button1_released, tx + 2, ty + 1, nothing)
+            inject(scr, :KEY_MOUSE)
+        end
     end
     nothing
 end

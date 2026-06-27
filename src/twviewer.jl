@@ -235,6 +235,12 @@ function _draw_highlighted_line!(
 )
     llen   = ncodeunits(line)
     vstart = currentLeft
+    # currentLeft is a horizontal-scroll offset advanced one *byte* at a time, so
+    # it can land on a UTF-8 continuation byte of a multibyte char. s[a:b]
+    # requires `a` to be a char start, so walk vstart forward to the next one.
+    while vstart <= llen && !isvalid(line, vstart)
+        vstart += 1
+    end
     # Clamp to a valid UTF-8 boundary: s[a:b] requires isvalid(s, b+1) or b==llen.
     # Walk back from the raw end until the next byte is a character start (or string end).
     raw_vend = currentLeft + viewW - 1
@@ -331,12 +337,19 @@ function draw(o::TwObj{TwViewerData})
             )
         else
             s = o.data.messages[r]
-            endpos = o.data.currentLeft + viewContentWidth - 1
-            if endpos < length(s)
-                s = s[o.data.currentLeft:endpos]
-            else
-                s = s[o.data.currentLeft:end]
+            slen = ncodeunits(s)
+            # currentLeft is a byte offset advanced one byte at a time and may
+            # land on a UTF-8 continuation byte — snap start forward / end back
+            # to valid char boundaries before slicing (see _draw_highlighted_line!).
+            startpos = o.data.currentLeft
+            while startpos <= slen && !isvalid(s, startpos)
+                startpos += 1
             end
+            endpos = min(o.data.currentLeft + viewContentWidth - 1, slen)
+            while endpos > 0 && !isvalid(s, endpos)
+                endpos -= 1
+            end
+            s = startpos <= endpos ? s[startpos:endpos] : ""
             if o.data.trackLine && r == o.data.currentLine
                 wattron(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
                 s *= repeat(" ", max(0, viewContentWidth - length(s)))
