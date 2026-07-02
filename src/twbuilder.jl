@@ -82,6 +82,10 @@ function vstack(
         kwargs...,
     )
     f(list)
+    # Resolve initial section visibility before the finalize trio so a section
+    # that starts hidden collapses from the first frame (root list only — it holds
+    # the full form snapshot).
+    isa(list.window, NC.Plane) && _apply_visibility_walk!(list, collect_form_values(list))
     update_list_canvas(list)    # finalize canvas after all children are sized
     reflow_children!(list)      # re-place children now that their sizes are settled
     resolve_flex!(list)         # distribute leftover space to :fill/:content children
@@ -116,6 +120,7 @@ function hstack(
         kwargs...,
     )
     f(list)
+    isa(list.window, NC.Plane) && _apply_visibility_walk!(list, collect_form_values(list))
     update_list_canvas(list)
     reflow_children!(list)      # re-place children now that their sizes are settled
     resolve_flex!(list)         # distribute leftover space to :fill/:content children
@@ -351,6 +356,8 @@ function _twlayout_impl(opts, body)
     reflow_ref = GlobalRef(_TWBUILDER_MODULE, :reflow_children!)
     resolve_flex_ref = GlobalRef(_TWBUILDER_MODULE, :resolve_flex!)
     apply_defaults_ref = GlobalRef(_TWBUILDER_MODULE, :apply_defaults!)
+    viswalk_ref = GlobalRef(_TWBUILDER_MODULE, :_apply_visibility_walk!)
+    collectvals_ref = GlobalRef(_TWBUILDER_MODULE, :collect_form_values)
 
     # defaults_sym holds the evaluated defaults expression (or nothing)
     defaults_sym = gensym("twdefaults")
@@ -358,6 +365,8 @@ function _twlayout_impl(opts, body)
     return quote
         local $list_sym = $newTwList_ref($rootTwScreen_ref; $(list_kwargs...))
         $(transformed...)
+        # Resolve initial section visibility before the finalize trio (root list).
+        $viswalk_ref($list_sym, $collectvals_ref($list_sym))
         $update_canvas_ref($list_sym)
         $reflow_ref($list_sym)
         $resolve_flex_ref($list_sym)

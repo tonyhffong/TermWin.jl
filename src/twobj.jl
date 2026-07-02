@@ -510,10 +510,15 @@ function relayout_list_children!(p::TwObj{TwListData})
             c.window.width = c.width
         end
 
-        if p.data.horizontal
-            begx += c.width
-        else
-            begy += c.height
+        # A hidden child is positioned at the current offset but consumes no
+        # space, so the next visible sibling collapses into its place (the
+        # trailing update_list_canvas likewise excludes it from the canvas).
+        if c.isVisible
+            if p.data.horizontal
+                begx += c.width
+            else
+                begy += c.height
+            end
         end
 
         clamp_scroll!(c)

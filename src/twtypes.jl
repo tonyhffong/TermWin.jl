@@ -142,6 +142,11 @@ mutable struct TwListData
     # Caller-supplied custom key Bindings (see on_key / newTwList `keys` kwarg).
     # Typed Any because Binding is defined in bindings.jl, included after this file.
     userbindings::Vector{Any}
+    # Optional reactive-visibility predicate for THIS list (see newTwList
+    # `visible_when` kwarg). Signature snap::Dict{Symbol,Any} -> Bool; re-evaluated
+    # by apply_visibility! against the root form snapshot after each keystroke.
+    # `nothing` means the list is always visible.
+    visible_when::Union{Nothing,Function}
     session_id::Int
     function TwListData()
         ret = new(
@@ -158,6 +163,7 @@ mutable struct TwListData
             false,
             "",
             Any[],
+            nothing,
             current_session_id,
         )
         finalizer(

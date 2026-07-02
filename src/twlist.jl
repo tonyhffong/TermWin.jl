@@ -20,6 +20,7 @@ function newTwList(
     form = false,
     bottomText::String = "",
     keys::AbstractVector = Binding[],
+    visible_when::Union{Nothing,Function} = nothing,
 )
     obj = TwObj(TwListData(), Val{:List})
     obj.box = box
@@ -31,6 +32,7 @@ function newTwList(
     obj.data.isForm = form
     obj.data.bottomText = bottomText
     obj.data.userbindings = collect(Any, keys)
+    obj.data.visible_when = visible_when
     obj.data.canvasheight = canvasheight
     obj.data.canvaswidth = canvaswidth
 
@@ -114,14 +116,16 @@ function update_list_canvas(o::TwObj{TwListData})
         # them from the cross-axis maximum, then resolve them below. (Nested lists
         # shrink-wrap and are always included via their own canvas size.)
         is_fill(x, frac) = objtype(x) != :List && cross_fill_factor(frac) !== nothing
+        # Hidden children occupy no space: exclude them from the main-axis sum and
+        # the cross-axis maximum so the canvas collapses around what's shown.
         if o.data.horizontal
-            real_h = [wsz(x, :h) for x in ws if !is_fill(x, x.desiredHeight)]
+            real_h = [wsz(x, :h) for x in ws if x.isVisible && !is_fill(x, x.desiredHeight)]
             computed_h = isempty(real_h) ? 1 : maximum(real_h)
-            computed_w = sum(wsz(x, :w) for x in ws)
+            computed_w = sum((wsz(x, :w) for x in ws if x.isVisible); init = 0)
         else
-            real_w = [wsz(x, :w) for x in ws if !is_fill(x, x.desiredWidth)]
+            real_w = [wsz(x, :w) for x in ws if x.isVisible && !is_fill(x, x.desiredWidth)]
             computed_w = isempty(real_w) ? 1 : maximum(real_w)
-            computed_h = sum(wsz(x, :h) for x in ws)
+            computed_h = sum((wsz(x, :h) for x in ws if x.isVisible); init = 0)
         end
         if isa(o.window, NC.Plane)
             # Root-level list: canvas floor is the content area (viewport minus
@@ -186,6 +190,9 @@ function reflow_children!(o::TwObj{TwListData})
         end
         c.ypos = begy
         c.xpos = begx
+        # A hidden child is parked at the current offset but consumes no space, so
+        # the next visible sibling collapses into its place.
+        c.isVisible || continue
         if o.data.horizontal
             begx += c.width
         else
@@ -228,9 +235,13 @@ function resolve_flex!(o::TwObj{TwListData}; budget::Union{Nothing,Int} = nothin
         isa(o.window, NC.Plane) ?
             (horizontal ? o.width - 2 * o.borderSizeH : o.height - 2 * o.borderSizeV) : 0
 
-    specs    = [mainspec(c) for c in ws]
-    presizes = [mainsize(c) for c in ws]
-    naturals = [natof(c) for c in ws]
+    # Hidden children take no space: present them to allocate_main as fixed-0 so
+    # they neither claim flex budget nor subtract from the budget available to
+    # visible siblings. Their real sizes are left untouched (recomputed by
+    # relayout_list_children! from desiredHeight/Width when they reappear).
+    specs    = [c.isVisible ? mainspec(c) : 0 for c in ws]
+    presizes = [c.isVisible ? mainsize(c) : 0 for c in ws]
+    naturals = [c.isVisible ? natof(c) : 0 for c in ws]
     sizes    = allocate_main(specs, presizes, naturals, b)
 
     # Parent's cross extent — a participating nested list spans it (so a column
@@ -238,6 +249,7 @@ function resolve_flex!(o::TwObj{TwListData}; budget::Union{Nothing,Int} = nothin
     crosssize = horizontal ? o.data.canvasheight : o.data.canvaswidth
 
     for (c, v) in zip(ws, sizes)
+        c.isVisible || continue
         setmain!(c, v)
         if objtype(c) == :List
             if b > 0 && participates(c)
@@ -486,6 +498,69 @@ function collect_form_values(o::TwObj{TwListData})::Dict{Symbol,Any}
     result
 end
 
+# ── Reactive section visibility (visible_when) ──────────────────────────────
+# A container list may carry a `visible_when` predicate (see newTwList). After
+# each keystroke the root list re-evaluates every predicate against the live form
+# snapshot, flips `isVisible`, and reflows so hidden sections collapse and shown
+# ones reclaim their space. collect_form_values is deliberately visibility-blind,
+# so predicates always see every key regardless of what is currently shown.
+
+# Is `w` actually on screen — itself visible AND every ancestor list visible?
+function _is_effectively_visible(w::TwObj)
+    w.isVisible || return false
+    win = w.window
+    while isa(win, TwWindow)
+        p = win.parent.value
+        p === nothing && break
+        p.isVisible || return false
+        win = p.window
+    end
+    return true
+end
+
+# Evaluate visible_when on every descendant list; return whether any flag flipped.
+function _apply_visibility_walk!(o::TwObj{TwListData}, snap::Dict{Symbol,Any})
+    changed = false
+    for w in o.data.widgets
+        objtype(w) == :List || continue
+        if w.data.visible_when !== nothing
+            newvis = w.data.visible_when(snap)::Bool
+            if newvis != w.isVisible
+                w.isVisible = newvis
+                changed = true
+            end
+        end
+        # Recurse regardless: a nested predicate is evaluated independently of its
+        # ancestor's visibility (a hidden ancestor simply isn't drawn/sized).
+        changed |= _apply_visibility_walk!(w, snap)
+    end
+    return changed
+end
+
+# If the currently focused leaf is now hidden (itself or via a hidden ancestor),
+# move focus to the first visible focusable widget.
+function _refocus_if_hidden!(root::TwObj{TwListData})
+    root.data.focus == 0 && return
+    cur = lowest_widget(root)
+    _is_effectively_visible(cur) && return
+    deep_unfocus(cur)
+    set_default_focus(root)
+end
+
+# Re-evaluate all visible_when predicates against the current form snapshot. On
+# any change, keep focus off hidden widgets and reflow (relayout! rebuilds the
+# pad and re-runs the now visibility-aware sizing passes). Returns whether
+# anything changed. Call on the ROOT list only.
+function apply_visibility!(root::TwObj{TwListData})
+    snap = collect_form_values(root)
+    changed = _apply_visibility_walk!(root, snap)
+    if changed
+        _refocus_if_hidden!(root)
+        relayout!(root)
+    end
+    return changed
+end
+
 function apply_defaults!(o::TwObj{TwListData}, defaults::Dict{Symbol,Any})
     for w in o.data.widgets
         if objtype(w) == :List
@@ -627,6 +702,11 @@ function inject(o::TwObj{TwListData}, token::Any)
             dorefresh = true
             retcode = Handled
         elseif result != Ignored
+            # A field handled the key (typically a value change), and this path
+            # returns early — so re-evaluate section visibility here too, not just
+            # at the fall-through exit below. Root list only; no-op unless a flag
+            # actually flips.
+            isrootlist && apply_visibility!(o)
             refresh(o)
             return result
         end
@@ -762,8 +842,15 @@ function inject(o::TwObj{TwListData}, token::Any)
         if mstate == :button1_pressed
             (rely, relx) = screen_to_relative(o.window, y, x)
             if 0<=relx<o.width && 0<=rely<o.height
-                rely -= o.borderSizeV
-                relx -= o.borderSizeH
+                # Convert the window-relative click to CANVAS coordinates: strip
+                # the border, then add the scroll offset. geometric_filter compares
+                # against child rects in canvas space (w.window.yloc/xloc), and draw
+                # maps canvas (canvaslocy,canvaslocx) to the window content origin —
+                # so without adding canvasloc a scrolled layout (e.g. a large
+                # embedded table pushing the canvas past the viewport) routes clicks
+                # to the wrong widget.
+                rely += o.data.canvaslocy - o.borderSizeV
+                relx += o.data.canvaslocx - o.borderSizeH
                 # find the closest widget
                 distfunc = function (to::Tuple{Int,Int,Int,Int})
                     point_from_area(rely, relx, to)
@@ -805,6 +892,14 @@ function inject(o::TwObj{TwListData}, token::Any)
         if r !== Ignored
             retcode = r
         end
+    end
+
+    # Reactive section visibility: after the token has been processed (a field may
+    # have changed), re-evaluate visible_when predicates against the live snapshot.
+    # Root list only; relayout runs (inside apply_visibility!) solely when a flag
+    # actually flips.
+    if isrootlist && apply_visibility!(o)
+        dorefresh = true
     end
 
     if dorefresh
