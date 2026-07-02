@@ -153,6 +153,28 @@ if session_ok
             _release!(scr, w1.ypos + w1.height - 1, w1.xpos + w1.width - 1)
             w1.box = true
         end
+
+        @testset "resizing a stacked layout keeps children edge-to-edge (no blank-row gaps)" begin
+            # Regression: link_parent_child strips each child's box border once,
+            # but relayout! re-resolved numeric desiredHeight border-inclusive, so
+            # every formerly-boxed child grew by 2 rows per resize — inserting 2
+            # blank rows between stacked widgets (ypos 0,1,2 → 0,3,6).
+            v = TW.vstack(scr; title = "Form", height = 20, width = 40, posy = 2, posx = 2) do s
+                TW.newTwEntry(s, String; key = :a, title = "A")
+                TW.newTwEntry(s, String; key = :b, title = "B")
+                TW.newTwEntry(s, String; key = :c, title = "C")
+            end
+            _stack!(w1, v)                                   # raise v to the top
+            h_before = [c.height for c in v.data.widgets]
+            y_before = [c.ypos   for c in v.data.widgets]
+            cy, cx = v.ypos + v.height - 1, v.xpos + v.width - 1
+            _press!(scr, cy, cx)
+            _motion!(scr, cy + 4, cx + 6)                    # grow the window
+            _release!(scr, cy + 4, cx + 6)
+            @test v.height == 24                             # the outer window did resize
+            @test [c.height for c in v.data.widgets] == h_before   # children unchanged
+            @test [c.ypos   for c in v.data.widgets] == y_before   # still stacked tight
+        end
     finally
         TW.endsession()
     end

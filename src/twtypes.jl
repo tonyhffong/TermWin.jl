@@ -47,6 +47,14 @@ mutable struct TwObj{T,S}
     listeners::Dict{Symbol,Array} # event=>array of registered listeners. each listener is of the type (o, ev)->Nothing
     session_id::Int # which session created this widget
     subscriptions::Vector{Tuple{Any,Any}} # (observable, handler) pairs; cleaned up by unregisterTwObj
+    # Border thickness stripped off when this widget was embedded as a TwList
+    # child (link_parent_child zeroes box/borderSize and shrinks height/width so
+    # children render edge-to-edge). Remembered so relayout! can re-apply the same
+    # strip when re-resolving a numeric desiredHeight/Width — otherwise a
+    # formerly-boxed child re-inflates by 2*border each resize, inserting blank
+    # rows/cols between stacked widgets. 0 for widgets that were never stripped.
+    strippedBorderV::Int
+    strippedBorderH::Int
     function TwObj{T,S}(data::T) where {T,S}
         log("TwObj datatype=" * string(T) * " TwObjSubtype=" * string(S))
         x = new{T,S}(
@@ -76,6 +84,8 @@ mutable struct TwObj{T,S}
             Dict{Symbol,Array{Function,1}}(),
             current_session_id,
             Tuple{Any,Any}[],
+            0,
+            0,
         )
         finalizer(
             y->begin

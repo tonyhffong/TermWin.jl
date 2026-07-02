@@ -175,6 +175,10 @@ mutable struct TwDfTableData
     searchText::String
     selection_text::Observable{String}
     showRoot::Bool   # when false, the root summary row is hidden (flat-list display)
+    # Raw construction hints (colorder/hidecols/format/aggr/width/header + extra
+    # view specs) retained so setvalue! can rebuild colInfo/views from scratch when
+    # a replacement DataFrame carries a different column set. See rebuildColumns!.
+    buildopts::NamedTuple
     # calculated dimension
     TwDfTableData() = new(
         TwDfTableNode(),
@@ -198,7 +202,96 @@ mutable struct TwDfTableData
         "",
         Observable(""),
         true,
+        NamedTuple(),
     )
+end
+
+# Keep only the entries of a colorder/hidecols spec that still apply to `present`:
+# Symbols naming an absent column are dropped, "*"/Regex entries pass through. This
+# lets a spec captured at construction be re-resolved against a changed schema
+# without erroring on a column that no longer exists.
+function _filter_colspec(spec, present::Set{Symbol})
+    out = Any[]
+    for s in spec
+        if isa(s, Symbol)
+            s in present && push!(out, s)
+        else
+            push!(out, s)
+        end
+    end
+    out
+end
+
+# sortorder is a vector of Symbol or (Symbol, :asc/:desc); drop entries whose
+# column is gone.
+_filter_sortorder(so, present::Set{Symbol}) =
+    filter(s -> (isa(s, Symbol) ? s : s[1]) in present, so)
+
+# (Re)build the per-view column resolution and the colInfo/allcolInfo metadata for
+# `df`, using the raw hints stashed in obj.data.buildopts. Shared by newTwDfTable
+# (initial build) and by setvalue! (which calls it when a replacement DataFrame
+# changes the column set, so the widget never draws against stale colInfo). Explicit
+# column references in colorder/hidecols/sortorder/pivots that are absent from `df`
+# are dropped rather than raising, so a custom layout survives a schema change.
+function rebuildColumns!(obj::TwObj{TwDfTableData}, df::DataFrame)
+    o = obj.data
+    bo = o.buildopts
+    present = Set(Symbol.(names(df)))
+
+    empty!(o.views)
+    empty!(o.allcolInfo)
+    o.colInfo = TwTableColInfo[]
+
+    resolveview(name, pivots, initdepth, sortorder, colorder, hidecols) = TwTableView(
+        df,
+        name;
+        pivots = filter(p -> p in present, pivots),
+        initdepth = initdepth,
+        sortorder = _filter_sortorder(sortorder, present),
+        colorder = _filter_colspec(colorder, present),
+        hidecols = _filter_colspec(hidecols, present),
+    )
+
+    mainV = resolveview("#Main", bo.pivots, bo.initdepth, bo.sortorder, bo.colorder, bo.hidecols)
+    o.pivots = mainV.pivots
+    o.initdepth = mainV.initdepth
+    o.sortorder = mainV.sortorder
+    finalcolorder = mainV.columns
+    push!(o.views, mainV)
+
+    for (i, d) in enumerate(bo.views)
+        if isempty(d)
+            error("nothing in view #" * string(i))
+        end
+        v = resolveview(
+            get(d, :name, string("v#" * string(i))),
+            get(d, :pivots, bo.pivots),
+            get(d, :initdepth, bo.initdepth),
+            get(d, :sortorder, bo.sortorder),
+            get(d, :colorder, bo.colorder),
+            get(d, :hidecols, bo.hidecols),
+        )
+        push!(o.views, v)
+    end
+
+    # construct colInfo for every column of df, then the visible/ordered subset
+    for c in Symbol.(names(df))
+        if haskey(o.calcpivots, c)
+            error("calcpivots interfere with an existing column " * string(c))
+        end
+        t = eltype(df[!, c])
+        hdr = get(bo.headerHints, c, string(c))
+        fmt = get(bo.formatHints, c, get(bo.formatHints, t, deepcopy(FormatHints(t))))
+        if haskey(bo.widthHints, c)
+            fmt.width = bo.widthHints[c]
+        end
+        agr = get(bo.aggrHints, c, get(bo.aggrHints, t, defaultAggr(t)))
+        o.allcolInfo[c] = TwTableColInfo(c, hdr, fmt, agr)
+    end
+    for c in finalcolorder
+        push!(o.colInfo, o.allcolInfo[c])
+    end
+    return obj
 end
 
 #TODO: allow Regex in formatHints and aggrHints
@@ -234,69 +327,22 @@ function newTwDfTable(
     obj.data.rootnode.subdataframe = df
     obj.data.rootnode.context = WeakRef(obj.data)
 
-    mainV = TwTableView(
-        df,
-        "#Main",
+    obj.data.calcpivots = calcpivots
+    # Retain the raw construction hints so setvalue! can rebuild the column
+    # metadata from scratch if a replacement DataFrame carries a different schema.
+    obj.data.buildopts = (
         pivots = pivots,
         initdepth = initdepth,
         sortorder = sortorder,
         colorder = colorder,
         hidecols = hidecols,
+        views = views,
+        formatHints = formatHints,
+        aggrHints = aggrHints,
+        widthHints = widthHints,
+        headerHints = headerHints,
     )
-
-    obj.data.pivots = mainV.pivots
-    obj.data.initdepth = mainV.initdepth
-    obj.data.sortorder = mainV.sortorder
-    obj.data.calcpivots = calcpivots
-    finalcolorder = mainV.columns
-
-    push!(obj.data.views, mainV)
-    for (i, d) in enumerate(views)
-        if isempty(d)
-            error("nothing in view #" * string(i))
-        end
-        vname = get(d, :name, string("v#" * string(i)))
-        vpivots = get(d, :pivots, pivots)
-        vinitdepth = get(d, :initdepth, initdepth)
-        vcolorder = get(d, :colorder, colorder)
-        vhidecols = get(d, :hidecols, hidecols)
-        vsortorder = get(d, :sortorder, sortorder)
-        v = TwTableView(
-            df,
-            vname,
-            pivots = vpivots,
-            initdepth = vinitdepth,
-            sortorder = vsortorder,
-            colorder = vcolorder,
-            hidecols = vhidecols,
-        )
-        push!(obj.data.views, v)
-    end
-
-    # construct colInfo for each col in finalcolorder
-    allcols = Symbol.(names(df))
-    for c in allcols
-
-        if haskey(calcpivots, c)
-            error("calcpivots interfere with an existing column " * string(c))
-        end
-
-        t = eltype(df[!, c])
-
-        hdr = get(headerHints, c, string(c))
-        fmt = get(formatHints, c, get(formatHints, t, deepcopy(FormatHints(t))))
-        if haskey(widthHints, c)
-            fmt.width = widthHints[c]
-        end
-        agr = get(aggrHints, c, get(aggrHints, t, defaultAggr(t)))
-        ci = TwTableColInfo(c, hdr, fmt, agr)
-        obj.data.allcolInfo[c] = ci
-    end
-
-    for c in finalcolorder
-        ci = obj.data.allcolInfo[c]
-        push!(obj.data.colInfo, ci)
-    end
+    rebuildColumns!(obj, df)
 
     expandnode(obj.data.rootnode, initdepth)
     ordernode(obj.data.rootnode)
@@ -492,9 +538,23 @@ end
 # Intended for live-widget update 
 # Precondition: flat (no pivot groups) DataFrame with the same schema as at construction.
 function setvalue!(o::TwObj{TwDfTableData}, df::DataFrame)
+    # colInfo/allcolInfo are derived once from the schema the table was built with.
+    # If the replacement frame has a different column set, re-derive them (and the
+    # views) from the retained construction hints; otherwise draw would index a
+    # column that no longer exists ("column name :x not found"). A rebuild also
+    # invalidates on-screen column cursors, so reset them to the left edge.
+    schemaChanged = Set(keys(o.data.allcolInfo)) != Set(Symbol.(names(df)))
     o.value = df
     o.data.rootnode.subdataframe = df
     o.data.rootnode.colvalcache  = Dict{Symbol,Any}()
+    if schemaChanged
+        rebuildColumns!(o, df)
+        o.data.currentCol   = 1
+        o.data.currentLeft  = 1
+        o.data.currentRight = 1
+        o.data.currentLine  = 1
+        o.data.currentTop   = 1
+    end
     ordernode(o.data.rootnode)
     builddatalist(o.data)
 end
@@ -522,7 +582,17 @@ end
 
 function draw(o::TwObj{TwDfTableData})
     updateTableDimensions(o)
-    viewContentHeight = o.height - 2 * o.borderSizeV - o.data.headerlines
+    # All content below is positioned relative to a 1-row / 1-col box inset. When
+    # this table is embedded in a layout the box is stripped (borderSizeV/H → 0),
+    # so shift content into the reclaimed border cell to sit flush at the top-left.
+    # dy/dx are 0 when boxed, leaving standalone rendering unchanged.
+    dy = o.box ? 0 : -1
+    dx = o.box ? 0 : -1
+    # The footer (bottomText / pivots) sits on the bottom border row when boxed;
+    # unboxed there is no border, so reserve one content row for it.
+    hasfooter = !isempty(o.data.bottomText) || !isempty(o.data.pivots)
+    footerpad = o.box ? o.borderSizeV : (hasfooter ? 1 : 0)
+    viewContentHeight = o.height - (o.box ? o.borderSizeV : 0) - footerpad - o.data.headerlines
     viewContentWidth = o.width - 2 * o.borderSizeH
 
     if o.box
@@ -547,7 +617,7 @@ function draw(o::TwObj{TwDfTableData})
 
     # header row(s)
     wattron(o.window, theme(:header))
-    startx = 1+o.data.datatreewidth
+    startx = 1+o.data.datatreewidth+dx
     lastcol = 1
     lastwidth = 8
     for col = o.data.currentLeft:length(o.data.colInfo)
@@ -574,7 +644,7 @@ function draw(o::TwObj{TwDfTableData})
             if i == nlines
                 wattron(o.window, A_UNDERLINE)
             end
-            mvwprintw(o.window, i+o.data.headerlines-nlines, startx, "%s", s)
+            mvwprintw(o.window, i+o.data.headerlines-nlines+dy, startx, "%s", s)
             if i == nlines
                 wattroff(o.window, A_UNDERLINE)
             end
@@ -585,7 +655,7 @@ function draw(o::TwObj{TwDfTableData})
         end
         if !islastcol
             for i = 1:o.data.headerlines
-                mvwaddch(o.window, i, startx+width, get_acs_val('x'))
+                mvwaddch(o.window, i+dy, startx+width, get_acs_val('x'))
             end
         end
         startx += width + 1
@@ -594,6 +664,7 @@ function draw(o::TwObj{TwDfTableData})
     # reminder: (name, stack, exphints, skiplines, node )
     for r = o.data.currentTop:min(o.data.currentTop+viewContentHeight-1, o.data.datalistlen)
 
+        rowy = o.data.headerlines + 1 + r-o.data.currentTop + dy
         stacklen = length(o.data.datalist[r][2])
 
         # treecolume is always shown
@@ -605,13 +676,13 @@ function draw(o::TwObj{TwDfTableData})
         if r == o.data.currentLine
             wattron(o.window, A_BOLD | theme(o.hasFocus ? :selection_focused : :selection_unfocused))
         end
-        mvwprintw(o.window, o.data.headerlines + 1 + r-o.data.currentTop, 2, "%s", s)
+        mvwprintw(o.window, rowy, 2+dx, "%s", s)
         for i = 1:(stacklen-1)
             if !in(i, o.data.datalist[r][4]) # skiplines
                 mvwaddch(
                     o.window,
-                    o.data.headerlines + 1 + r-o.data.currentTop,
-                    2*i,
+                    rowy,
+                    2*i+dx,
                     get_acs_val('x'),
                 ) # vertical line
             end
@@ -628,30 +699,30 @@ function draw(o::TwObj{TwDfTableData})
             end
             mvwaddch(
                 o.window,
-                o.data.headerlines + 1 + r-o.data.currentTop,
-                2*stacklen,
+                rowy,
+                2*stacklen+dx,
                 contchar,
             )
             mvwaddch(
                 o.window,
-                o.data.headerlines + 1 + r-o.data.currentTop,
-                2*stacklen+1,
+                rowy,
+                2*stacklen+1+dx,
                 get_acs_val('q'),
             ) # horizontal line
         end
         if o.data.datalist[r][3] == :close
             mvwprintw(
                 o.window,
-                o.data.headerlines + 1 + r-o.data.currentTop,
-                2*stacklen+2,
+                rowy,
+                2*stacklen+2+dx,
                 "%s",
                 string(Char(0x25b8)),
             ) # right-pointing small triangle
         elseif o.data.datalist[r][3] == :open
             mvwprintw(
                 o.window,
-                o.data.headerlines + 1 + r-o.data.currentTop,
-                2*stacklen+2,
+                rowy,
+                2*stacklen+2+dx,
                 "%s",
                 string(Char(0x25be)),
             ) # down-pointing small triangle
@@ -662,8 +733,8 @@ function draw(o::TwObj{TwDfTableData})
         end
         mvwaddch(
             o.window,
-            o.data.headerlines+1+r-o.data.currentTop,
-            o.data.datatreewidth,
+            rowy,
+            o.data.datatreewidth+dx,
             get_acs_val('x'),
         )
 
@@ -671,7 +742,7 @@ function draw(o::TwObj{TwDfTableData})
         # get the node or DataFrameRow first
         node = o.data.datalist[r][5]
         isnode = (o.data.datalist[r][3] != :single)
-        startx = 1+o.data.datatreewidth
+        startx = 1+o.data.datatreewidth+dx
         underline = r < o.data.datalistlen && length(o.data.datalist[r+1][2]) < stacklen
         for col = o.data.currentLeft:lastcol
             cn = o.data.colInfo[col].name
@@ -729,7 +800,7 @@ function draw(o::TwObj{TwDfTableData})
             wattron(o.window, flags)
             mvwprintw(
                 o.window,
-                o.data.headerlines + 1 + r-o.data.currentTop,
+                rowy,
                 startx,
                 "%s",
                 str,
@@ -738,7 +809,7 @@ function draw(o::TwObj{TwDfTableData})
             if col != lastcol
                 mvwaddch(
                     o.window,
-                    o.data.headerlines + 1 + r-o.data.currentTop,
+                    rowy,
                     startx+width,
                     get_acs_val('x'),
                 )
@@ -760,10 +831,12 @@ function draw(o::TwObj{TwDfTableData})
         end
     end
     if length(bottomtext) != 0
-        mvwprintw(o.window, o.height-1, 3, "%s", bottomtext)
+        mvwprintw(o.window, o.height-1, 3+dx, "%s", bottomtext)
     end
     if length(pivottext) != 0
-        mvwprintw(o.window, o.height-1, o.width - length(pivottext) - 1, "%s", pivottext)
+        # The trailing -1 reserves the right box-border column; when unboxed there
+        # is none, so cancel it (dx=-1) to sit flush against the right edge.
+        mvwprintw(o.window, o.height-1, o.width - length(pivottext) - 1 - dx, "%s", pivottext)
     end
 end
 
@@ -1472,7 +1545,11 @@ function inject(o::TwObj{TwDfTableData}, token)
                 rely -= o.window.yloc; relx -= o.window.xloc
             end
             did = false
-            if 1<=relx<o.width-1 && o.data.headerlines<rely<o.height-1
+            # Match draw()'s box-strip shift: when embedded (box off) content is
+            # drawn one row up / one col left, so the clickable region moves too.
+            dy = o.box ? 0 : -1
+            dx = o.box ? 0 : -1
+            if 1+dx<=relx<o.width-1-dx && o.data.headerlines+dy<rely<o.height-1
                 o.data.currentLine = clamp(
                     o.data.currentTop + rely - o.borderSizeV - o.data.headerlines,
                     1, o.data.datalistlen,
@@ -1480,10 +1557,10 @@ function inject(o::TwObj{TwDfTableData}, token)
                 _dft_check_top!(o)
                 did = true
             end
-            if o.data.datatreewidth+1<relx<o.width-1 && o.data.headerlines<=rely<o.height-1
+            if o.data.datatreewidth+1+dx<relx<o.width-1-dx && o.data.headerlines+dy<=rely<o.height-1
                 widths    = map(x->x.format.width, o.data.colInfo)
                 cumwidths = cumsum(map(x->x+1, widths[o.data.currentLeft:end]))
-                widthrng  = searchsorted(cumwidths, relx - o.data.datatreewidth - 1)
+                widthrng  = searchsorted(cumwidths, relx - o.data.datatreewidth - 1 - dx)
                 o.data.currentCol = min(length(o.data.colInfo), o.data.currentLeft + widthrng.start - 1)
                 _dft_check_left!(o)
                 did = true

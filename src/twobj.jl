@@ -75,6 +75,9 @@ function link_parent_child(
     c.borderSizeH = 0
     c.height -= 2 * old_bsv
     c.width -= 2 * old_bsh
+    # Remember the strip so relayout! reproduces it (see relayout_list_children!).
+    c.strippedBorderV = old_bsv
+    c.strippedBorderH = old_bsh
     c.window = TwWindow(WeakRef(p), c.ypos, c.xpos, c.height, c.width)
     log("List-" * string(objtype(c)) * ": x=" * string(c.xpos) * " y=" * string(c.ypos))
     log(" orig begxy: x=" * string(begx) * " y=" * string(begy))
@@ -483,6 +486,22 @@ function relayout_list_children!(p::TwObj{TwListData})
         end
 
         alignxy!(c, h, w, begx, begy, parent = p)
+
+        # link_parent_child stripped this child's box borders *after* alignxy
+        # sized it, shrinking height/width by 2*border. A numeric (Int/fraction)
+        # spec re-resolves border-inclusive here, so re-strip to reproduce the
+        # link-time size — otherwise every formerly-boxed child grows by 2
+        # rows/cols on each resize, inserting blank gaps between stacked widgets.
+        # Hint specs (:content/:fill/Flex) resolve from natural size, which is
+        # already post-strip, so they must NOT be re-stripped.
+        if objtype(c) != :List
+            if c.strippedBorderV > 0 && c.desiredHeight isa Real
+                c.height = max(1, c.height - 2 * c.strippedBorderV)
+            end
+            if c.strippedBorderH > 0 && c.desiredWidth isa Real
+                c.width = max(1, c.width - 2 * c.strippedBorderH)
+            end
+        end
 
         if isa(c.window, TwWindow)
             c.window.yloc = c.ypos
