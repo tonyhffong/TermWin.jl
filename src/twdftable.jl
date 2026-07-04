@@ -581,6 +581,11 @@ function natural_width(o::TwObj{TwDfTableData})
 end
 
 function draw(o::TwObj{TwDfTableData})
+    # Clear first: the table paints a variable number of rows/columns, so after the
+    # data shrinks (e.g. setvalue! with a smaller frame) the old rows must not
+    # linger. draw() is called directly (without the erase that refresh() does) by
+    # the parent list's draw loop, so it cannot rely on an external clear.
+    werase(o.window)
     updateTableDimensions(o)
     # All content below is positioned relative to a 1-row / 1-col box inset. When
     # this table is embedded in a layout the box is stripped (borderSizeV/H → 0),

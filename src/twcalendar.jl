@@ -33,7 +33,8 @@ mutable struct TwCalendarData
     cursorweekofmonth::Int  # 1-based week row within the cursor's month (set during draw)
     numquarters::Int        # how many quarter blocks fit: 1, 2, or 4
     holidayCal::Symbol
-    TwCalendarData(dt::Date) = new(true, dt, 1, 4, :USSettlement)
+    optional::Bool          # when true, Ctrl-K clears -> accepts `missing` (a "no date")
+    TwCalendarData(dt::Date; optional::Bool = false) = new(true, dt, 1, 4, :USSettlement, optional)
 end
 
 function bestfitgeometry(scr::TwScreen, box::Bool)
@@ -58,8 +59,9 @@ function newTwCalendar(
     showHelp = true,
     title = "",
     key::Union{Nothing,Symbol} = nothing,
+    optional::Bool = false,
 )
-    data = TwCalendarData(dt)
+    data = TwCalendarData(dt; optional = optional)
     obj  = TwObj(data, Val{:Calendar})
     registerTwObj(scr, obj)
     obj.box          = box
@@ -181,7 +183,7 @@ function calendar_pick_holiday!(o::TwObj{TwCalendarData})
 end
 
 function bindings(o::TwObj{TwCalendarData})
-    Binding[
+    b = Binding[
         Binding([:up],    "-week",  action = w -> (w.data.date -= Day(7);   Handled)),
         Binding([:down],  "+week",  action = w -> (w.data.date += Day(7);   Handled)),
         Binding([:left],  "-day",   action = w -> (w.data.date -= Day(1);   Handled)),
@@ -213,6 +215,13 @@ function bindings(o::TwObj{TwCalendarData})
                 action = w -> (w.value = w.data.date; Accept)),
         Binding([:esc], "cancel", action = _ -> Cancel),
     ]
+    # Optional calendars can be cleared to "no date" with Ctrl-K, mirroring the
+    # string-entry editor (see editor.jl). Accepts `missing` (≠ Date, ≠ nothing).
+    if o.data.optional
+        push!(b, Binding([:ctrl_k], "clear (no date)",
+                         action = w -> (w.value = missing; Accept)))
+    end
+    b
 end
 
 function inject(o::TwObj{TwCalendarData}, token)

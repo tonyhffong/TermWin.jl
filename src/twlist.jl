@@ -307,6 +307,14 @@ end
 function draw(o::TwObj{TwListData})
     werase(o.window) # this is important, or attributes on the pad may be lost
 
+    # Children paint onto the canvas pad, not o.window, and the pad persists across
+    # frames. Clear it each draw so a child that shrank (fewer rows, a collapsed
+    # visible_when section, a resize) leaves no stale cells to bleed through the
+    # mergedown. Only the root list owns a pad; nested lists draw onto this one.
+    if isa(o.window, NC.Plane) && o.data.pad !== nothing
+        werase(o.data.pad)
+    end
+
     if isa(o.window, NC.Plane)
         set_default_focus(o)
     end

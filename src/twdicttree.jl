@@ -609,6 +609,11 @@ function _dt_draw_edit_cell!(
 end
 
 function draw(o::TwObj{TwDictTreeData})
+    # Clear first: a variable number of rows are painted, so after the tree shrinks
+    # (delete/collapse) the old rows must not linger. draw() is called directly by
+    # the parent list's draw loop, without the erase refresh() would do. See the
+    # "Canvas clearing" note in CLAUDE.md.
+    werase(o.window)
     _dt_update_dimensions!(o)
     data = o.data
     (viewH, viewW, fieldW) = _dt_view_dims(o)

@@ -517,6 +517,11 @@ function natural_width(o::TwObj{TwTreeData})
 end
 
 function draw(o::TwObj{TwTreeData})
+    # Clear first: the tree paints a variable number of rows, so after it shrinks
+    # (a collapsed branch, a smaller value) the old rows must not linger. draw() is
+    # called directly by the parent list's draw loop, without the erase refresh()
+    # would do. See the "Canvas clearing" note in CLAUDE.md.
+    werase(o.window)
     updateTreeDimensions(o)
     viewContentHeight = o.height - 2 * o.borderSizeV
     viewContentWidth = o.width - 2 * o.borderSizeV
