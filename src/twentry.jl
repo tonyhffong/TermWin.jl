@@ -11,7 +11,8 @@ mutable struct TwEntryData
     titleLeft::Bool
     titlewidth::Int # -1 = natural title length; >=0 = fixed column width via ensure_length
     limitToWidth::Bool # TODO: not implemented yet
-    TwEntryData(dt::DataType) = new(InlineEditor(dt), false, true, -1, false)
+    allow_calendar::Bool # `?` opens the calendar even for a non-Date (String) field
+    TwEntryData(dt::DataType) = new(InlineEditor(dt), false, true, -1, false, false)
 end
 
 # The editor-state fields moved into `editor`, but `inputText`/`cursorPos`/etc.
@@ -57,6 +58,7 @@ function newTwEntry(
     stripzeros = (precision == -1),
     conversion = "",
     enumvalues::Union{Nothing,Vector{String}} = nothing,
+    allow_calendar::Bool = false,
     key::Union{Nothing,Symbol} = nothing,
 )
 
@@ -70,6 +72,7 @@ function newTwEntry(
         data.conversion = conversion # forwarded to editor.conversion
     end
     data.enumvalues = enumvalues     # forwarded to editor.enumvalues; non-nothing → popup picker
+    data.allow_calendar = allow_calendar # `?` pops the calendar even for a String field
 
     obj = TwObj(data, Val{:Entry})
 
@@ -228,11 +231,15 @@ function bindings(o::TwObj{TwEntryData})
                     Handled
                 end),
         Binding("?", "open calendar",
-                when   = _-> ed.valuetype <: Date,
+                when   = _-> ed.valuetype <: Date || getfield(o.data, :allow_calendar),
                 action = _->begin
                     (fieldcount, _) = getFieldDimension(o)
                     (v0, _) = evalNFormat(ed, ed.buffer, fieldcount)
-                    initd = v0 isa Date ? v0 : today()
+                    # For a String field evalNFormat yields the raw text, not a
+                    # Date, so seed the calendar from an ISO-parseable buffer;
+                    # otherwise (empty/tenor/garbage) fall back to today.
+                    initd = v0 isa Date ? v0 :
+                            (something(tryparse(Date, strip(ed.buffer)), today()))
                     global rootTwScreen
                     w = newTwCalendar(rootTwScreen, initd; posy = :center, posx = :center)
                     activateTwObj(w)
