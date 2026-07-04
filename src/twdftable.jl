@@ -982,11 +982,16 @@ function _dt_open_browser(path::String)
     end
 end
 
+# The screen a table's popups/entries register onto. link_parent_child sets a
+# child's window but NOT its `screen` (only registerTwObj does), so a table nested
+# in a layout or the ICJ dfcell wrapper has `screen` unset. Fall back to the global
+# rootTwScreen -- the active screen -- exactly as the other widgets' popups do.
+_dt_screen(w::TwObj) = (s = w.screen.value; s === nothing ? rootTwScreen : s)
+
 function _dt_export_menu!(o::TwObj{TwDfTableData})
-    global rootTwScreen
     options = ["HTML → browser", "CSV → clipboard", "CSV → file", "TSV → clipboard", "Cancel"]
     popup = newTwPopup(
-        o.screen.value,
+        _dt_screen(o),
         options;
         posy = :center, posx = :center,
         title = "Export view",
@@ -995,7 +1000,7 @@ function _dt_export_menu!(o::TwObj{TwDfTableData})
         maxwidth = 28,
     )
     result = activateTwObj(popup)
-    unregisterTwObj(o.screen.value, popup)
+    unregisterTwObj(_dt_screen(o), popup)
 
     result === nothing && return
     result == "Cancel" && return
@@ -1015,14 +1020,14 @@ function _dt_export_menu!(o::TwObj{TwDfTableData})
         _et_clipboard_write(csv)
     elseif result == "CSV → file"
         entry = newTwEntry(
-            o.screen.value,
+            _dt_screen(o),
             String;
             title = "Save CSV to:",
             width = 50,
             posy = :center, posx = :center,
         )
         path = activateTwObj(entry)
-        unregisterTwObj(o.screen.value, entry)
+        unregisterTwObj(_dt_screen(o), entry)
         if path !== nothing && path != ""
             try
                 write(path, _dt_to_csv(data; indent = true))
@@ -1380,10 +1385,10 @@ function bindings(o::TwObj{TwDfTableData})
                 allcols = String[string(n) for n in names(o.data.rootnode.subdataframe)]
                 append!(allcols, String[string(k) for k in keys(o.data.calcpivots)])
                 pvts = String[string(p) for p in o.data.pivots]
-                helper = newTwMultiSelect(o.screen.value, allcols,
+                helper = newTwMultiSelect(_dt_screen(o), allcols,
                     selected=pvts, title="Pivot order", orderable=true, substrsearch=true)
                 newpivots = activateTwObj(helper)
-                unregisterTwObj(o.screen.value, helper)
+                unregisterTwObj(_dt_screen(o), helper)
                 if newpivots !== nothing && newpivots != pvts
                     o.data.pivots = Symbol[Symbol(x) for x in newpivots]
                     o.data.rootnode.children = Any[]
@@ -1399,11 +1404,11 @@ function bindings(o::TwObj{TwDfTableData})
             action = _-> begin
                 allcols    = String[string(n) for n in names(o.data.rootnode.subdataframe)]
                 visiblecols = String[string(ci.name) for ci in o.data.colInfo]
-                helper = newTwMultiSelect(o.screen.value, allcols,
+                helper = newTwMultiSelect(_dt_screen(o), allcols,
                     selected=visiblecols, title="Visible columns & their order",
                     orderable=true, substrsearch=true)
                 newcols = activateTwObj(helper)
-                unregisterTwObj(o.screen.value, helper)
+                unregisterTwObj(_dt_screen(o), helper)
                 if newcols !== nothing && newcols != visiblecols
                     o.data.colInfo = TwTableColInfo[]
                     for c in newcols
@@ -1415,9 +1420,9 @@ function bindings(o::TwObj{TwDfTableData})
         Binding("v", "views",
             action = _-> begin
                 allviews = map(x->x.name, o.data.views)
-                helper = newTwPopup(o.screen.value, allviews, substrsearch=true, title="Views")
+                helper = newTwPopup(_dt_screen(o), allviews, substrsearch=true, title="Views")
                 vname = activateTwObj(helper)
-                unregisterTwObj(o.screen.value, helper)
+                unregisterTwObj(_dt_screen(o), helper)
                 if vname !== nothing
                     idx = findfirst(x->x.name == vname, o.data.views)
                     v = o.data.views[idx]
@@ -1439,11 +1444,11 @@ function bindings(o::TwObj{TwDfTableData})
             end),
         Binding("/", "search forward",
             action = _-> begin
-                helper = newTwEntry(o.screen.value, String;
+                helper = newTwEntry(_dt_screen(o), String;
                     width=30, posy=:center, posx=:center, title="Search: ")
                 helper.data.inputText = o.data.searchText
                 s = activateTwObj(helper)
-                unregisterTwObj(o.screen.value, helper)
+                unregisterTwObj(_dt_screen(o), helper)
                 if s !== nothing && s != "" && o.data.searchText != s
                     o.data.searchText = s
                     _dft_search_next!(o, 1, true)
@@ -1452,11 +1457,11 @@ function bindings(o::TwObj{TwDfTableData})
             end),
         Binding("?", "deep search",
             action = _-> begin
-                helper = newTwEntry(o.screen.value, String;
+                helper = newTwEntry(_dt_screen(o), String;
                     width=30, posy=:center, posx=:center, title="Search: ")
                 helper.data.inputText = o.data.searchText
                 s = activateTwObj(helper)
-                unregisterTwObj(o.screen.value, helper)
+                unregisterTwObj(_dt_screen(o), helper)
                 if s !== nothing
                     o.data.searchText = s
                     _dft_search_next_deep!(o, true)

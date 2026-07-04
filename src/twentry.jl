@@ -278,7 +278,13 @@ function inject(o::TwObj{TwEntryData}, token)
     r2 = editor_handle(ed, token)
     if r2 === :handled
         refresh(o); return Handled
-    elseif r2 === :rejected || r2 === :at_left_edge || r2 === :at_right_edge
+    elseif r2 === :at_left_edge || r2 === :at_right_edge
+        # Cursor is already at the field boundary: yield the arrow to the host so
+        # a layout container can navigate to the sibling column/row (editor.jl
+        # documents these edge cases as "host decides"). Standalone use just
+        # ignores the key. In-field cursor movement still works until the edge.
+        return Ignored
+    elseif r2 === :rejected
         beep(); return Handled
     elseif r2 === :open_enum
         res = _entry_open_enum_popup!(o)

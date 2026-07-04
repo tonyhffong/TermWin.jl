@@ -793,7 +793,7 @@ function inject(o::TwObj{TwListData}, token::Any)
             end
         end
         wdists = Any[]
-        geometric_filter(o, distfunc, 0, 0, wdists, true, 40)
+        geometric_filter(o, distfunc, 0, 0, wdists, true, 75)
         candidate = nothing
         mindist = 999999
         for (cw, dist) in wdists
@@ -1002,6 +1002,11 @@ function geometric_filter(
     cutoff::Int = 100,
 )
     for w in o.data.widgets
+        # A hidden (visible_when-collapsed) container must be skipped *before*
+        # recursing, otherwise arrow-key nav would land on leaves inside an
+        # invisible section — Tab already gates on isVisible (see
+        # _list_check_accept_focus), this keeps geometric nav consistent.
+        w.isVisible || continue
         if objtype(w) == :List
             geometric_filter(
                 w,
@@ -1012,7 +1017,7 @@ function geometric_filter(
                 excludezero,
                 cutoff,
             )
-        elseif w.isVisible && w.acceptsFocus
+        elseif w.acceptsFocus
             to = (y+w.window.yloc, x+w.window.xloc, w.window.height, w.window.width)
             dist = distfunc(to)
             if dist > cutoff || dist == 0 && excludezero
