@@ -76,6 +76,34 @@ if session_ok
 
             TW.unregisterTwObj(rootTwScreen, tbl)
         end
+
+        @testset "empty DataFrame renders without crashing" begin
+            # A 0-row frame (e.g. a live widget whose query returned nothing)
+            # used to kill updateTableDimensions with maximum() over an empty
+            # datalist. Cover construction with an empty frame and the
+            # populated -> empty -> populated setvalue! round-trip.
+            empty0 = DataFrame(k = Int[], v = Int[])
+
+            tbl = TW.newTwDfTable(rootTwScreen, empty0; height = 12, width = 36,
+                                  showRoot = false)
+            TW.draw(tbl); NC.render(TW.nc_context)
+            # header still shows, no rows
+            @test any(occursin("k", _rowtext(tbl.window, y, tbl.width)) for y in 0:11)
+            TW.unregisterTwObj(rootTwScreen, tbl)
+
+            tbl2 = TW.newTwDfTable(rootTwScreen, big; height = 12, width = 36,
+                                   showRoot = false)
+            TW.draw(tbl2); NC.render(TW.nc_context)
+            TW.setvalue!(tbl2, empty0)
+            TW.draw(tbl2); NC.render(TW.nc_context)
+            for y in 0:11   # old rows must be gone
+                @test !occursin("900", _rowtext(tbl2.window, y, tbl2.width))
+            end
+            TW.setvalue!(tbl2, big)
+            TW.draw(tbl2); NC.render(TW.nc_context)
+            @test any(occursin("900", _rowtext(tbl2.window, y, tbl2.width)) for y in 0:11)
+            TW.unregisterTwObj(rootTwScreen, tbl2)
+        end
     finally
         TW.endsession()
     end

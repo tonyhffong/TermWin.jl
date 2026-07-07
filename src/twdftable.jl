@@ -560,10 +560,17 @@ function setvalue!(o::TwObj{TwDfTableData}, df::DataFrame)
 end
 
 function updateTableDimensions(o::TwObj)
+    # Both reductions must tolerate an empty table: a 0-row frame (e.g. a live
+    # widget whose source query returned nothing) yields an empty datalist, and
+    # a 0-column frame yields empty colInfo — maximum() over either would throw
+    # and take the whole session down mid-draw. Degrade to a 1-line header and
+    # a minimal tree gutter instead; the draw loops themselves are no-ops on
+    # empty ranges.
     o.data.datalistlen = length(o.data.datalist)
-    o.data.headerlines = maximum(map(x->length(split(x.displayname, "\n")), o.data.colInfo))
+    o.data.headerlines = isempty(o.data.colInfo) ? 1 :
+        maximum(map(x->length(split(x.displayname, "\n")), o.data.colInfo))
     # reminder: (name, stack, exphints, skiplines, node )
-    o.data.datatreewidth =
+    o.data.datatreewidth = isempty(o.data.datalist) ? 2 :
         maximum(map(d -> 2*(length(d[2])+1) + length(d[1]) + 1, o.data.datalist))
 end
 
