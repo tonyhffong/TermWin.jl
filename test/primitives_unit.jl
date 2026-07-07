@@ -845,9 +845,20 @@ end
     od = TW.TwObj(dd, Val{:Entry})
     od.width = 14; od.box = false; od.borderSizeH = 0; od.title = ""
     @test TW.inject_via_table(od, "m") === TW.Ignored
+    # Two "?" bindings exist (preset popup + calendar); on a plain Date entry
+    # only the calendar one's `when` guard is active.
     bs = TW.bindings(od)
     qb = filter(b -> "?" in b.keys, bs)
-    @test length(qb) == 1 && qb[1].when(od)
+    @test count(b -> b.when(od), qb) == 1
+
+    # --- String entry with preset choices: the preset "?" binding is active ---
+    dc = TW.TwEntryData(String)
+    dc.choices = ["3M", "1Y"]
+    oc = TW.TwObj(dc, Val{:Entry})
+    oc.width = 12; oc.box = false; oc.borderSizeH = 0; oc.title = ""
+    qbc = filter(b -> "?" in b.keys, TW.bindings(oc))
+    @test count(b -> b.when(oc), qbc) == 1
+    @test any(b -> b.when(oc) && b.label == "pick preset", qbc)
 
     # --- helptext: type-conditional sections ---
     d.showHelp = true

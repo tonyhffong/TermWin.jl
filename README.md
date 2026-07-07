@@ -115,6 +115,19 @@ println(w.value)   # String or nothing
 
 Key options: `title`, `width`, `precision` (for floats), `titleLeft` (label on left vs top).
 
+More options:
+- `enumvalues=["A","B",…]` — turns the field into a popup picker (type or press `?`).
+- `allow_calendar=true` — press `?` to open the calendar even in a `String` field; the
+  picked date is written in as text, so the field can hold a real date **or** free text
+  (a relative date like `T+2`, or an empty/"null" date). `Date`-typed fields always
+  support `?`.
+- `choices=["…"]` — press `?` for a preset popup that still lets you type your own value.
+- `hintfn = buffer -> String` — a dimmed live hint line under the field, recomputed as
+  you type (e.g. echoing how your text parses).
+
+In-field editing: `←/→` move the cursor, `Ctrl-A`/`Ctrl-E` jump to start/end,
+`Ctrl-K` clears, `Ctrl-R` toggles insert/overwrite.
+
 ### Single selection — `newTwPopup`
 
 ```julia
@@ -175,6 +188,10 @@ Press **Alt-C** to pick a different holiday calendar (e.g. `USSettlement`, `TARG
 | Alt-C | Change holiday calendar |
 | Enter | Confirm selection |
 | Esc | Cancel |
+
+Pass `optional=true` to make the calendar **clearable**: `Ctrl-K` then accepts a
+result of `missing` — an explicit "no date", distinct from `Enter` (a `Date`) and
+`Esc` (`nothing`). Useful for a form field that may legitimately be left blank.
 
 ### Scrollable text viewer — `newTwViewer`
 

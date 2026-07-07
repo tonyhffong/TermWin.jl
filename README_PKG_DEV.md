@@ -213,6 +213,57 @@ Widgets without `key=` render normally and receive focus but are excluded from t
 | Esc | Cancel — returns `nothing` |
 | F1 | In-widget help |
 
+Arrow keys also move focus *geometrically*: ↑/↓ jump to the nearest widget above/below,
+←/→ to the nearest on the left/right — but only when the focused widget doesn't consume
+the key. A text field walks its cursor first and hands off ←/→ once the cursor is at the
+field edge, so left/right can cross to a neighbouring column.
+
+### Reactive section visibility — `visible_when`
+
+Any layout container takes a `visible_when = snap -> Bool` predicate that is
+re-evaluated against the live form snapshot after **every keystroke**. When it flips,
+the section collapses (reclaiming its rows/columns) or reappears — so a form shows only
+what's currently relevant.
+
+```julia
+@twlayout (form=true, title="New Job") begin
+    popup(["Basic","Advanced"]; key=:mode, title="Mode")
+    entry(String; key=:name, title="Job name")
+    vstack(begin
+        entry(Int;    key=:threads, title="Threads")
+        entry(String; key=:host,    title="Host")
+    end; visible_when = s -> get(s, :mode, "Basic") == "Advanced")   # shown only in Advanced
+end
+```
+
+Use `get(snap, :k, default)` — a field's key is absent until it has a value. Hidden
+fields still contribute their value to the F10 submit result (visibility only affects
+layout and focus, not collection).
+
+### Custom layout key bindings — `on_key`
+
+Attach application-specific keys to any container with `keys=[on_key(...)]`. The callback
+receives the same live `Dict{Symbol,Any}` snapshot F10 returns.
+
+```julia
+@twlayout (form=true, keys=[
+    on_key(:F5,     "preview", snap -> show_preview(snap)),         # stays open
+    on_key(:ctrl_s, "save",    snap -> (save_draft(snap); Accept)), # exits, returns snap
+]) begin
+    entry(String; key=:title, title="Title")
+end
+```
+
+The callback's return value is the outcome: return an `InjectResult` (`Accept` to submit
+with the snapshot, `Handled`/`Cancel` as usual) or return anything else (e.g. `nothing`)
+to consume the key, redraw, and stay open. Custom keys appear in the F1 help and footer
+automatically, and can't shadow the built-in Tab/F1/F10.
+
+> **Tip:** wrap direct (non-`tshow`) sessions in `withsession(f)` instead of a bare
+> `initsession()` / `endsession()` pair — it runs the teardown in a `finally`, so the
+> terminal is always restored even if your builder throws (the backtrace then prints on a
+> clean terminal). `tshow`/`trun` are built on it.
+
 ---
 
 ## Authoring custom widgets

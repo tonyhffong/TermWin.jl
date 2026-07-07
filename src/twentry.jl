@@ -3,7 +3,13 @@
 # This widget is now a thin host over the shared InlineEditor (src/editor.jl):
 # `draw` delegates to `draw_editor!`, and `inject` delegates printable/edit keys
 # to `editor_handle`, keeping only the entry-specific keys (Enter/Esc/focus_off,
-# shift-↑/↓ tick, `m` ×1000, `?`→calendar).
+# shift-↑/↓ tick, `m` ×1000, `?`→calendar or preset popup).
+#
+# Optional guidance features (both off by default):
+#   hintfn  : buffer -> String, rendered dimmed on an extra line under the field
+#             and recomputed per keystroke — e.g. a live parse echo for DSL text.
+#   choices : preset strings; `?` opens an allownew popup whose pick (or typed
+#             free text) is written into the buffer for the user to confirm.
 
 mutable struct TwEntryData
     editor::InlineEditor       # the unified inline editor (state + parse/format)
@@ -12,7 +18,9 @@ mutable struct TwEntryData
     titlewidth::Int # -1 = natural title length; >=0 = fixed column width via ensure_length
     limitToWidth::Bool # TODO: not implemented yet
     allow_calendar::Bool # `?` opens the calendar even for a non-Date (String) field
-    TwEntryData(dt::DataType) = new(InlineEditor(dt), false, true, -1, false, false)
+    hintfn::Union{Nothing,Function} # buffer -> hint text, redrawn every keystroke on an extra line under the field
+    choices::Union{Nothing,Vector{String}} # `?` opens a preset popup (free text still allowed); unlike enumvalues, the field stays free-text
+    TwEntryData(dt::DataType) = new(InlineEditor(dt), false, true, -1, false, false, nothing, nothing)
 end
 
 # The editor-state fields moved into `editor`, but `inputText`/`cursorPos`/etc.
@@ -59,6 +67,8 @@ function newTwEntry(
     conversion = "",
     enumvalues::Union{Nothing,Vector{String}} = nothing,
     allow_calendar::Bool = false,
+    hintfn::Union{Nothing,Function} = nothing,
+    choices::Union{Nothing,Vector{String}} = nothing,
     key::Union{Nothing,Symbol} = nothing,
 )
 
@@ -73,6 +83,8 @@ function newTwEntry(
     end
     data.enumvalues = enumvalues     # forwarded to editor.enumvalues; non-nothing → popup picker
     data.allow_calendar = allow_calendar # `?` pops the calendar even for a String field
+    data.hintfn = hintfn             # live hint line under the field, recomputed per keystroke
+    data.choices = choices           # `?` → preset popup that writes into the buffer
 
     obj = TwObj(data, Val{:Entry})
 
@@ -82,7 +94,8 @@ function newTwEntry(
     obj.borderSizeV = box ? 1 : 0
     obj.borderSizeH = box ? 1 : 0
 
-    h = box ? 3 : 1
+    # hintfn takes one extra row under the input field
+    h = (box ? 3 : 1) + (hintfn === nothing ? 0 : 1)
     link_parent_child(parent, obj, h, width, posy, posx)
     obj
 end
@@ -131,6 +144,20 @@ function draw(o::TwObj{TwEntryData})
     # indicators) is the shared InlineEditor renderer.
     o.data.editor.width = fieldcount
     draw_editor!(o.window, starty, startx, o.data.editor, o.hasFocus)
+    # Live hint line: hintfn(buffer) rendered dimmed under the field, recomputed
+    # on every draw (inject refreshes after each handled key). A throwing hintfn
+    # must not take the widget down — show the error text instead.
+    if o.data.hintfn !== nothing
+        hint = try
+            string(o.data.hintfn(o.data.editor.buffer))
+        catch err
+            sprint(showerror, err)
+        end
+        wattron(o.window, theme(:divider))
+        mvwprintw(o.window, starty + 1, o.borderSizeH, "%s",
+                  ensure_length(hint, o.width - 2 * o.borderSizeH))
+        wattroff(o.window, theme(:divider))
+    end
 end
 
 const _ENTRY_EDITOR_HELP =
@@ -227,6 +254,31 @@ function bindings(o::TwObj{TwEntryData})
                         editor_checkcursor!(ed)
                     else
                         beep()
+                    end
+                    Handled
+                end),
+        Binding("?", "pick preset",
+                when   = _-> getfield(o.data, :choices) !== nothing,
+                action = _->begin
+                    # Preset popup: pick writes into the buffer (no immediate
+                    # commit — the user sees the hint line react, then confirms
+                    # with Enter). allownew keeps the searchbox usable as a
+                    # free-text entry, so `?` never traps the user in the list.
+                    global rootTwScreen
+                    chs = getfield(o.data, :choices)
+                    popup = newTwPopup(rootTwScreen, chs;
+                        posy = :center, posx = :center,
+                        title = "presets",
+                        allownew = true,
+                        maxheight = min(length(chs) + 2, 15),
+                        maxwidth = max(maximum(length, chs) + 4, 20),
+                    )
+                    apply_default!(popup, ed.buffer)
+                    result = activateTwObj(popup)
+                    unregisterTwObj(rootTwScreen, popup)
+                    if result !== nothing
+                        editor_set_buffer!(ed, result)
+                        editor_checkcursor!(ed)
                     end
                     Handled
                 end),
