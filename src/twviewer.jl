@@ -229,6 +229,23 @@ function _highlight_julia_spans(src::String)::Vector{Vector{Tuple{Int,Int,TwAttr
     return spans
 end
 
+# Walk a byte index forward/backward to the nearest valid char-start index.
+# `line[i:j]` requires both i and j to be char starts, but span boundaries
+# (and the horizontal-scroll offset) are byte offsets that may land on a UTF-8
+# continuation byte of a multibyte char — slicing there throws StringIndexError.
+_fwd_char_start(s::AbstractString, i::Int) =
+    (n = ncodeunits(s); while i <= n && !isvalid(s, i); i += 1 end; i)
+_back_char_start(s::AbstractString, i::Int) =
+    (while i > 0 && !isvalid(s, i); i -= 1 end; i)
+
+# Emit line[vs:ve] safely: clamp vs forward and ve back to char boundaries first.
+function _print_slice(win, y, startx, line, vs::Int, ve::Int, vstart::Int)
+    vs = _fwd_char_start(line, vs)
+    ve = _back_char_start(line, ve)
+    vs <= ve && isvalid(line, vs) &&
+        mvwprintw(win, y, startx + vs - vstart, "%s", line[vs:ve])
+end
+
 function _draw_highlighted_line!(
     win, y::Int, line::AbstractString, spans::Vector{Tuple{Int,Int,TwAttr}},
     currentLeft::Int, viewW::Int, startx::Int,
@@ -254,20 +271,18 @@ function _draw_highlighted_line!(
         cs > llen && break
         ce = min(ce, llen)
         # gap before span
-        vs = max(prev, vstart); ve = min(cs - 1, vend, llen)
-        vs <= ve && mvwprintw(win, y, startx + vs - vstart, "%s", line[vs:ve])
+        _print_slice(win, y, startx, line, max(prev, vstart), min(cs - 1, vend, llen), vstart)
         # colored span
         vs = max(cs, vstart); ve = min(ce, vend)
         if vs <= ve
             wattron(win, attr)
-            mvwprintw(win, y, startx + vs - vstart, "%s", line[vs:ve])
+            _print_slice(win, y, startx, line, vs, ve, vstart)
             wattroff(win, attr)
         end
         prev = ce + 1
     end
     # trailing gap
-    vs = max(prev, vstart); ve = min(llen, vend)
-    vs <= ve && mvwprintw(win, y, startx + vs - vstart, "%s", line[vs:ve])
+    _print_slice(win, y, startx, line, max(prev, vstart), min(llen, vend), vstart)
 end
 
 # ─────────────────────────────────────────────────────────────────────────────
