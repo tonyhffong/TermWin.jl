@@ -2,7 +2,8 @@ using TermWin
 
 # write your own tests here
 
-include( "dftests.jl" )
+# dftests.jl / aggrspecs.jl moved to the DataFrameAggrSpec package (the DSL now lives
+# there; TermWin re-exports its surface and is tested for integration via dataframe.jl)
 include( "strtests.jl" )
 include( "progress_unit.jl" )
 include( "primitives_unit.jl" )

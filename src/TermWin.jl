@@ -12,6 +12,13 @@ import JuliaSyntaxHighlighting
 using PrecompileTools: @setup_workload, @compile_workload
 using Base.Meta
 
+# Runtime DataFrame-aggregation DSL, extracted into its own UI-free package.
+# `using` brings the exported surface (liftAggrSpecToFunc / liftCalcPivotToFunc /
+# defaultAggr / CalcPivot / discretize / topnames / uniqvalue / unionall) into scope
+# for the viewer widgets; the CalcPivot dependency-cache is unexported, so import it.
+using DataFrameAggrSpec
+import DataFrameAggrSpec: CalcPivotAggrDepCache
+
 debugloghandle = nothing
 
 function logstart()
@@ -52,7 +59,6 @@ include("ccall.jl")
 include("format.jl")
 include("editor.jl")       # InlineEditor: shared inline text editor (used by entry/edittable/dicttree)
 include("history.jl")      # EditHistory{T}: fixed-capacity undo/redo ring
-include("dfutils.jl")
 include("twprogress.jl")
 include("twviewer.jl")
 include("twimage.jl")
