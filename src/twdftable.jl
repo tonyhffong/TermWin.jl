@@ -1,4 +1,4 @@
-defaultTableBottomText = "F1:help p:Pivot c:ColOrd v:Views  F2:Describe  Ctrl-Y:Export"
+defaultTableBottomText = "F1:help p:Pivot P:DefineDim c:ColOrd v:Views  F2:Describe  Ctrl-Y:Export"
 
 mutable struct TwTableColInfo
     name::Symbol
@@ -171,7 +171,14 @@ mutable struct TwDfTableData
     bottomText::String
     initdepth::Int
     views::Array{TwTableView,1}
-    calcpivots::Dict{Symbol,CalcPivot}
+    # Calculated pivots: name -> a DataFrameAggrSpec chain-declaration payload
+    # (dimspec(...), or a bare trusted Expr / dim"..." string / Function). Consumed
+    # by expandnode as `dim(subdf, [npivots..., name => payload]; hints)`.
+    calcpivots::Dict{Symbol,Any}
+    # AggrHints compiled once from buildopts.aggrHints in rebuildColumns!; drives
+    # both per-column aggregation (resolveaggr) and the calcpivot dependency
+    # aggregation in expandnode.
+    aggrHints::AggrHints
     searchText::String
     selection_text::Observable{String}
     showRoot::Bool   # when false, the root summary row is hidden (flat-list display)
@@ -198,7 +205,8 @@ mutable struct TwDfTableData
         "",
         1,
         TwTableView[],
-        Dict{Symbol,CalcPivot}(),
+        Dict{Symbol,Any}(),
+        AggrHints(),
         "",
         Observable(""),
         true,
@@ -236,11 +244,20 @@ _filter_sortorder(so, present::Set{Symbol}) =
 function rebuildColumns!(obj::TwObj{TwDfTableData}, df::DataFrame)
     o = obj.data
     bo = o.buildopts
-    present = Set(Symbol.(names(df)))
+    # Calculated-pivot columns don't exist in df yet (expandnode materializes them),
+    # but they are legitimate pivot/sort/order references — treat them as present so
+    # the schema-resilience filter below doesn't silently drop them.
+    present = union(Set(Symbol.(names(df))), keys(o.calcpivots))
 
     empty!(o.views)
     empty!(o.allcolInfo)
     o.colInfo = TwTableColInfo[]
+
+    # Compile the raw Symbol/Type -> spec hints into an AggrHints once. resolveaggr
+    # then does the col -> eltype-subtype -> default resolution (replacing the
+    # hand-rolled get/get/defaultAggr ladder below), and expandnode reuses this same
+    # object to aggregate calcpivot dependency columns.
+    o.aggrHints = AggrHints(bo.aggrHints)
 
     resolveview(name, pivots, initdepth, sortorder, colorder, hidecols) = TwTableView(
         df,
@@ -285,7 +302,7 @@ function rebuildColumns!(obj::TwObj{TwDfTableData}, df::DataFrame)
         if haskey(bo.widthHints, c)
             fmt.width = bo.widthHints[c]
         end
-        agr = get(bo.aggrHints, c, get(bo.aggrHints, t, defaultAggr(t)))
+        agr = resolveaggr(o.aggrHints, c, t)
         o.allcolInfo[c] = TwTableColInfo(c, hdr, fmt, agr)
     end
     for c in finalcolorder
@@ -314,7 +331,7 @@ function newTwDfTable(
     headerHints = Dict{Symbol,String}(),
     bottomText = defaultTableBottomText,
     views = Dict{Symbol,Any}[],
-    calcpivots = Dict{Symbol,CalcPivot}(),
+    calcpivots = Dict{Symbol,Any}(),
     showRoot::Bool = true,
 )
     obj = TwObj(TwDfTableData(), Val{:DfTable})
@@ -372,39 +389,22 @@ function expandnode(n::TwDfTableNode, depth::Int = 1)
             push!(nextpivots, nextpivot)
 
             if haskey(n.context.value.calcpivots, nextpivot)
-                calcpvt = n.context.value.calcpivots[nextpivot]
-                pvtspec = calcpvt.spec
-                # if we have already pivoted :a, then including it
-                # again in *by* would not do anything.
-                pvtby = setdiff(calcpvt.by, npivots)
-                f = liftCalcPivotToFunc(pvtspec, pvtby)
-                if isempty(pvtby)
-                    colvalues = Base.invokelatest(f, n.subdataframe)
-                    # Note that setindex! doesn't work for subdataframe
-                    # And we most certainly don't want to mutate the original
-                    # dataframe (if the node n here is the rootnode)
-                    # some sort of composit data frame is needed to
-                    # avoid inefficient copying (or is it that bad?)
-                    localdf = DataFrame(n.subdataframe)
-                    localdf[!, nextpivot] = colvalues
-                    gd = DataFrames.groupby(localdf, nextpivots)
-                else
-                    # figure out the aggregation dependency
-                    # the lift function just now ensures we have this cache.
-                    aggrs = CalcPivotAggrDepCache[(pvtspec, pvtby)]
-                    kwargs = Any[]
-                    for a in aggrs
-                        push!(kwargs, (a, n.context.value.allcolInfo[a].aggr))
-                    end
-                    # the lifted function expects us to provide
-                    # the aggregation spec on all needed columns,
-                    # as keyword arguments
-                    df = Base.invokelatest(f, n.subdataframe, nextpivot; kwargs...)
-                    gd = DataFrames.groupby(
-                        leftjoin(n.subdataframe, df, on = pvtby),
-                        nextpivots,
-                    )
-                end
+                # A calculated pivot is a DataFrameAggrSpec dimension declared over a
+                # chain whose LEFT CONTEXT is the already-applied pivots (npivots).
+                # The engine partitions by that context (constant within this
+                # pre-filtered subframe, and a by-key that coincides collapses
+                # harmlessly), aggregates any dependency columns through o.aggrHints
+                # (the AggrHints resolved once in rebuildColumns!), and materializes
+                # nextpivot row-aligned. One groupby then splits the node's children
+                # -- replacing the former empty-by/non-empty-by fork, the
+                # CalcPivotAggrDepCache side-channel, and the manual leftjoin.
+                ds = n.context.value.calcpivots[nextpivot]
+                localdf = dim(
+                    n.subdataframe,
+                    Any[npivots..., nextpivot => ds];
+                    hints = n.context.value.aggrHints,
+                )
+                gd = DataFrames.groupby(localdf, nextpivots)
             else
                 gd = DataFrames.groupby(n.subdataframe, nextpivots)
             end
@@ -1328,6 +1328,35 @@ function _dft_search_next_deep!(o::TwObj{TwDfTableData}, trivialstop::Bool)
     end
 end
 
+# Re-expand the pivot tree from the root after pivots/calcpivots change, and reset
+# the cursor. Shared by the p/v/P bindings.
+function _dt_rebuild_tree!(o::TwObj{TwDfTableData})
+    o.data.rootnode.children = Any[]
+    o.data.rootnode.isOpen = false
+    expandnode(o.data.rootnode, o.data.initdepth)
+    ordernode(o.data.rootnode)
+    builddatalist(o.data)
+    o.data.currentLine = 1
+    _dft_check_top!(o)
+    o
+end
+
+# Register a user-typed calculated dimension. `specstr` is parsed by the UNTRUSTED
+# safe whitelist grammar (parsedim -- no eval, columns are bare identifiers,
+# `|> groupby(col)` makes it a per-group pivot, topnames auto-infers pivot), so it
+# is safe to accept straight from a text field. Throws on an invalid spec or a name
+# that collides with a real data column; a duplicate calcpivot name is replaced.
+# The runtime counterpart of the construction-time `calcpivots=` kwarg.
+function _dt_add_dimension!(o::TwObj{TwDfTableData}, name::AbstractString, specstr::AbstractString)
+    nm = strip(name)
+    isempty(nm) && error("dimension name must not be empty")
+    sym = Symbol(nm)
+    sym in propertynames(o.data.rootnode.subdataframe) &&
+        error("\"" * nm * "\" is already a data column")
+    o.data.calcpivots[sym] = parsedim(specstr)   # UNTRUSTED: safe grammar, no eval
+    sym
+end
+
 function bindings(o::TwObj{TwDfTableData})
     [
         Binding(:esc, "cancel", action = _-> Cancel),
@@ -1398,12 +1427,36 @@ function bindings(o::TwObj{TwDfTableData})
                 unregisterTwObj(_dt_screen(o), helper)
                 if newpivots !== nothing && newpivots != pvts
                     o.data.pivots = Symbol[Symbol(x) for x in newpivots]
-                    o.data.rootnode.children = Any[]
-                    o.data.rootnode.isOpen = false
-                    expandnode(o.data.rootnode, o.data.initdepth)
-                    ordernode(o.data.rootnode)
-                    builddatalist(o.data)
-                    o.data.currentLine = 1; _dft_check_top!(o)
+                    _dt_rebuild_tree!(o)
+                end
+                Handled
+            end),
+        Binding("P", "define pivot dimension",
+            action = _-> begin
+                # 1) name the new dimension
+                namehelper = newTwEntry(_dt_screen(o), String;
+                    width=24, posy=:center, posx=:center, title="New dimension name: ")
+                nm = activateTwObj(namehelper)
+                unregisterTwObj(_dt_screen(o), namehelper)
+                (nm === nothing || strip(nm) == "") && return Handled
+                # 2) type the spec -- parsed live via the untrusted safe grammar; a
+                #    throwing hintfn shows the parse error inline instead of failing.
+                spechelper = newTwEntry(_dt_screen(o), String;
+                    width=48, posy=:center, posx=:center,
+                    title="Spec (e.g. discretize(score,[0,20,40]) |> groupby(region)): ",
+                    hintfn = s -> (strip(s) == "" ? "" :
+                                   (parsedim(s); "✓ valid dimension spec")))
+                spec = activateTwObj(spechelper)
+                unregisterTwObj(_dt_screen(o), spechelper)
+                (spec === nothing || strip(spec) == "") && return Handled
+                # 3) register + apply as the innermost pivot
+                try
+                    sym = _dt_add_dimension!(o, nm, spec)
+                    sym in o.data.pivots || push!(o.data.pivots, sym)
+                    _dt_rebuild_tree!(o)
+                catch err
+                    tshow(sprint(showerror, err); title="Invalid dimension",
+                        posx=:center, posy=:center)
                 end
                 Handled
             end),
@@ -1440,12 +1493,7 @@ function bindings(o::TwObj{TwDfTableData})
                     for c in v.columns
                         push!(o.data.colInfo, o.data.allcolInfo[Symbol(c)])
                     end
-                    o.data.rootnode.children = Any[]
-                    o.data.rootnode.isOpen   = false
-                    expandnode(o.data.rootnode, o.data.initdepth)
-                    ordernode(o.data.rootnode)
-                    builddatalist(o.data)
-                    o.data.currentLine = 1; _dft_check_top!(o)
+                    _dt_rebuild_tree!(o)
                 end
                 Handled
             end),

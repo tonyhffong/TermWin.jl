@@ -36,7 +36,8 @@ function newTwFunc(scr::TwObj, ms::Array{Method,1}; kwargs...)
         kwargs,
         :calcpivots,
         Dict{Symbol,Any}(
-            :NArgsBuckets => CalcPivot(
+            # row-level bucketing (no `by`) -> a window dimension
+            :NArgsBuckets => dimspec(
                 :(discretize(:nargs, [0, 1, 2, 3, 4]; boundedness = ^(:boundedbelow))),
             ),
         ),

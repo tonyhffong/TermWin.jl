@@ -16,10 +16,14 @@ tshow( df;
         :Str     => wmean_instruction
         ),
     calcpivots = Dict{Symbol,Any}(
-        :CountyStrBuckets => CalcPivot( :(discretize( :Str, [ 14,16,18,20,22,24 ], rank=true, compact=true )), :County ),
-        :CountyTestScrBuckets => CalcPivot( :(discretize( :TestScr, [ 600, 620, 640, 660, 680, 700], label="score", rank=true, compact=false, reverse=true )), :County ),
-        :TestScrQuantiles => CalcPivot( :(discretize( :TestScr, ngroups = 4 )) ),
-        :top5districts => CalcPivot( :( topnames( :District, :TestScr, 5 ) ) )
+        # group-level buckets: aggregate the measure per :County, then classify the
+        # counties -> a pivot dimension (non-empty `by` needs an explicit kind).
+        :CountyStrBuckets => dimspec( :(discretize( :Str, [ 14,16,18,20,22,24 ], rank=true, compact=true )); by = :County, kind = :pivot ),
+        :CountyTestScrBuckets => dimspec( :(discretize( :TestScr, [ 600, 620, 640, 660, 680, 700], label="score", rank=true, compact=false, reverse=true )); by = :County, kind = :pivot ),
+        # row-level quantile buckets (no `by`) -> a window dimension.
+        :TestScrQuantiles => dimspec( :(discretize( :TestScr, ngroups = 4 )) ),
+        # topnames is a classifier verb: :District is auto-inferred as the group key.
+        :top5districts => dimspec( :( topnames( :District, :TestScr, 5 ) ) )
         ),
     views = [
         Dict{Symbol,Any}( :name => "ByStr", :pivots => [ :CountyStrBuckets, :County, :District] ),

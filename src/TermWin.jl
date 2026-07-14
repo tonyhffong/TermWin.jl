@@ -13,11 +13,11 @@ using PrecompileTools: @setup_workload, @compile_workload
 using Base.Meta
 
 # Runtime DataFrame-aggregation DSL, extracted into its own UI-free package.
-# `using` brings the exported surface (liftAggrSpecToFunc / liftCalcPivotToFunc /
-# defaultAggr / CalcPivot / discretize / topnames / uniqvalue / unionall) into scope
-# for the viewer widgets; the CalcPivot dependency-cache is unexported, so import it.
+# `using` brings the exported surface (liftAggrSpecToFunc / AggrHints / resolveaggr /
+# dim / dimspec / discretize / topnames / uniqvalue / unionall) into scope for the
+# viewer widgets. Calculated pivots are declared with dimspec(...); the legacy
+# CalcPivot API is no longer used or re-exported.
 using DataFrameAggrSpec
-import DataFrameAggrSpec: CalcPivotAggrDepCache
 
 debugloghandle = nothing
 
@@ -97,7 +97,9 @@ export Observable, set!, on, off, subscribe!
 export exprstring
 
 export uniqvalue, unionall
-export CalcPivot, discretize, topnames
+export dimspec, discretize, topnames
+# untrusted safe-grammar parsers for user-typed specs (no eval)
+export parsedim, parseaggr, @dim_str, @aggr_str
 export FormatHints
 export COLOR_PAIR, A_BOLD, A_UNDERLINE, A_REVERSE
 
