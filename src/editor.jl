@@ -270,6 +270,107 @@ function editor_insert!(ie::InlineEditor, s::AbstractString)
     ie
 end
 
+# ─── LaTeX-style unicode completion (opt-in; used by spec entries) ───────────
+# Reuse Julia's own REPL table so `\circ`<Tab> → ∘ and `\ne`<Tab> → ≠ behave
+# exactly like the REPL. If that internal table is ever unavailable, fall back to
+# a small curated set covering the operators the spec grammar cares about.
+const _LATEX_FALLBACK = Dict{String,String}(
+    "\\circ"=>"∘", "\\ne"=>"≠", "\\neq"=>"≠", "\\le"=>"≤", "\\leq"=>"≤",
+    "\\ge"=>"≥", "\\geq"=>"≥", "\\times"=>"×", "\\cdot"=>"⋅", "\\div"=>"÷",
+    "\\in"=>"∈", "\\to"=>"→", "\\pm"=>"±", "\\approx"=>"≈",
+)
+const _LATEX_TABLE = Ref{Union{Nothing,Dict{String,String}}}(nothing)
+
+"The `\\name` → char table used by [`editor_latex_complete!`] (Julia's REPL table, merged over a curated fallback). Built once, then cached."
+function latex_symbol_table()
+    t = _LATEX_TABLE[]
+    t === nothing || return t
+    tbl = try
+        merge(_LATEX_FALLBACK, Dict{String,String}(REPL.REPLCompletions.latex_symbols))
+    catch
+        copy(_LATEX_FALLBACK)
+    end
+    _LATEX_TABLE[] = tbl
+    tbl
+end
+
+# On Tab in an opt-in editor: if a maximal `\word` sits immediately before the
+# cursor and names a known symbol, replace it in place with that char. Returns
+# `true` when a replacement happened (caller consumes Tab), `false` otherwise (so
+# the host is free to treat Tab as focus navigation). buffer/cursorPos are
+# character-indexed; every char involved (backslash, ASCII word, the target
+# symbols) is width-1, so a character index equals a display column here.
+function editor_latex_complete!(ie::InlineEditor)
+    chars = collect(ie.buffer)
+    cur = clamp(ie.cursorPos, 1, length(chars) + 1)
+    i = cur - 1                                  # last char before the cursor
+    (1 <= i <= length(chars)) || return false
+    j = i
+    while j >= 1 && (isletter(chars[j]) || isdigit(chars[j]))
+        j -= 1                                   # walk back over the word body
+    end
+    (j >= 1 && chars[j] == '\\' && i >= j + 1) || return false   # need `\` + ≥1 char
+    repl = get(latex_symbol_table(), "\\" * String(chars[j+1:i]), nothing)
+    repl === nothing && return false
+    replchars = collect(repl)
+    ie.buffer = String(vcat(chars[1:j-1], replchars, chars[i+1:end]))
+    ie.cursorPos = (j - 1) + length(replchars) + 1
+    ie.dirty = true
+    editor_checkcursor!(ie)
+    return true
+end
+
+# ─── word (identifier) completion (opt-in; used by spec entries) ─────────────
+# `\name` latex completion (above) handles operator glyphs; this handles typing
+# a partial identifier (column or function name) and completing it against a
+# host-supplied vocabulary. The editor only locates/rewrites the word; the host
+# owns the candidate list and any disambiguation UI.
+
+_iswordchar(c::AbstractChar) = isletter(c) || isdigit(c) || c == '_'
+
+# The identifier ending immediately at the cursor, as (prefix, startpos, endpos)
+# in character indices, or `nothing` when the cursor is not right after a word.
+function editor_word_before_cursor(ie::InlineEditor)
+    chars = collect(ie.buffer)
+    cur = clamp(ie.cursorPos, 1, length(chars) + 1)
+    i = cur - 1
+    (1 <= i <= length(chars) && _iswordchar(chars[i])) || return nothing
+    j = i
+    while j >= 1 && _iswordchar(chars[j])
+        j -= 1
+    end
+    (String(chars[j+1:i]), j + 1, i)
+end
+
+# Replace the character range [startpos, endpos] with `s`, cursor after it.
+function editor_replace_range!(ie::InlineEditor, startpos::Int, endpos::Int, s::AbstractString)
+    chars = collect(ie.buffer)
+    repl = collect(s)
+    ie.buffer = String(vcat(chars[1:startpos-1], repl, chars[endpos+1:end]))
+    ie.cursorPos = (startpos - 1) + length(repl) + 1
+    ie.dirty = true
+    editor_checkcursor!(ie)
+    ie
+end
+
+# Longest common (case-sensitive) prefix of a candidate list — used to advance a
+# completion as far as it is unambiguous before offering a picker.
+function longest_common_prefix(strs)
+    isempty(strs) && return ""
+    p = collect(first(strs))
+    for s in strs
+        cs = collect(s)
+        n = min(length(p), length(cs))
+        k = 0
+        while k < n && p[k+1] == cs[k+1]
+            k += 1
+        end
+        p = p[1:k]
+        isempty(p) && break
+    end
+    String(p)
+end
+
 "Replace the buffer wholesale (e.g. after a calendar/enum picker round-trip)."
 function editor_set_buffer!(ie::InlineEditor, s::AbstractString)
     ie.buffer = String(s)

@@ -20,7 +20,11 @@ mutable struct TwEntryData
     allow_calendar::Bool # `?` opens the calendar even for a non-Date (String) field
     hintfn::Union{Nothing,Function} # buffer -> hint text, redrawn every keystroke on an extra line under the field
     choices::Union{Nothing,Vector{String}} # `?` opens a preset popup (free text still allowed); unlike enumvalues, the field stays free-text
-    TwEntryData(dt::DataType) = new(InlineEditor(dt), false, true, -1, false, false, nothing, nothing)
+    latex_complete::Bool # Tab completes a `\name` sequence before the cursor into its unicode char (else Tab yields to focus nav)
+    word_complete::Union{Nothing,Function} # prefix -> Vector{String}: Tab (after latex) completes the identifier before the cursor against these candidates
+    validator::Union{Nothing,Function} # value -> Bool: commit (Enter / blur) is refused unless this passes, so a form never harvests an invalid value
+    detailfn::Union{Nothing,Function} # buffer -> String: F6 shows the full text in a scrollable popup (untruncated errors / help)
+    TwEntryData(dt::DataType) = new(InlineEditor(dt), false, true, -1, false, false, nothing, nothing, false, nothing, nothing, nothing)
 end
 
 # The editor-state fields moved into `editor`, but `inputText`/`cursorPos`/etc.
@@ -69,6 +73,10 @@ function newTwEntry(
     allow_calendar::Bool = false,
     hintfn::Union{Nothing,Function} = nothing,
     choices::Union{Nothing,Vector{String}} = nothing,
+    latex_complete::Bool = false,
+    word_complete::Union{Nothing,Function} = nothing,
+    validator::Union{Nothing,Function} = nothing,
+    detailfn::Union{Nothing,Function} = nothing,
     key::Union{Nothing,Symbol} = nothing,
 )
 
@@ -85,6 +93,10 @@ function newTwEntry(
     data.allow_calendar = allow_calendar # `?` pops the calendar even for a String field
     data.hintfn = hintfn             # live hint line under the field, recomputed per keystroke
     data.choices = choices           # `?` → preset popup that writes into the buffer
+    data.latex_complete = latex_complete # Tab expands a `\name` sequence into its unicode char
+    data.word_complete = word_complete   # Tab (after latex) completes an identifier prefix
+    data.validator = validator           # commit refused unless this passes
+    data.detailfn = detailfn             # F6 → full-text popup
 
     obj = TwObj(data, Val{:Entry})
 
@@ -212,6 +224,57 @@ function activateTwObj(o::TwObj{TwEntryData}, tokens::Any = nothing)
     invoke(activateTwObj, Tuple{TwObj,Any}, o, tokens)
 end
 
+# Commit the editor's buffer, then run the optional validator: a value that the
+# editor parses but the validator rejects is treated as a failed commit (so a
+# form never harvests it). Empty/validator-less fields commit as before.
+function _entry_commit(o::TwObj{TwEntryData})
+    ed = o.data.editor
+    (v, ok) = editor_commit(ed)
+    vfn = getfield(o.data, :validator)
+    if ok && vfn !== nothing && !(vfn(v)::Bool)
+        ok = false
+    end
+    (v, ok)
+end
+
+# Tab identifier completion: locate the word before the cursor and complete it
+# against `word_complete(prefix)`. One candidate → insert it; several → advance
+# to the longest common prefix, and if that can't extend, open a substring
+# picker. Returns true when the Tab was consumed (something happened / a picker
+# was shown), false when there is nothing to complete (so Tab can move focus).
+function _entry_word_complete!(o::TwObj{TwEntryData})
+    ed = o.data.editor
+    wc = getfield(o.data, :word_complete)
+    w = editor_word_before_cursor(ed)
+    w === nothing && return false
+    (prefix, sp, ep) = w
+    isempty(prefix) && return false
+    cands = collect(String, wc(prefix))
+    isempty(cands) && return false
+    if length(cands) == 1
+        editor_replace_range!(ed, sp, ep, cands[1])
+        return true
+    end
+    lcp = longest_common_prefix(cands)
+    if length(lcp) > length(prefix)
+        editor_replace_range!(ed, sp, ep, lcp)
+        return true
+    end
+    # ambiguous and can't extend → let the user pick
+    global rootTwScreen
+    popup = newTwPopup(rootTwScreen, sort(cands);
+        posy = :center, posx = :center,
+        title = "complete '$prefix'",
+        substrsearch = true,
+        maxheight = min(length(cands) + 2, 12),
+        maxwidth = max(maximum(length, cands) + 4, 20),
+    )
+    pick = activateTwObj(popup)
+    unregisterTwObj(rootTwScreen, popup)
+    pick !== nothing && editor_replace_range!(ed, sp, ep, pick)
+    return true
+end
+
 function bindings(o::TwObj{TwEntryData})
     ed = o.data.editor
     [
@@ -222,8 +285,23 @@ function bindings(o::TwObj{TwEntryData})
         Binding([:enter, Symbol("return")], "confirm",
                 when   = _-> ed.enumvalues === nothing,
                 action = _->begin
-                    (v, ok) = editor_commit(ed)
+                    (v, ok) = _entry_commit(o)
                     ok ? (o.value = v; Accept) : (beep(); Handled)
+                end),
+        Binding(:F6, "details",
+                when   = _-> getfield(o.data, :detailfn) !== nothing,
+                action = _->begin
+                    txt = try
+                        string(getfield(o.data, :detailfn)(ed.buffer))
+                    catch err
+                        sprint(showerror, err)
+                    end
+                    global rootTwScreen
+                    v = newTwViewer(rootTwScreen, txt;
+                        posy = :center, posx = :center, title = "details")
+                    activateTwObj(v)
+                    unregisterTwObj(rootTwScreen, v)
+                    Handled
                 end),
         Binding(:shift_up, "increase by tick",
                 when   = _-> (ed.valuetype <: Real || ed.valuetype <: Date) && ed.tickSize != 0,
@@ -313,12 +391,28 @@ function inject(o::TwObj{TwEntryData}, token)
 
     # focus_off: not a user binding; commit on blur
     if token == :focus_off
-        (v, ok) = editor_commit(ed)
+        (v, ok) = _entry_commit(o)
         if ok
             o.value = v
             return Accept
         end
         return Handled  # invalid → editor set incomplete; stay
+    end
+
+    # Tab completion (opt-in), tried in order so neither steps on the other or on
+    # focus navigation:
+    #   1. LaTeX `\name` → char (\circ → ∘, \ne → ≠)
+    #   2. identifier prefix → column / function name (may open a picker)
+    # If nothing completes, yield Tab (Ignored) so a form/list cycles focus.
+    if token == :tab &&
+       (getfield(data, :latex_complete) || getfield(data, :word_complete) !== nothing)
+        if getfield(data, :latex_complete) && editor_latex_complete!(ed)
+            refresh(o); return Handled
+        end
+        if getfield(data, :word_complete) !== nothing && _entry_word_complete!(o)
+            refresh(o); return Handled
+        end
+        return Ignored
     end
 
     # Bindings table (esc, enter, shift_up/down, m, ?)

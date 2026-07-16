@@ -9,6 +9,7 @@ using Printf
 using BusinessDays
 import Notcurses as NC
 import JuliaSyntaxHighlighting
+import REPL   # REPL.REPLCompletions.latex_symbols — canonical \name→char table for Tab completion
 using PrecompileTools: @setup_workload, @compile_workload
 using Base.Meta
 
@@ -70,12 +71,14 @@ include("twfunc.jl")
 include("twpopup.jl")
 include("twmultiselect.jl")
 include("twcalendar.jl")
+include("tableconfig.jl")  # TableConfig: serializable DfTable-layout snapshot (needs no widget types)
 include("twdftable.jl")
 include("twlist.jl")
 include("twlabel.jl")
 include("twedittable.jl")
 include("twdicttree.jl")
 include("twbuilder.jl")
+include("twspecentry.jl")  # spec-string entry (parseaggr/parsedim) — needs newTwEntry + register_twlayout_widget!
 include("twstatusbar.jl")
 include("precompile.jl")  # PrecompileTools workload — must come last (needs every widget defined)
 
@@ -89,9 +92,11 @@ export Flex, natural_height, natural_width
 export newTwEntry, newTwTree, newTwFileBrowser, newTwFunc, newTwViewer
 export newTwCalendar, newTwPopup, newTwMultiSelect, newTwImage
 export newTwDfTable, newTwList
+export TableConfig, table_config
 export newTwEditTable, TwEditTableCol
 export newTwDictTree
 export newTwSpacer, newTwLabel, newTwSeparator
+export newTwSpecEntry, spec_templates
 export newTwStatusBar
 export Observable, set!, on, off, subscribe!
 export exprstring

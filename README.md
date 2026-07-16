@@ -1,6 +1,6 @@
 # TermWin.jl
 
-## Introducation
+## Introduction
 TermWin is a Julia based terminal UI toolkit optimized for
 * data exploration - a capable tree/table viewer to help users quickly gain an understanding on
   complex tree structures (a package, a file directory, a julia expression AST, a heavily nested dictionary, etc.) 
@@ -62,7 +62,7 @@ tshow(:( f(x) = x^2 + 1 ) )        # expression tree — useful for understandin
 tshow(TermWin)                     # module browser
 tshow(sort!)                       # method table
 tshow(DataFrame(a=1:3, b=["x","y","z"]))   # DataFrame table
-tshow(DataFrame(a=1:3, b=["x","y","z"]),cols::Vector{TwEditTableCol} )   # editable DataFrame table (2nd arg is important)
+tshow(DataFrame(a=1:3, b=["x","y","z"]), colspecs)   # editable table; colspecs::Vector{TwEditTableCol} (2nd arg matters)
 tshow("./","path")                 # file browser (2nd argument "path" required)
 tshow( code_snippet,"julia")       # show julia code with syntax coloring (2nd argument "julia" required, or coloring won't happen)
 tshow( code_snippet,"julia:pathname.jl")  # show julia code with syntax coloring, and a shortcut to launch to vim
@@ -70,7 +70,7 @@ tshow( code_snippet,"julia:pathname.jl")  # show julia code with syntax coloring
 
 Press **F1** inside any viewer for a full keyboard reference. Press **Esc** to exit.
 
-Note: later on, you will find that tshow is indispensible when compositing a UI. Read-only widgets can be readily shown by just tshow()'ing 
+Note: later on, you will find that tshow is indispensable when compositing a UI. Read-only widgets can be readily shown by just tshow()'ing 
 the thing.
 
 ### 2 — Collect a value from the user
@@ -216,10 +216,10 @@ TermWin.endsession()
 println(w.value)   # selected file path, or nothing
 ```
 
-Or trigger from `tshow` using the `"path:"` prefix:
+Or trigger from `tshow` by passing `"path"` as the second argument:
 
 ```julia
-tshow("./src", "path" )
+tshow("./src", "path")
 ```
 
 Preview is shown automatically for `.jl`, `.txt`, `.md`, `.log`, `.toml`, `.csv`,
@@ -327,7 +327,10 @@ More elaborate example:
 | `posy` | `Int` or `Symbol` | Vertical position: `:center`, `:top`, `:bottom`, `:staggered`, `:random` |
 
 `tshow` returns the widget object. Call `tshow(widget)` again to re-display it with
-its previous state (pivot selections, column order, etc.) preserved.
+its previous state (pivot selections, column order, etc.) preserved. For a
+DataFrame table, `table_config(widget)` extracts that layout as a serializable
+value you can store and later replay with `tshow(df; config=cfg)` — see
+[Saving and restoring a layout](#saving-and-restoring-a-layout).
 
 ---
 
@@ -383,7 +386,7 @@ weights                   # now available in Main
 |:-------|:-----|:------------|
 | `pivots` | `Array{Symbol}` | Columns to group by; determines the tree hierarchy |
 | `initdepth` | `Int` | Number of pivot levels open at start (default 1) |
-| `calcpivots` | `Dict{Symbol,CalcPivot}` | Dynamic computed pivot columns (see below) |
+| `calcpivots` | `Dict{Symbol,Any}` | Dynamic computed pivot columns (see below) |
 
 ### Column display options
 
@@ -398,34 +401,55 @@ weights                   # now available in Main
 
 ### Aggregation
 
-`aggrHints` accepts a `Dict{Any,Any}` keyed by column name (`Symbol`) or type.
-Values are expressions where `:_` is replaced by the column being aggregated:
+`aggrHints` accepts a `Dict{Any,Any}` keyed by column name (`Symbol`) or type. A
+value is an `Expr` (or `Symbol`/`Function`) where `:_` stands for the column being
+aggregated. `Expr` specs are *trusted* — they may call module-qualified functions
+that resolve against your loaded packages:
 
 ```julia
+using StatsBase   # for the weighted mean below
 aggrHints = Dict{Any,Any}(
-    :score  => :( mean(:_) ),
+    :score  => :( mean(:_) ),                                        # mean (Statistics)
     :count  => :( sum(:_) ),
-    :salary => :( mean(:_, weights(:headcount)) ),   # weighted mean
-    String  => :( uniqvalue(:_) ),                   # fallback for all String cols
+    :salary => :( StatsBase.mean(:_, StatsBase.Weights(:headcount)) ),  # weighted mean
+    String  => :( uniqvalue(:_) ),                                   # fallback for all String cols
 )
 ```
 
 Built-in aggregation helpers: `uniqvalue` (value if all identical, else missing),
 `unionall` (union of array-typed cells).
 
+You can also override a column's aggregation **interactively** inside the viewer
+with the **a** key, which opens a spec entry (type-aware templates, live parse
+checking, Tab completion). There `_` is the column and sibling columns are named
+directly, e.g. `sum(_ * wt) / sum(wt)`. A blank spec reverts to the default.
+
 ### Calculated pivots
 
-`CalcPivot` creates a derived grouping column computed at runtime from the current subtree:
+`calcpivots` adds derived grouping columns computed at runtime. It is a
+`Dict{Symbol,Any}` mapping a name to a dimension spec: a `dimspec(...)` (wrapping a
+trusted `Expr`, optionally with `by=`/`kind=`), a bare `Expr`, an untrusted
+`dim"..."` string, or a `Function`. (`dimspec`, `discretize`, `topnames`, and
+`@dim_str` are re-exported by `TermWin`.)
 
 ```julia
 calcpivots = Dict{Symbol,Any}(
-    :score_band => CalcPivot(:(discretize(:score, [60,70,80,90], rank=true)), :region),
-    :top5       => CalcPivot(:(topnames(:name, :score, 5))),
+    # per-group buckets: aggregate :score per :region, then classify the groups → a pivot
+    :score_band  => dimspec(:( discretize(:score, [60,70,80,90], rank=true) ); by=:region, kind=:pivot),
+    # row-level quantile buckets (no `by`) → a window dimension
+    :score_qtile => dimspec(:( discretize(:score, ngroups=4) )),
+    # topnames is a classifier verb — the name column is auto-inferred as the group key
+    :top5        => dimspec(:( topnames(:name, :score, 5) )),
 )
 ```
 
-`discretize(col, breaks; rank, compact, reverse, label, ...)` — bucket a numeric column.
-`topnames(name_col, measure_col, n; others, dense, ...)` — top-N names by measure.
+`discretize(col, breaks; rank, compact, reverse, label, ngroups, ...)` — bucket a
+numeric column. `topnames(name_col, measure_col, n; ...)` — top-N names by measure.
+
+Trusted `Expr` specs use `:col` symbols and may call module-qualified functions;
+untrusted `dim"..."` strings use bare-identifier columns and are eval-free (safe to
+accept from end users). You can also define a calculated dimension **interactively**
+inside the viewer with the **P** key.
 
 ### Multiple views
 
@@ -437,6 +461,38 @@ views = [
 ```
 
 Switch views inside the DataFrame viewer with the **v** key.
+
+### Saving and restoring a layout
+
+While viewing a table you can build up a layout interactively — reorder pivots
+(**p**), define a new calculated dimension (**P**), and override the current
+column's aggregation (**a**). `table_config` captures that layout as a
+serializable value, and the `config=` keyword replays it into a fresh table:
+
+```julia
+w   = tshow(df)                            # explore: pivot, define dims (P), override aggrs (a), then Esc
+cfg = table_config(w; name = "by-region")  # capture the layout (tshow returns the widget)
+
+d   = Dict(cfg)                            # → Dict{String,Any}; persist however you like (TOML / JSON / DB)
+# ... next session ...
+tshow(df2; config = TableConfig(d))        # replay the layout onto another DataFrame
+```
+
+`TableConfig` records the applied pivots, visible columns and their order, column
+widths, user-defined calculated dimensions, and per-column aggregation overrides.
+It is backend-neutral: `Dict(cfg)` gives a plain `Dict` any serializer can write,
+and `TableConfig(dict)` reconstructs it. TermWin ships no file/database layer —
+where and how you store the `Dict` is your choice.
+
+Two properties make a stored config safe to share or hand-edit:
+
+- **Schema-resilient** — a config applied to a DataFrame that is missing some of
+  its columns just drops the absent references instead of erroring, so one layout
+  works across related frames.
+- **No code execution** — calculated-dimension and aggregation specs are stored
+  as their source text and re-parsed on load through the *untrusted* safe grammar
+  (no `eval`). A config can declare aggregations and dimensions but can never run
+  arbitrary code.
 
 ---
 
@@ -503,11 +559,16 @@ be resized smaller than **3 rows tall** or **15 columns wide**.
 | Key | Action |
 |:----|:-------|
 | Arrow keys / PgUp / PgDn | Navigate rows and columns |
-| Enter | Expand / collapse pivot group |
+| Enter / Space | Expand / collapse pivot group |
+| `+` / `-` | Expand / collapse all |
 | p | Edit pivot column order |
+| P | Define a calculated dimension (spec entry) |
+| a | Override the current column's aggregation (spec entry) |
+| c | Choose visible columns and their order |
+| `[` / `]` | Narrow / widen the current column |
 | v | Switch between saved views |
-| s | Sort by current column |
 | / | Search |
+| Ctrl-Y | Export to CSV / Excel |
 | F1 | Full keyboard reference |
 
 ---
@@ -532,6 +593,7 @@ julia --project=. test/formlayout_test.jl       # composable data-entry form
 julia --project=. test/formlayout_test2.jl      # form with divider labels
 julia --project=. test/buildertest.jl           # @twlayout with DataFrame + viewer
 julia --project=. test/dataframe.jl             # DataFrame pivot viewer
+julia --project=. test/spec_entry.jl            # dim/aggr spec entry: live parse, templates, Tab completion
 julia --project=. test/entry_listofthings.jl    # manual layout with newTwList
 julia --project=. test/keystrokes.jl            # interactive key/mouse/unicode tester
 ```

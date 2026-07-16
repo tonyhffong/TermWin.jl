@@ -1,4 +1,4 @@
-defaultTableBottomText = "F1:help p:Pivot P:DefineDim c:ColOrd v:Views  F2:Describe  Ctrl-Y:Export"
+defaultTableBottomText = "F1:help p:Pivot P:DefineDim a:Aggr c:ColOrd v:Views  F2:Describe  Ctrl-Y:Export"
 
 mutable struct TwTableColInfo
     name::Symbol
@@ -333,6 +333,7 @@ function newTwDfTable(
     views = Dict{Symbol,Any}[],
     calcpivots = Dict{Symbol,Any}(),
     showRoot::Bool = true,
+    config::Union{Nothing,TableConfig,AbstractDict} = nothing,
 )
     obj = TwObj(TwDfTableData(), Val{:DfTable})
     obj.data.showRoot = showRoot
@@ -345,6 +346,19 @@ function newTwDfTable(
     obj.data.rootnode.context = WeakRef(obj.data)
 
     obj.data.calcpivots = calcpivots
+    # Hydration: a TableConfig (or its Dict form) reapplies a saved layout. Its
+    # calc-dimensions must be registered BEFORE rebuildColumns! so pivot
+    # resolution's `present` set includes them; the rest (pivots/sortorder/
+    # columns/widths/aggr overrides) is applied after, once allcolInfo exists.
+    cfg = config === nothing ? nothing :
+          config isa TableConfig ? config : TableConfig(config)
+    if cfg !== nothing
+        for (nm, src) in cfg.calcpivots
+            sym = Symbol(nm)
+            sym in propertynames(df) && continue        # never shadow a real column
+            obj.data.calcpivots[sym] = parsedim(src)     # UNTRUSTED: safe grammar, no eval
+        end
+    end
     # Retain the raw construction hints so setvalue! can rebuild the column
     # metadata from scratch if a replacement DataFrame carries a different schema.
     obj.data.buildopts = (
@@ -360,8 +374,11 @@ function newTwDfTable(
         headerHints = headerHints,
     )
     rebuildColumns!(obj, df)
+    # Apply the rest of a hydrated layout now that allcolInfo exists. Uses
+    # o.initdepth below (config may have changed it).
+    cfg === nothing || _apply_table_config!(obj, cfg, df)
 
-    expandnode(obj.data.rootnode, initdepth)
+    expandnode(obj.data.rootnode, obj.data.initdepth)
     ordernode(obj.data.rootnode)
     builddatalist(obj.data)
 
@@ -1357,6 +1374,115 @@ function _dt_add_dimension!(o::TwObj{TwDfTableData}, name::AbstractString, specs
     sym
 end
 
+# Drop column `c` from every node's aggregation cache so the next draw recomputes
+# it with the column's current aggr. Cheaper than a full tree rebuild -- the tree
+# STRUCTURE is unchanged by an aggregation change, only the cached values are.
+function _dt_invalidate_col!(o::TwObj{TwDfTableData}, c::Symbol)
+    function walk(n::TwDfTableNode)
+        delete!(n.colvalcache, c)
+        for ch in n.children
+            ch isa TwDfTableNode && walk(ch)
+        end
+    end
+    walk(o.data.rootnode)
+    o
+end
+
+# Runtime override of a column's aggregation. `specstr` is parsed by the UNTRUSTED
+# safe grammar (parseaggr -- no eval; `_` is the column being aggregated, other
+# bare identifiers are sibling columns), so it is safe to accept from a text
+# field. A blank spec reverts the column to its resolved default (AggrHints ->
+# eltype -> defaultAggr). Throws on an invalid spec or an unknown column ref.
+function _dt_set_aggr!(o::TwObj{TwDfTableData}, col::Symbol, specstr::AbstractString)
+    haskey(o.data.allcolInfo, col) || error("unknown column " * string(col))
+    s = strip(specstr)
+    if isempty(s)
+        t = eltype(o.data.rootnode.subdataframe[!, col])
+        o.data.allcolInfo[col].aggr = resolveaggr(o.data.aggrHints, col, t)
+    else
+        cols = Symbol.(names(o.data.rootnode.subdataframe))
+        o.data.allcolInfo[col].aggr = parseaggr(s; columns = cols)  # UNTRUSTED safe grammar
+    end
+    _dt_invalidate_col!(o, col)
+    o
+end
+
+# Render a column's current aggr back to editable spec text, to seed the `a`
+# entry. Safe strings carry their `.source`; a Symbol/Expr default renders too; a
+# raw Function default has no text form (blank -> the field shows the default).
+_dt_aggr_source(aggr) =
+    aggr isa SafeAggrSpec ? aggr.source :
+    aggr isa Symbol       ? string(aggr) :
+    aggr isa Expr         ? exprstring(aggr) :
+    ""
+
+"""
+    table_config(w::TwObj{TwDfTableData}; name="") -> TableConfig
+
+Extract the current layout of a DataFrame table as a serializable [`TableConfig`]:
+applied pivots, visible columns and order, per-column widths, user-typed
+calculated dimensions, and per-column aggregation overrides. `tshow(df)` returns
+the widget, so `table_config(that_widget)` captures the layout after the user
+closes the table. Only the safe-string user specs are captured — trusted
+`Expr`/`Function` calc-dimensions (from construction) are skipped.
+"""
+function table_config(w::TwObj{TwDfTableData}; name::AbstractString = "")
+    o = w.data
+    # only user-typed (safe-grammar) specs carry a serializable source
+    calc = Dict{String,String}(
+        string(k) => v.source for (k, v) in o.calcpivots if v isa SafeDimSpec)
+    aggrs = Dict{String,String}(
+        string(c) => ci.aggr.source
+        for (c, ci) in o.allcolInfo if ci.aggr isa SafeAggrSpec)
+    TableConfig(;
+        name       = name,
+        schema     = sort(String[string(n) for n in names(o.rootnode.subdataframe)]),
+        pivots     = String[string(p) for p in o.pivots],
+        columns    = String[string(ci.name) for ci in o.colInfo],
+        sortorder  = Tuple{String,String}[(string(c), string(d)) for (c, d) in o.sortorder],
+        initdepth  = o.initdepth,
+        widths     = Dict{String,Int}(string(ci.name) => ci.format.width for ci in o.colInfo),
+        calcpivots = calc,
+        aggrs      = aggrs,
+    )
+end
+
+# Apply a hydrated TableConfig to a freshly-built table (called from newTwDfTable
+# after rebuildColumns!). Mirrors the `v`/views binding — sets pivots/sortorder/
+# initdepth/visible-colInfo — and additionally applies width and aggregation
+# overrides. Config calc-dimensions are merged into o.calcpivots BEFORE
+# rebuildColumns! (see newTwDfTable), so they are already `present` here.
+# Column refs absent from the frame are dropped (schema-resilient), and every
+# aggregation source is re-parsed through the UNTRUSTED safe grammar.
+function _apply_table_config!(obj::TwObj{TwDfTableData}, cfg::TableConfig, df::DataFrame)
+    o = obj.data
+    present = union(Set(Symbol.(names(df))), keys(o.calcpivots))
+    realcols = Set(Symbol.(names(df)))
+
+    o.initdepth = cfg.initdepth
+    o.pivots = Symbol[Symbol(p) for p in cfg.pivots if Symbol(p) in present]
+    o.sortorder = Tuple{Symbol,Symbol}[
+        (Symbol(c), Symbol(d)) for (c, d) in cfg.sortorder if Symbol(c) in present]
+
+    # per-column aggregation overrides (real columns only), untrusted safe parse
+    cols = Symbol.(names(df))
+    for (c, src) in cfg.aggrs
+        sym = Symbol(c)
+        haskey(o.allcolInfo, sym) && (o.allcolInfo[sym].aggr = parseaggr(src; columns = cols))
+    end
+    # width overrides
+    for (c, wdt) in cfg.widths
+        sym = Symbol(c)
+        haskey(o.allcolInfo, sym) && (o.allcolInfo[sym].format.width = wdt)
+    end
+    # visible columns + order (real columns; calcpivots are pivots, not value cols)
+    vis = Symbol[Symbol(c) for c in cfg.columns if Symbol(c) in realcols]
+    if !isempty(vis)
+        o.colInfo = TwTableColInfo[o.allcolInfo[c] for c in vis]
+    end
+    obj
+end
+
 function bindings(o::TwObj{TwDfTableData})
     [
         Binding(:esc, "cancel", action = _-> Cancel),
@@ -1439,13 +1565,13 @@ function bindings(o::TwObj{TwDfTableData})
                 nm = activateTwObj(namehelper)
                 unregisterTwObj(_dt_screen(o), namehelper)
                 (nm === nothing || strip(nm) == "") && return Handled
-                # 2) type the spec -- parsed live via the untrusted safe grammar; a
-                #    throwing hintfn shows the parse error inline instead of failing.
-                spechelper = newTwEntry(_dt_screen(o), String;
-                    width=48, posy=:center, posx=:center,
-                    title="Spec (e.g. discretize(score,[0,20,40]) |> groupby(region)): ",
-                    hintfn = s -> (strip(s) == "" ? "" :
-                                   (parsedim(s); "✓ valid dimension spec")))
+                # 2) type the spec -- a spec entry over the untrusted safe grammar:
+                #    type-aware `?` templates, `\name`/column/op Tab completion,
+                #    commit gated on a valid parse, F6 for the full diagnostic.
+                spechelper = newTwSpecEntry(_dt_screen(o), :dim;
+                    width=60, posy=:center, posx=:center,
+                    coltypes = o.data.rootnode.subdataframe,
+                    title="Dim spec: ")
                 spec = activateTwObj(spechelper)
                 unregisterTwObj(_dt_screen(o), spechelper)
                 (spec === nothing || strip(spec) == "") && return Handled
@@ -1457,6 +1583,30 @@ function bindings(o::TwObj{TwDfTableData})
                 catch err
                     tshow(sprint(showerror, err); title="Invalid dimension",
                         posx=:center, posy=:center)
+                end
+                Handled
+            end),
+        Binding("a", "aggr spec",
+            when   = _-> !isempty(o.data.colInfo),
+            action = _-> begin
+                # Override the aggregation of the column under the cursor. Same
+                # spec-entry affordances as `P`; a blank spec reverts to default.
+                ci  = clamp(o.data.currentCol, 1, length(o.data.colInfo))
+                col = o.data.colInfo[ci].name
+                entry = newTwSpecEntry(_dt_screen(o), :aggr;
+                    width=60, posy=:center, posx=:center,
+                    coltypes = o.data.rootnode.subdataframe,
+                    title="Aggr for $(col) (blank=default): ")
+                apply_default!(entry, _dt_aggr_source(o.data.allcolInfo[col].aggr))
+                spec = activateTwObj(entry)
+                unregisterTwObj(_dt_screen(o), entry)
+                if spec !== nothing  # Esc leaves the aggregation unchanged
+                    try
+                        _dt_set_aggr!(o, col, spec)
+                    catch err
+                        tshow(sprint(showerror, err); title="Invalid aggregation",
+                            posx=:center, posy=:center)
+                    end
                 end
                 Handled
             end),

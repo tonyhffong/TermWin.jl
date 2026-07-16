@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "f827a1e034ce37e20f68b6a74419162efeef6921"
+project_hash = "85d8a8dbbc5a08ae0f333de3f9182004d82c8705"
 
 [[deps.Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -81,7 +81,7 @@ version = "1.16.0"
 deps = ["CategoricalArrays", "DataFrames", "Format", "Statistics"]
 path = "/Users/tonyfong/Library/CloudStorage/Dropbox/Julia/DataFrameAggrSpec"
 uuid = "4c62cbce-0791-40fe-9350-fe7851d5d418"
-version = "0.7.0"
+version = "0.8.0"
 
 [[deps.DataFrames]]
 deps = ["Compat", "DataAPI", "DataStructures", "Future", "InlineStrings", "InvertedIndices", "IteratorInterfaceExtensions", "LinearAlgebra", "Markdown", "Missings", "PooledArrays", "PrecompileTools", "PrettyTables", "Printf", "Random", "Reexport", "SentinelArrays", "SortingAlgorithms", "Statistics", "TableTraits", "Tables", "Unicode"]
@@ -450,7 +450,7 @@ uuid = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 version = "1.13.0"
 
 [[deps.TermWin]]
-deps = ["BusinessDays", "CategoricalArrays", "DataFrameAggrSpec", "DataFrames", "Dates", "Format", "JuliaSyntaxHighlighting", "Notcurses", "PrecompileTools", "Printf", "Statistics"]
+deps = ["BusinessDays", "CategoricalArrays", "DataFrameAggrSpec", "DataFrames", "Dates", "Format", "JuliaSyntaxHighlighting", "Notcurses", "PrecompileTools", "Printf", "REPL", "Statistics"]
 path = "."
 uuid = "ddbe2de8-fbff-40aa-a5ae-e0ef0f1059f5"
 version = "0.1.0"
