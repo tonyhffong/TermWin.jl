@@ -448,8 +448,17 @@ numeric column. `topnames(name_col, measure_col, n; ...)` — top-N names by mea
 
 Trusted `Expr` specs use `:col` symbols and may call module-qualified functions;
 untrusted `dim"..."` strings use bare-identifier columns and are eval-free (safe to
-accept from end users). You can also define a calculated dimension **interactively**
-inside the viewer with the **P** key.
+accept from end users).
+
+You can also **define** calculated dimensions interactively with the **P** key,
+which opens a small editor table of them — the `name` and the `spec` (edited in a
+popup with type-aware templates and live parse-checking). `Ctrl-N` adds a
+dimension, `Ctrl-D` deletes one, and `F10` applies. Dimensions created here go
+through the untrusted safe grammar; ones defined as trusted `Expr`/`Function` at
+construction are shown **read-only** (tinted, and the spec popup won't open for
+them). `P` only *defines* dimensions — to apply and order them as grouping levels,
+use the **p** pivot popup (which lists calculated dimensions alongside real
+columns).
 
 ### Multiple views
 
@@ -562,7 +571,7 @@ be resized smaller than **3 rows tall** or **15 columns wide**.
 | Enter / Space | Expand / collapse pivot group |
 | `+` / `-` | Expand / collapse all |
 | p | Edit pivot column order |
-| P | Define a calculated dimension (spec entry) |
+| P | Define calculated dimensions (add / edit spec / delete); apply them via p |
 | a | Override the current column's aggregation (spec entry) |
 | c | Choose visible columns and their order |
 | `[` / `]` | Narrow / widen the current column |

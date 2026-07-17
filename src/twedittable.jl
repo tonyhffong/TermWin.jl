@@ -23,12 +23,20 @@ struct TwEditTableCol
                                                # the selected string is converted back to Symbol
                                                # by the caller when writing to the DataFrame.
     missingok::Bool                            # missing is ok
+    popup_editor::Union{Nothing,Function}      # Non-nothing → the cell is edited by this popup
+                                               # instead of inline: `(scr, current::String) ->
+                                               # Union{Nothing,String}`; a returned String is
+                                               # written to the cell, `nothing` cancels. Behaves
+                                               # like an enum cell (no inline cursor).
 end
 
-# Convenience constructor: `missingok` defaults to false (it was added after the
-# original 6-field API, so this keeps older colspec definitions working).
+# Convenience constructors: `missingok` (6-arg API) and `popup_editor` (7-arg API)
+# were both added after the original 6-field colspec, so these keep older
+# definitions compiling.
 TwEditTableCol(name, title, width, editable, valuetype, enumvalues) =
-    TwEditTableCol(name, title, width, editable, valuetype, enumvalues, false)
+    TwEditTableCol(name, title, width, editable, valuetype, enumvalues, false, nothing)
+TwEditTableCol(name, title, width, editable, valuetype, enumvalues, missingok) =
+    TwEditTableCol(name, title, width, editable, valuetype, enumvalues, missingok, nothing)
 
 mutable struct TwEditTableData
     df::DataFrame
@@ -40,7 +48,19 @@ mutable struct TwEditTableData
     editor::InlineEditor   # the active cell's inline editor (state + parse/format)
     bottomText::String
     history::EditHistory{DataFrame}
+    reorderable::Bool                          # Shift-Up/Down move the current row
+    pin_col::Union{Nothing,Symbol}             # a Bool column whose `true` rows are kept
+                                               # strictly on top (stable), toggled by Space;
+                                               # reordering is confined to a pin group
+    row_style::Union{Nothing,Function}         # (df, row)->Union{Nothing,TwAttr}: per-row
+                                               # background override for non-current rows
 end
+
+# Back-compat convenience: the reorderable / pin_col / row_style fields were added
+# after the original 9-field struct, so a 9-arg construction still works.
+TwEditTableData(df, colspecs, cr, cc, ct, cl, editor, bottomText, history) =
+    TwEditTableData(df, colspecs, cr, cc, ct, cl, editor, bottomText, history,
+                    false, nothing, nothing)
 
 function newTwEditTable(
     scr::TwObj,
@@ -54,6 +74,9 @@ function newTwEditTable(
     box::Bool = true,
     key::Union{Nothing,Symbol} = nothing,
     bottomText::String = defaultEditTableBottomText,
+    reorderable::Bool = false,
+    pin_col::Union{Nothing,Symbol} = nothing,
+    row_style::Union{Nothing,Function} = nothing,
 )
     data = TwEditTableData(
         df,
@@ -62,7 +85,12 @@ function newTwEditTable(
         InlineEditor(String; width = 1),   # placeholder; _et_load_cell! builds the real one
         bottomText,
         EditHistory{DataFrame}(copy(df)),
+        reorderable,
+        pin_col,
+        row_style,
     )
+    # A pin column starts with its `true` rows floated to the top (stable).
+    pin_col !== nothing && nrow(df) > 0 && _et_repartition!(data, 1)
     obj = TwObj(data, Val{:EditTable})
     obj.box = box
     obj.title = title
@@ -85,6 +113,8 @@ function _et_cell_to_buf(val, col::TwEditTableCol)::String
     val === missing && return ""
     if col.enumvalues !== nothing || col.valuetype <: AbstractString
         return string(val)
+    elseif col.valuetype == Bool
+        return val === true ? "true" : "false"   # Bool <: Number, so this must precede the numeric branch
     elseif col.valuetype <: Date
         return Dates.format(Date(val), "yyyy-mm-dd")
     elseif col.valuetype <: Number
@@ -113,6 +143,13 @@ function _et_commit_cell!(data::TwEditTableData)::Bool
     !col.editable && return true
     ed = data.editor
     was_dirty = ed.dirty
+
+    # Popup-editor cells: the value is written by the popup, not inline — nothing
+    # to parse on commit.
+    col.popup_editor !== nothing && return true
+
+    # Pin-column cells are toggled by Space, not inline-parsed.
+    col.name === data.pin_col && return true
 
     # Enum cells: the value is written on popup selection. With missingok we also
     # accept an in-list value or an empty (→ missing) buffer.
@@ -242,6 +279,60 @@ function _et_insert_row_after!(data::TwEditTableData, after_row::Int)
     insert!(data.df, after_row + 1, new_row)
 end
 
+# ── pinned-rows-on-top + row reordering (opt-in via pin_col / reorderable) ─────
+# Swap two data rows in place (all columns).
+function _et_swap_rows!(data::TwEditTableData, a::Int, b::Int)
+    for c in propertynames(data.df)
+        data.df[a, c], data.df[b, c] = data.df[b, c], data.df[a, c]
+    end
+end
+
+# Stable-partition rows so the pin column's `true` rows come first (relative order
+# preserved within each group); returns the new index of the tracked row.
+function _et_repartition!(data::TwEditTableData, keeprow::Int)::Int
+    pc = data.pin_col
+    (pc === nothing || nrow(data.df) <= 1) && return keeprow
+    n = nrow(data.df)
+    perm = sort(collect(1:n);
+        by = i -> (data.df[i, pc] === true ? 0 : 1), alg = Base.Sort.MergeSort)
+    perm == collect(1:n) && return keeprow
+    data.df = data.df[perm, :]
+    np = findfirst(==(keeprow), perm)
+    np === nothing ? keeprow : np
+end
+
+# Shift-Up/Down: move the current row by `delta`, confined to its pin group (can't
+# cross the pinned/unpinned boundary — use the toggle for that).
+function _et_reorder!(o::TwObj{TwEditTableData}, delta::Int)
+    data = o.data
+    r = data.currentRow
+    t = r + delta
+    (t < 1 || t > nrow(data.df)) && (beep(); return Handled)
+    if data.pin_col !== nothing &&
+       (data.df[r, data.pin_col] === true) != (data.df[t, data.pin_col] === true)
+        beep(); return Handled
+    end
+    _et_swap_rows!(data, r, t)
+    data.currentRow = t
+    push_snapshot!(data.history, copy(data.df))
+    _et_load_cell!(data); _et_checkTop!(o)
+    Handled
+end
+
+# Space on a pin-column cell: flip the row's pin flag and re-float, keeping the
+# cursor on that row.
+function _et_toggle_pin!(o::TwObj{TwEditTableData})
+    data = o.data
+    pc = data.pin_col
+    pc === nothing && return Handled
+    r = data.currentRow
+    data.df[r, pc] = !(data.df[r, pc] === true)
+    data.currentRow = _et_repartition!(data, r)
+    push_snapshot!(data.history, copy(data.df))
+    _et_load_cell!(data); _et_checkTop!(o)
+    Handled
+end
+
 function _et_format_cell(val, col::TwEditTableCol)::String
     val === missing && return repeat(" ", col.width)
     s = _et_cell_to_buf(val, col)
@@ -265,7 +356,8 @@ function _et_draw_active_cell!(
     o.data.editor.width = col.width
     draw_editor!(
         o.window, y, startx, o.data.editor, o.hasFocus;
-        showcursor = col.editable && col.enumvalues === nothing,
+        showcursor = col.editable && col.enumvalues === nothing &&
+                     col.popup_editor === nothing && o.data.pin_col !== col.name,
     )
 end
 
@@ -402,6 +494,23 @@ function _et_open_enum_popup!(o::TwObj{TwEditTableData})
     end
 end
 
+# Open a column's custom popup editor for the current cell and write back the
+# returned string. Mirrors _et_open_enum_popup!; the editor closure owns whatever
+# widget it shows.
+function _et_open_popup_editor!(o::TwObj{TwEditTableData})
+    global rootTwScreen
+    data = o.data
+    col = data.colspecs[data.currentCol]
+    cur = _et_cell_to_buf(data.df[data.currentRow, col.name], col)
+    result = col.popup_editor(rootTwScreen, cur)
+    if result !== nothing
+        prev = data.df[data.currentRow, col.name]
+        data.df[data.currentRow, col.name] = result
+        (ismissing(prev) || prev != result) && push_snapshot!(data.history, copy(data.df))
+        _et_load_cell!(data)
+    end
+end
+
 # ─── draw ─────────────────────────────────────────────────────────────────────
 
 function draw(o::TwObj{TwEditTableData})
@@ -450,7 +559,9 @@ function draw(o::TwObj{TwEditTableData})
         y = bv + ri
 
         is_current = (r == data.currentRow)
+        custom = data.row_style === nothing ? nothing : data.row_style(data.df, r)
         row_flag = is_current ? (o.hasFocus ? COLOR_PAIR(30) : COLOR_PAIR(13)) :
+                   custom !== nothing ? custom :
                                 (isodd(r)   ? COLOR_PAIR(7)  : COLOR_PAIR(13))
 
         # Paint the full row background
@@ -547,7 +658,7 @@ function bindings(o::TwObj{TwEditTableData})
                 Handled
             end),
         Binding([:enter, Symbol("return")], "move down",
-            when   = _-> begin lc = data.colspecs[data.currentCol]; !(lc.editable && lc.enumvalues !== nothing) end,
+            when   = _-> begin lc = data.colspecs[data.currentCol]; !(lc.editable && (lc.enumvalues !== nothing || lc.popup_editor !== nothing)) end,
             action = _-> begin
                 if _et_commit_cell!(data)
                     data.currentRow < nrow(data.df) ? (data.currentRow += 1) : beep()
@@ -580,7 +691,7 @@ function bindings(o::TwObj{TwEditTableData})
         Binding(:left, "move left / cursor back",
             action = _-> begin
                 lc = data.colspecs[data.currentCol]
-                if lc.editable && lc.enumvalues === nothing && data.editor.cursorPos > 1
+                if lc.editable && lc.enumvalues === nothing && lc.popup_editor === nothing && data.editor.cursorPos > 1
                     data.editor.cursorPos -= 1; editor_checkcursor!(data.editor)
                 elseif _et_commit_cell!(data)
                     data.currentCol > 1 ? (data.currentCol -= 1) : beep()
@@ -593,7 +704,7 @@ function bindings(o::TwObj{TwEditTableData})
         Binding(:right, "move right / cursor forward",
             action = _-> begin
                 lc = data.colspecs[data.currentCol]
-                if lc.editable && lc.enumvalues === nothing && data.editor.cursorPos <= length(data.editor.buffer)
+                if lc.editable && lc.enumvalues === nothing && lc.popup_editor === nothing && data.editor.cursorPos <= length(data.editor.buffer)
                     data.editor.cursorPos += 1; editor_checkcursor!(data.editor)
                 elseif _et_commit_cell!(data)
                     data.currentCol < length(data.colspecs) ? (data.currentCol += 1) : beep()
@@ -623,8 +734,12 @@ function bindings(o::TwObj{TwEditTableData})
                 if _et_commit_cell!(data)
                     _et_insert_row_after!(data, data.currentRow)
                     data.currentRow += 1
+                    # A new (unpinned) row floats below the pinned group.
+                    data.pin_col === nothing ||
+                        (data.currentRow = _et_repartition!(data, data.currentRow))
                     push_snapshot!(data.history, copy(data.df))
-                    first_ed = findfirst(c -> c.editable, data.colspecs)
+                    # Land on the first freely-editable column (skip a toggle-only pin col).
+                    first_ed = findfirst(c -> c.editable && c.name !== data.pin_col, data.colspecs)
                     data.currentCol = first_ed !== nothing ? first_ed : 1
                     _et_load_cell!(data); _et_checkTop!(o); _et_checkLeft!(o)
                 else
@@ -644,6 +759,16 @@ function bindings(o::TwObj{TwEditTableData})
                 end
                 Handled
             end),
+        Binding(" ", "toggle pin",
+            when   = _-> data.pin_col !== nothing &&
+                         data.colspecs[data.currentCol].name === data.pin_col,
+            action = _-> _et_toggle_pin!(o)),
+        Binding(:shift_up, "move row up",
+            when   = _-> data.reorderable,
+            action = _-> _et_reorder!(o, -1)),
+        Binding(:shift_down, "move row down",
+            when   = _-> data.reorderable,
+            action = _-> _et_reorder!(o, 1)),
         Binding(:ctrl_i, "next editable field",
             action = _-> begin
                 if _et_commit_cell!(data)
@@ -741,8 +866,18 @@ function inject(o::TwObj{TwEditTableData}, token)
         return Handled
     end
 
-    # Printable char into an editable non-enum cell
-    if typeof(token) <: AbstractString && col.editable && col.enumvalues === nothing
+    # Printable char or enter into an editable popup-editor cell → open the editor
+    if col.editable && col.popup_editor !== nothing &&
+       (typeof(token) <: AbstractString || token == :enter || token == Symbol("return"))
+        _et_open_popup_editor!(o)
+        refresh(o)
+        return Handled
+    end
+
+    # Printable char into an editable non-enum, non-popup, non-pin cell
+    if typeof(token) <: AbstractString && col.editable &&
+       col.enumvalues === nothing && col.popup_editor === nothing &&
+       col.name !== data.pin_col
         er = editor_handle(data.editor, token)
         if er === :handled
             refresh(o); return Handled

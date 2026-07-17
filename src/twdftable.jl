@@ -1416,6 +1416,95 @@ _dt_aggr_source(aggr) =
     aggr isa Expr         ? exprstring(aggr) :
     ""
 
+# ── Dimension manager (the `P` binding) ──────────────────────────────────────
+# Best-effort display text for a trusted `dimspec(...)` payload (its inner spec
+# plus groupby/orderby modifiers) — purely for showing read-only rows.
+function _dt_dim_label(payload)
+    if payload isa DataFrameAggrSpec.DimSpec
+        inner = payload.spec isa SafeDimSpec ? payload.spec.source :
+                payload.spec isa Expr        ? exprstring(payload.spec) :
+                                               string(payload.spec)
+        mods = String[]
+        isempty(payload.by)    || push!(mods, "groupby(" * join(string.(payload.by), ",") * ")")
+        isempty(payload.order) || push!(mods, "orderby(" * join(string.(first.(payload.order)), ",") * ")")
+        isempty(mods) ? inner : inner * " |> " * join(mods, " |> ")
+    else
+        string(payload)
+    end
+end
+
+# Render a calcpivot payload to editable source text and classify how it may be
+# edited: :safe (user-typed safe grammar — fully editable), :expr (trusted `Expr`
+# — shown, an edit re-parses through the safe grammar and may not round-trip), or
+# :func (`Function`/other trusted payload — read-only placeholder).
+function _dt_dim_row(payload)
+    payload isa SafeDimSpec    && return (payload.source, :safe)
+    payload isa AbstractString && return (String(payload), :safe)
+    payload isa Expr           && return (exprstring(payload), :expr)
+    payload isa Function       && return ("<function>", :func)
+    return (_dt_dim_label(payload), :func)
+end
+
+# Build the manager DataFrame `(name, spec)` from the current calcpivots, plus
+# name→kind and name→payload maps used by the commit step. Sorted by name. Never
+# empty — an empty calcpivots yields a single blank row so the edit-table has a
+# cell to show. (Which dimensions are *applied* as pivots — and their order — is
+# handled by the `p` pivot popup, not here.)
+function _dt_dims_dataframe(o::TwObj{TwDfTableData})
+    kinds = Dict{String,Symbol}()
+    payloads = Dict{String,Any}()
+    entries = Tuple{String,String}[]
+    for (sym, payload) in o.data.calcpivots
+        nm = string(sym)
+        (src, kind) = _dt_dim_row(payload)
+        kinds[nm] = kind
+        payloads[nm] = payload
+        push!(entries, (nm, src))
+    end
+    sort!(entries, by = e -> e[1])
+    df = isempty(entries) ?
+        DataFrame(name = String[""], spec = String[""]) :
+        DataFrame(name = String[e[1] for e in entries],
+                  spec = String[e[2] for e in entries])
+    (df, kinds, payloads)
+end
+
+# Apply the edited manager DataFrame back into calcpivots. Validates every row
+# (unique names, no collision with a real column, spec parses via the untrusted
+# safe grammar); an unchanged trusted (:expr/:func) row keeps its original
+# payload; a blank name drops the dimension. Applied pivots that now reference a
+# deleted/renamed dimension are pruned (activation/ordering itself lives in the
+# `p` popup). Throws on any error WITHOUT mutating state — all validation precedes
+# the two field assignments.
+function _dt_apply_dims!(o::TwObj{TwDfTableData}, df::DataFrame,
+                         kinds::AbstractDict, payloads::AbstractDict)
+    realcols = Set(propertynames(o.data.rootnode.subdataframe))
+    newcalc = Dict{Symbol,Any}()
+    seen = Set{String}()
+    for r in 1:nrow(df)
+        nm = strip(string(df[r, :name]))
+        isempty(nm) && continue                       # blank/cleared name → drop this dimension
+        sym = Symbol(nm)
+        sym in realcols && error("\"" * nm * "\" is already a data column")
+        nm in seen && error("duplicate dimension name \"" * nm * "\"")
+        push!(seen, nm)
+        spec = strip(string(df[r, :spec]))
+        kind = get(kinds, nm, :safe)
+        orig = get(payloads, nm, nothing)
+        origsrc = orig === nothing ? "" : strip(_dt_dim_row(orig)[1])
+        if orig !== nothing && kind != :safe && spec == origsrc
+            newcalc[sym] = orig                        # unchanged trusted payload → keep as-is
+        else
+            newcalc[sym] = parsedim(spec)              # new / edited → UNTRUSTED safe parse
+        end
+    end
+    # prune applied pivots that reference a dimension the editor deleted or renamed;
+    # real columns and surviving dims keep their existing order.
+    o.data.pivots = Symbol[p for p in o.data.pivots if p in realcols || haskey(newcalc, p)]
+    o.data.calcpivots = newcalc
+    o
+end
+
 """
     table_config(w::TwObj{TwDfTableData}; name="") -> TableConfig
 
@@ -1557,32 +1646,54 @@ function bindings(o::TwObj{TwDfTableData})
                 end
                 Handled
             end),
-        Binding("P", "define pivot dimension",
+        Binding("P", "manage dimensions",
             action = _-> begin
-                # 1) name the new dimension
-                namehelper = newTwEntry(_dt_screen(o), String;
-                    width=24, posy=:center, posx=:center, title="New dimension name: ")
-                nm = activateTwObj(namehelper)
-                unregisterTwObj(_dt_screen(o), namehelper)
-                (nm === nothing || strip(nm) == "") && return Handled
-                # 2) type the spec -- a spec entry over the untrusted safe grammar:
-                #    type-aware `?` templates, `\name`/column/op Tab completion,
-                #    commit gated on a valid parse, F6 for the full diagnostic.
-                spechelper = newTwSpecEntry(_dt_screen(o), :dim;
-                    width=60, posy=:center, posx=:center,
-                    coltypes = o.data.rootnode.subdataframe,
-                    title="Dim spec: ")
-                spec = activateTwObj(spechelper)
-                unregisterTwObj(_dt_screen(o), spechelper)
-                (spec === nothing || strip(spec) == "") && return Handled
-                # 3) register + apply as the innermost pivot
-                try
-                    sym = _dt_add_dimension!(o, nm, spec)
-                    sym in o.data.pivots || push!(o.data.pivots, sym)
-                    _dt_rebuild_tree!(o)
-                catch err
-                    tshow(sprint(showerror, err); title="Invalid dimension",
-                        posx=:center, posy=:center)
+                # A table that DEFINES the calculated dimensions: `name` is
+                # inline-editable (wide) and `spec` opens the dim spec entry
+                # (type-aware `?` templates, `\name`/column/op Tab completion,
+                # commit gated on a valid parse, F6 for the full diagnostic).
+                # Ctrl-N adds, Ctrl-D deletes; a blank name also drops a dimension.
+                # Applying/ordering dimensions as pivots is done in the `p` popup.
+                (dimsdf, kinds, payloads) = _dt_dims_dataframe(o)
+                etref = Ref{Any}(nothing)
+                speceditor = (scr, cur) -> begin
+                    et = etref[]
+                    nm = strip(string(et.data.df[et.data.currentRow, :name]))
+                    if get(kinds, nm, :safe) == :func
+                        beep(); return nothing            # non-safe dims are read-only
+                    end
+                    entry = newTwSpecEntry(scr, :dim;
+                        coltypes = o.data.rootnode.subdataframe,
+                        width=64, posy=:center, posx=:center, title="Dim spec: ")
+                    apply_default!(entry, cur)
+                    res = activateTwObj(entry)
+                    unregisterTwObj(scr, entry)
+                    res
+                end
+                colspecs = TwEditTableCol[
+                    TwEditTableCol(:name, "Name", 28, true, String, nothing, false, nothing),
+                    TwEditTableCol(:spec, "Spec", 48, true, String, nothing, false, speceditor),
+                ]
+                # Read-only (`:func`) rows are tinted (red on dark gray) so it is
+                # clear at a glance which dimensions can't be edited.
+                rowstyle = (df, r) ->
+                    get(kinds, strip(string(df[r, :name])), :safe) == :func ?
+                        COLOR_PAIR(29) : nothing
+                et = newTwEditTable(_dt_screen(o), dimsdf, colspecs;
+                    posy=:center, posx=:center, title="Dimensions",
+                    row_style=rowstyle,
+                    bottomText="Ctrl-N:add  Ctrl-D:del  Enter:edit spec  F10:apply  Esc:cancel  (apply via p)")
+                etref[] = et
+                result = activateTwObj(et)
+                unregisterTwObj(_dt_screen(o), et)
+                if result !== nothing
+                    try
+                        _dt_apply_dims!(o, result, kinds, payloads)
+                        _dt_rebuild_tree!(o)
+                    catch err
+                        tshow(sprint(showerror, err); title="Invalid dimensions",
+                            posx=:center, posy=:center)
+                    end
                 end
                 Handled
             end),
