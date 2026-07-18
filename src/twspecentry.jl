@@ -54,6 +54,8 @@ const _AGGR_TEMPLATES = String[
     "maximum(_)",
     "std(_)",
     "sum(_ * wt) / sum(wt)",   # weighted mean
+    "wmeanfallback(_, [wt1, wt2, 1])",  # weighted mean, cascading weights (1 = unweighted fallback)
+    "mean(sum(_) |> groupby(year))",  # composite: per-year totals, then averaged
     "uniqvalue(_)",
     "strjoinuniq(_)",
 ]
