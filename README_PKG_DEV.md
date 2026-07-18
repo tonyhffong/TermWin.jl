@@ -7,6 +7,21 @@ This document covers extending TermWin: building data-entry forms, authoring cus
 widgets, and hooking into `tshow` dispatch. For general usage and content display,
 see [README.md](README.md).
 
+## Table of Contents
+
+- [When to use `tshow_` dispatch vs. layout/widget development](#when-to-use-tshow_-dispatch-vs-layoutwidget-development)
+- [Composable layouts](#composable-layouts)
+  - [`@twlayout` macro](#twlayout-macro)
+  - [`vstack` / `hstack`](#vstack--hstack)
+  - [Flexible sizing hints](#flexible-sizing-hints)
+  - [Layout labels and spacers](#layout-labels-and-spacers)
+- [Data-entry forms](#data-entry-forms)
+  - [Reactive section visibility — `visible_when`](#reactive-section-visibility--visible_when)
+  - [Custom layout key bindings — `on_key`](#custom-layout-key-bindings--on_key)
+- [Authoring custom widgets](#authoring-custom-widgets)
+  - [Making a custom widget hint-aware](#making-a-custom-widget-hint-aware)
+- [Extending TermWin: custom `tshow_` dispatch](#extending-termwin-custom-tshow_-dispatch)
+
 ## When to use `tshow_` dispatch vs. layout/widget development
 
 The two extension points serve different needs:

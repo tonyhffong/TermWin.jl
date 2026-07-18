@@ -1,5 +1,43 @@
 # TermWin.jl
 
+## Table of Contents
+
+- [Introduction](#introduction)
+- [Requirements](#requirements)
+  - [NotCurses](#notcurses)
+  - [Terminal Notes](#terminal-notes)
+- [Quick start](#quick-start)
+  - [1 — Explore anything with `tshow` (Read-only)](#1--explore-anything-with-tshow-read-only)
+  - [2 — Collect a value from the user](#2--collect-a-value-from-the-user)
+- [Basic input widgets](#basic-input-widgets)
+  - [Text, Date and numeric entry — `newTwEntry`](#text-date-and-numeric-entry--newtwentry)
+  - [Single selection — `newTwPopup`](#single-selection--newtwpopup)
+  - [Multi-selection — `newTwMultiSelect`](#multi-selection--newtwmultiselect)
+  - [Date picker — `newTwCalendar`](#date-picker--newtwcalendar)
+  - [Scrollable text viewer — `newTwViewer`](#scrollable-text-viewer--newtwviewer)
+  - [File browser — `newTwFileBrowser`](#file-browser--newtwfilebrowser)
+- [Data exploration with `tshow`](#data-exploration-with-tshow)
+  - [Expressions and code](#expressions-and-code)
+  - [Modules](#modules)
+  - [Functions and methods](#functions-and-methods)
+  - [DataFrames](#dataframes)
+- [Tree viewer keyboard reference](#tree-viewer-keyboard-reference)
+  - [Saving a node value to a Julia variable](#saving-a-node-value-to-a-julia-variable)
+- [DataFrame viewer reference](#dataframe-viewer-reference)
+  - [Pivot and grouping options](#pivot-and-grouping-options)
+  - [Column display options](#column-display-options)
+  - [Aggregation](#aggregation)
+  - [Calculated pivots](#calculated-pivots)
+  - [Multiple views](#multiple-views)
+  - [Saving and restoring a layout](#saving-and-restoring-a-layout)
+- [Universal keyboard reference](#universal-keyboard-reference)
+  - [All widgets](#all-widgets)
+  - [Mouse](#mouse)
+  - [Layout canvas (inside `@twlayout` / `vstack` / `hstack`)](#layout-canvas-inside-twlayout--vstack--hstack)
+  - [Form mode](#form-mode)
+  - [DataFrame viewer](#dataframe-viewer)
+- [Running the example scripts](#running-the-example-scripts)
+
 ## Introduction
 TermWin is a Julia based terminal UI toolkit optimized for
 * data exploration - a capable tree/table viewer to help users quickly gain an understanding on
