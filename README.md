@@ -1,5 +1,17 @@
 # TermWin.jl
 
+TermWin is a Julia based terminal UI toolkit optimized for
+* data exploration - a capable tree/table viewer to help users quickly gain an understanding on
+complex tree structures (a package, a file directory, a julia expression AST, a heavily nested dictionary, etc.) 
+and dataframes.
+* a modal interface. Show a widget, collect user input, return a value, continue in REPL or interact further with another widget.
+  Use TermWin to efficiently identify what the user needs, and then get out of the way.
+* Composing multi-panel layouts to suit your own data structure human interface needs.
+* niceties on displaying julia code (pretty-print when viewing julia code) and shortcut to edit the underlying file in vim
+
+TermWin is not a framework for standalone TUI app. For that, Tachikoma.jl is a better choice. Tachikoma is basically a
+view-controller-model UI framework, and it handles continuous animation/refresh natively.
+
 ## Table of Contents
 
 - [Introduction](#introduction)
@@ -38,28 +50,12 @@
   - [DataFrame viewer](#dataframe-viewer)
 - [Running the example scripts](#running-the-example-scripts)
 
-## Introduction
-TermWin is a Julia based terminal UI toolkit optimized for
-* data exploration - a capable tree/table viewer to help users quickly gain an understanding on
-  complex tree structures (a package, a file directory, a julia expression AST, a heavily nested dictionary, etc.) 
-  and dataframes.
-* a modal interface. Show a widget, collect user input, return a value, continue in REPL or interact further with another widget.
-  Use TermWin to efficiently identify what the user needs, and then get out of the way.
-* Composing multi-panel layouts to suit your own data structure human interface needs.
-* niceties on displaying julia code (pretty-print when viewing julia code) and shortcut to edit the underlying file in vim
-
-TermWin is built on [Notcurses](https://github.com/dankamongmen/notcurses). It requires a 256-colour 
-terminal. `xterm-256color` or iTerm2 on macOS are recommended.
-
-TermWin is not a framework for standalone TUI app. For that, Tachikoma.jl is a better choice. Tachikoma is basically a
-view-controller-model UI framework, and it handles continuous animation/refresh natively.
-
 ---
 
 ## Requirements
 
-* NotCurses.jl
-* 256-color terminal (e.g. iTerm2)
+TermWin is built on [Notcurses](https://github.com/dankamongmen/notcurses). It requires a 256-colour 
+terminal. `xterm-256color` or iTerm2 on macOS are recommended.
 
 ### NotCurses
 Install the Julia package. It should install the notcurses. If it doesn't work you may install directly the native Notcurses library.
