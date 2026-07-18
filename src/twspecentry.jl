@@ -66,6 +66,12 @@ const _DIM_TEMPLATES = String[
     "topnames(name, sales, 5)",             # top-5 by measure, rest → "Others"
     "quantiles(score, 4)",                  # quartile bucket
     "mean(sales) |> groupby(region)",       # per-region mean broadcast back
+    "where(profit > 0) |> groupby(business)",  # per-group predicate flag
+    "yyyymm(date)",                         # date → "YYYYMM" period bucket
+    "yyyy(date)",                           # date → "YYYY" year bucket
+    "yyyyq(date)",                          # date → "YYYYQn" quarter bucket
+    "yymm(date)",                           # date → "YYMM" period bucket
+    "yyq(date)",                            # date → "YYQn" quarter bucket
 ]
 
 # Coarse column families that drive which reducers/verbs are worth suggesting.
