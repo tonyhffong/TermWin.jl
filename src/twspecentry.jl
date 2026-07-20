@@ -48,6 +48,8 @@
 # only); the sample column names are meant to be edited to the real columns.
 const _AGGR_TEMPLATES = String[
     "sum(_)",
+    "sum(skipmissing(_))",
+    "sum(coalesce(_,0))",
     "mean(_)",
     "median(_)",
     "minimum(_)",
@@ -58,6 +60,12 @@ const _AGGR_TEMPLATES = String[
     "mean(sum(_) |> groupby(year))",  # composite: per-year totals, then averaged
     "uniqvalue(_)",
     "strjoinuniq(_)",
+    "quantile(_,.25)",
+    "countuniq",
+    "count(_ > 0)",
+    "nrow",
+    "first",
+    "last",
 ]
 
 const _DIM_TEMPLATES = String[
@@ -66,8 +74,7 @@ const _DIM_TEMPLATES = String[
     "lead(sales) |> orderby(date)",         # next row's value
     "discretize(score, [0, 20, 40, 60, 80, 100])",  # labeled bins
     "topnames(name, sales, 5)",             # top-5 by measure, rest → "Others"
-    "quantiles(score, 4)",                  # quartile bucket
-    "mean(sales) |> groupby(region)",       # per-region mean broadcast back
+    "quantiles(score, ngroups=4)",                  # quartile bucket
     "where(profit > 0) |> groupby(business)",  # per-group predicate flag
     "yyyymm(date)",                         # date → "YYYYMM" period bucket
     "yyyy(date)",                           # date → "YYYY" year bucket

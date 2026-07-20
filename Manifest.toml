@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "85d8a8dbbc5a08ae0f333de3f9182004d82c8705"
+project_hash = "b4fe52e226fb7c9c15f653c8de2a22d6f1257f3f"
 
 [[deps.Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -81,7 +81,7 @@ version = "1.16.0"
 deps = ["CategoricalArrays", "DataFrames", "Dates", "Format", "Statistics"]
 path = "/Users/tonyfong/Library/CloudStorage/Dropbox/Julia/DataFrameAggrSpec"
 uuid = "4c62cbce-0791-40fe-9350-fe7851d5d418"
-version = "0.8.8"
+version = "0.9.0"
 
 [[deps.DataFrames]]
 deps = ["Compat", "DataAPI", "DataStructures", "Future", "InlineStrings", "InvertedIndices", "IteratorInterfaceExtensions", "LinearAlgebra", "Markdown", "Missings", "PooledArrays", "PrecompileTools", "PrettyTables", "Printf", "Random", "Reexport", "SentinelArrays", "SortingAlgorithms", "Statistics", "TableTraits", "Tables", "Unicode"]
