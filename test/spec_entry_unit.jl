@@ -49,6 +49,32 @@ end
     @test "sum(x)" in spec_templates(:aggr; coltypes = dfm)
 end
 
+@testset "aggr templates: Bool flags and date ordering" begin
+    df = DataFrame(region = ["E", "W"], date = [Date(2026, 1, 1), Date(2026, 2, 1)],
+                   sales = [1, 2], active = [true, false])
+    t = spec_templates(:aggr; coltypes = df)
+
+    # a Bool column gets the group-level flags, not the `Bool <: Number` reducers
+    @test "any(active)"   in t
+    @test "all(active)"   in t
+    @test "count(active)" in t
+    @test !("sum(active)" in t)
+    @test !("std(active)" in t)
+
+    # a date column in the frame unlocks the order-sensitive spelling
+    @test "last(sales) |> orderby(date)"  in t
+    @test "last(region) |> orderby(date)" in t
+
+    for s in t
+        occursin('_', s) && continue          # skip the generic `_` tail
+        @test parseaggr(s; columns = propertynames(df)) isa TW.SafeAggrSpec
+    end
+
+    # no date column → no orderby suggestions (nothing sensible to sort by)
+    t2 = spec_templates(:aggr; coltypes = DataFrame(region = ["E"], sales = [1]))
+    @test !any(s -> occursin("orderby", s), t2)
+end
+
 @testset "type-sensitive dim templates" begin
     df = DataFrame(region = ["E", "W"],
                    date   = [Date(2026, 1, 1), Date(2026, 2, 1)],
@@ -60,8 +86,34 @@ end
     @test "cumsum(sales) |> orderby(date)" in t   # ordered by the date column
     @test "topnames(region, sales, 5)"   in t     # text col + numeric measure
 
+    # ranking: per-column `rank`, the tie shapes once on the measure column,
+    # `ordinalrank` paired with an order (the one shape that needs one)
+    @test "rank(sales, rev = true)"              in t
+    @test "denserank(sales)"                     in t
+    @test "tiedrank(sales)"                      in t
+    @test "ordinalrank(sales) |> orderby(date)"  in t
+    @test "rank(sales) |> groupby(region)"       in t   # rank the GROUPS
+
+    # date columns get the calendar buckets + a computed groupby key
+    @test "yyyymm(date)" in t
+    @test "yyyyq(date)"  in t
+    @test "cumsum(sales) |> groupby(yyyymm(date))" in t
+
     for s in t
         @test parsedim(s) isa TW.SafeDimSpec
+    end
+end
+
+@testset "dim templates: Bool columns flag rather than bin" begin
+    df = DataFrame(region = ["E", "W"], sales = [1, 2], active = [true, false])
+    t = spec_templates(:dim; coltypes = df)
+
+    @test "where(active)" in t
+    @test "where(any(active)) |> groupby(region)" in t
+    @test !any(s -> occursin("discretize(active", s), t)   # not a numeric bin
+
+    for s in t
+        @test parsedim(s; columns = propertynames(df)) isa TW.SafeDimSpec
     end
 end
 

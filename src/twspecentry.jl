@@ -58,24 +58,35 @@ const _AGGR_TEMPLATES = String[
     "sum(_ * wt) / sum(wt)",   # weighted mean
     "wmeanfallback(_, [wt1, wt2, 1])",  # weighted mean, cascading weights (1 = unweighted fallback)
     "mean(sum(_) |> groupby(year))",  # composite: per-year totals, then averaged
+    "last(sum(_) |> groupby(year))",  # composite: the latest year's total
     "uniqvalue(_)",
     "strjoinuniq(_)",
     "quantile(_,.25)",
     "countuniq",
     "count(_ > 0)",
+    "count(_ in [1, 2, 5])",   # membership: `in`/`∈`/`∉` beat a chain of `||`
+    "any(_ > 0)",              # group-level flag: at least one row clears the bar
+    "all(_ > 0)",              # group-level flag: every row does
     "nrow",
-    "first",
-    "last",
+    "first(_) |> orderby(date)",   # earliest value — `orderby` sorts the group first
+    "last(_) |> orderby(date)",    # latest value (the arg-max spelling)
 ]
 
 const _DIM_TEMPLATES = String[
     "cumsum(sales) |> orderby(date)",       # running total within a partition
+    "cumsum(sales) |> groupby(yyyymm(date))",  # computed groupby key: reset each month
     "lag(sales) |> orderby(date)",          # previous row's value
     "lead(sales) |> orderby(date)",         # next row's value
     "discretize(score, [0, 20, 40, 60, 80, 100])",  # labeled bins
     "topnames(name, sales, 5)",             # top-5 by measure, rest → "Others"
     "quantiles(score, ngroups=4)",                  # quartile bucket
+    "rank(sales, rev = true)",              # 1 = biggest; ties share, then skip
+    "denserank(sales)",                     # ties share, no gaps
+    "tiedrank(sales)",                      # ties share their average rank
+    "ordinalrank(sales) |> orderby(date)",  # no ties — needs an order to be defined
+    "rank(sales) |> groupby(district)",     # rank the GROUPS by their total
     "where(profit > 0) |> groupby(business)",  # per-group predicate flag
+    "where(district in [\"d1\", \"d2\"])",  # membership flag (`∈`/`∉` also accepted)
     "yyyymm(date)",                         # date → "YYYYMM" period bucket
     "yyyy(date)",                           # date → "YYYY" year bucket
     "yyyyq(date)",                          # date → "YYYYQn" quarter bucket
@@ -88,6 +99,7 @@ const _DIM_TEMPLATES = String[
 # numeric.
 function _type_family(T::Type)
     U = nonmissingtype(T)
+    U === Bool                               ? :bool :   # before :numeric (Bool <: Number)
     U <: Number                              ? :numeric :
     U <: Union{AbstractString,Symbol,AbstractChar} ? :text :
     U <: Dates.TimeType                      ? :date :
@@ -106,41 +118,60 @@ _normalize_coltypes(v) =
     Pair{Symbol,Type}[Symbol(first(p)) => last(p) for p in v]
 
 # Per-column, type-appropriate AGGR reducers: numeric columns get sum/mean/…,
-# text columns get uniqvalue/strjoinuniq/…, dates get min/max/first/last. Falls
-# back to the generic `_` list when nothing typed is recognised.
+# text columns get uniqvalue/strjoinuniq/…, dates get min/max/first/last, and a
+# `Bool` column gets the group-level flags (`any`/`all`/`count`) rather than the
+# nonsensical `sum`/`std` a plain `Bool <: Number` test would suggest. When the
+# frame has a date column, order-sensitive `first`/`last` gain the
+# `|> orderby(date)` spelling — the direct "value at the latest date" form.
+# Falls back to the generic `_` list when nothing typed is recognised.
 function _aggr_templates_for(coltypes)
+    order = nothing
+    for (c, T) in coltypes
+        _type_family(T) === :date && (order = c; break)
+    end
     out = String[]
     for (c, T) in coltypes
         fam = _type_family(T)
         if fam === :numeric
             append!(out, ["sum($c)", "mean($c)", "median($c)",
                           "maximum($c)", "minimum($c)", "std($c)"])
+            order === nothing || push!(out, "last($c) |> orderby($order)")
+        elseif fam === :bool
+            append!(out, ["any($c)", "all($c)", "count($c)"])
         elseif fam === :text
             append!(out, ["uniqvalue($c)", "strjoinuniq($c)",
                           "first($c)", "last($c)"])
+            order === nothing || push!(out, "last($c) |> orderby($order)")
         elseif fam === :date
             append!(out, ["minimum($c)", "maximum($c)", "first($c)", "last($c)"])
         end
     end
     # generic fallbacks that don't depend on a specific column, kept last so the
     # type-matched suggestions lead
-    append!(out, ["sum(_)", "mean(_)", "sum(_ * wt) / sum(wt)"])
+    append!(out, ["sum(_)", "mean(_)", "sum(_ * wt) / sum(wt)",
+                  "any(_ > 0)", "count(_ in [1, 2, 5])"])
     isempty(out) ? copy(_AGGR_TEMPLATES) : unique!(out)
 end
 
-# Per-column, type-appropriate DIM verbs: numeric columns get binning + running
-# windows (ordered by the first date/other column), text columns get top-N and
-# grouped means (measured by the first numeric column, when there is one).
+# Per-column, type-appropriate DIM verbs: numeric columns get binning, ranking
+# and running windows (ordered by the first date/other column), text columns get
+# top-N and grouped means (measured by the first numeric column, when there is
+# one), date columns get the calendar buckets, `Bool` columns get `where`. The
+# tie-shape variants of ranking (`denserank`/`tiedrank`/`ordinalrank`) and the
+# grouped rank are demonstrated once on the measure column rather than repeated
+# per column — the dropdown is a starting point, not a catalogue.
 function _dim_templates_for(coltypes)
     nums  = Symbol[c for (c, T) in coltypes if _type_family(T) === :numeric]
     texts = Symbol[c for (c, T) in coltypes if _type_family(T) === :text]
     dates = Symbol[c for (c, T) in coltypes if _type_family(T) === :date]
+    bools = Symbol[c for (c, T) in coltypes if _type_family(T) === :bool]
     order = !isempty(dates) ? first(dates) : (length(nums) > 1 ? nums[1] : nothing)
     measure = isempty(nums) ? nothing : first(nums)
     out = String[]
     for c in nums
         push!(out, "discretize($c, [0, 20, 40, 60, 80, 100])")
         push!(out, "quantiles($c, 4)")
+        push!(out, "rank($c, rev = true)")          # 1 = biggest
         if order !== nothing && order != c
             push!(out, "cumsum($c) |> orderby($order)")
             push!(out, "lag($c) |> orderby($order)")
@@ -149,6 +180,21 @@ function _dim_templates_for(coltypes)
     for c in texts
         measure !== nothing && push!(out, "topnames($c, $measure, 5)")
         measure !== nothing && push!(out, "mean($measure) |> groupby($c)")
+        measure !== nothing && push!(out, "rank($measure) |> groupby($c)")  # rank the groups
+    end
+    for c in dates
+        append!(out, ["yyyymm($c)", "yyyy($c)", "yyyyq($c)", "yymm($c)"])
+        measure !== nothing && push!(out, "cumsum($measure) |> groupby(yyyymm($c))")
+    end
+    for c in bools
+        push!(out, "where($c)")
+        isempty(texts) || push!(out, "where(any($c)) |> groupby($(first(texts)))")
+    end
+    if measure !== nothing
+        # the tie shapes, once — `ordinalrank` is the one that needs an order
+        append!(out, ["denserank($measure)", "tiedrank($measure)"])
+        order !== nothing && order != measure &&
+            push!(out, "ordinalrank($measure) |> orderby($order)")
     end
     isempty(out) ? copy(_DIM_TEMPLATES) : unique!(out)
 end
