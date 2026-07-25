@@ -1407,6 +1407,24 @@ function _dt_set_aggr!(o::TwObj{TwDfTableData}, col::Symbol, specstr::AbstractSt
     o
 end
 
+# The values of `col` in the GROUP the cursor is sitting in -- the rows an
+# aggregation typed right now would actually reduce. Feeds the spec entry's
+# data-driven template suggestions (missings present -> skipmissing variants
+# lead, constant/low-cardinality -> uniqvalue leads, and so on). On a leaf data
+# row this is still the enclosing node's subframe, which is the right scope: the
+# aggregation applies to the group, not the one row under the cursor. `nothing`
+# when the tree has no rows yet or `col` is not a real frame column (a calculated
+# pivot) -- the templates then fall back to what the column's type alone says.
+function _dt_cursor_colvalues(o::TwObj{TwDfTableData}, col::Symbol)
+    (isempty(o.data.datalist) || o.data.datalistlen < 1) && return nothing
+    i = clamp(o.data.currentLine, 1, o.data.datalistlen)
+    node = o.data.datalist[i][5]
+    node isa TwDfTableNode || return nothing
+    df = node.subdataframe
+    df === nothing && return nothing
+    hasproperty(df, col) ? df[!, col] : nothing
+end
+
 # Render a column's current aggr back to editable spec text, to seed the `a`
 # entry. Safe strings carry their `.source`; a Symbol/Expr default renders too; a
 # raw Function default has no text form (blank -> the field shows the default).
@@ -1702,11 +1720,17 @@ function bindings(o::TwObj{TwDfTableData})
             action = _-> begin
                 # Override the aggregation of the column under the cursor. Same
                 # spec-entry affordances as `P`; a blank spec reverts to default.
+                # The cursor IS the context: the spec always reduces `_` (this
+                # column), so `target`/`targetdata` narrow the `?` templates to
+                # that column's type and the values in the group being viewed,
+                # instead of listing every column in the frame.
                 ci  = clamp(o.data.currentCol, 1, length(o.data.colInfo))
                 col = o.data.colInfo[ci].name
                 entry = newTwSpecEntry(_dt_screen(o), :aggr;
                     width=60, posy=:center, posx=:center,
-                    coltypes = o.data.rootnode.subdataframe,
+                    coltypes   = o.data.rootnode.subdataframe,
+                    target     = col,
+                    targetdata = _dt_cursor_colvalues(o, col),
                     title="Aggr for $(col) (blank=default): ")
                 apply_default!(entry, _dt_aggr_source(o.data.allcolInfo[col].aggr))
                 spec = activateTwObj(entry)

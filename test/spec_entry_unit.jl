@@ -1,8 +1,15 @@
 # Headless unit tests for the spec-string entry widget (src/twspecentry.jl).
-# The live-hint logic (`_spec_hint`) and template list are pure functions over the
-# DataFrameAggrSpec parsers, so the interesting behaviour is testable without a
-# TTY: valid specs summarise, typos surface the parser's did-you-mean, and a
-# `columns` list turns an unknown column into a suggestion.
+# The presentation logic (`_spec_hint`, `_spec_detail`, `_spec_valid`,
+# `_spec_wordlist`) is pure over the DataFrameAggrSpec parsers, so the
+# interesting behaviour is testable without a TTY: valid specs summarise, typos
+# surface the parser's did-you-mean, and a `columns` list turns an unknown
+# column into a suggestion.
+#
+# What is NOT tested here: the *content* of the suggestions. `spec_templates` /
+# `spec_vocabulary` / `specsummary` live in DataFrameAggrSpec (src/templates.jl)
+# because they are grammar knowledge rather than UI, and are covered by that
+# package's test/templates.jl -- including the load-bearing "every offered
+# template parses and runs on its target column" sweep.
 #
 # Run:
 #   julia --project=. test/spec_entry_unit.jl
@@ -14,115 +21,20 @@ using Dates
 
 const TW = TermWin
 
-@testset "spec_templates all parse" begin
-    for t in spec_templates(:aggr)
-        @test parseaggr(t) isa TW.SafeAggrSpec
-    end
-    for t in spec_templates(:dim)
-        @test parsedim(t) isa TW.SafeDimSpec
-    end
-    @test_throws ErrorException spec_templates(:bogus)
-end
-
-@testset "type-sensitive aggr templates" begin
-    df = DataFrame(region = ["E", "W"], sales = [1, 2], score = [10.0, 20.0])
-    t = spec_templates(:aggr; coltypes = df)
-
-    # numeric columns → numeric reducers; text columns → uniq/strjoinuniq
-    @test "sum(sales)"        in t
-    @test "median(sales)"     in t
-    @test "std(score)"        in t
-    @test "uniqvalue(region)" in t
-    @test "strjoinuniq(region)" in t
-    # a numeric reducer is NOT offered for a text column (and vice versa)
-    @test !("sum(region)"        in t)
-    @test !("strjoinuniq(sales)" in t)
-
-    # the concrete suggestions parse and validate against the frame
-    for s in t
-        occursin('_', s) && continue          # skip the generic `_` tail
-        @test parseaggr(s; columns = propertynames(df)) isa TW.SafeAggrSpec
-    end
-
-    # nullable numeric still reads as numeric (nonmissingtype peels the Union)
-    dfm = DataFrame(x = Union{Missing,Int}[1, missing])
-    @test "sum(x)" in spec_templates(:aggr; coltypes = dfm)
-end
-
-@testset "aggr templates: Bool flags and date ordering" begin
-    df = DataFrame(region = ["E", "W"], date = [Date(2026, 1, 1), Date(2026, 2, 1)],
-                   sales = [1, 2], active = [true, false])
-    t = spec_templates(:aggr; coltypes = df)
-
-    # a Bool column gets the group-level flags, not the `Bool <: Number` reducers
-    @test "any(active)"   in t
-    @test "all(active)"   in t
-    @test "count(active)" in t
-    @test !("sum(active)" in t)
-    @test !("std(active)" in t)
-
-    # a date column in the frame unlocks the order-sensitive spelling
-    @test "last(sales) |> orderby(date)"  in t
-    @test "last(region) |> orderby(date)" in t
-
-    for s in t
-        occursin('_', s) && continue          # skip the generic `_` tail
-        @test parseaggr(s; columns = propertynames(df)) isa TW.SafeAggrSpec
-    end
-
-    # no date column → no orderby suggestions (nothing sensible to sort by)
-    t2 = spec_templates(:aggr; coltypes = DataFrame(region = ["E"], sales = [1]))
-    @test !any(s -> occursin("orderby", s), t2)
-end
-
-@testset "type-sensitive dim templates" begin
-    df = DataFrame(region = ["E", "W"],
-                   date   = [Date(2026, 1, 1), Date(2026, 2, 1)],
-                   sales  = [1, 2])
-    t = spec_templates(:dim; coltypes = df)
-
-    @test "discretize(sales, [0, 20, 40, 60, 80, 100])" in t
-    @test "quantiles(sales, 4)"          in t
-    @test "cumsum(sales) |> orderby(date)" in t   # ordered by the date column
-    @test "topnames(region, sales, 5)"   in t     # text col + numeric measure
-
-    # ranking: per-column `rank`, the tie shapes once on the measure column,
-    # `ordinalrank` paired with an order (the one shape that needs one)
-    @test "rank(sales, rev = true)"              in t
-    @test "denserank(sales)"                     in t
-    @test "tiedrank(sales)"                      in t
-    @test "ordinalrank(sales) |> orderby(date)"  in t
-    @test "rank(sales) |> groupby(region)"       in t   # rank the GROUPS
-
-    # date columns get the calendar buckets + a computed groupby key
-    @test "yyyymm(date)" in t
-    @test "yyyyq(date)"  in t
-    @test "cumsum(sales) |> groupby(yyyymm(date))" in t
-
-    for s in t
-        @test parsedim(s) isa TW.SafeDimSpec
-    end
-end
-
-@testset "dim templates: Bool columns flag rather than bin" begin
-    df = DataFrame(region = ["E", "W"], sales = [1, 2], active = [true, false])
-    t = spec_templates(:dim; coltypes = df)
-
-    @test "where(active)" in t
-    @test "where(any(active)) |> groupby(region)" in t
-    @test !any(s -> occursin("discretize(active", s), t)   # not a numeric bin
-
-    for s in t
-        @test parsedim(s; columns = propertynames(df)) isa TW.SafeDimSpec
-    end
-end
-
-@testset "coltypes accepts dict + pairs, order preserved" begin
-    d = TW._normalize_coltypes(Dict(:a => Int, :b => String))
-    @test Set(d) == Set([:a => Int, :b => String])
-    p = TW._normalize_coltypes([:x => Float64, :y => Symbol])
-    @test p == [:x => Float64, :y => Symbol]      # iteration order kept
-    @test TW._normalize_coltypes(nothing) === nothing
+@testset "spec suggestion comes from DataFrameAggrSpec (re-exported)" begin
+    # The template catalogue, the completion vocabulary and the structural
+    # rendition of a parsed spec live in DataFrameAggrSpec (src/templates.jl) --
+    # they are grammar knowledge, not UI -- and are covered by that package's
+    # test/templates.jl. TermWin re-exports them so a host with `using TermWin`
+    # can reach them; this asserts the re-export and the widget's use of them,
+    # not the content.
+    df = DataFrame(region = ["E", "W"], sales = [1, 2])
+    @test spec_templates(:aggr; coltypes = df, target = :sales) isa Vector{String}
+    @test spec_vocabulary(:dim; columns = [:sales]) isa Vector{String}
+    @test spec_columns(df) == [:region, :sales]
+    @test spec_coltype(df, :sales) === Int
+    @test specsummary(parseaggr("sum(_)")) isa String
+    @test specfields(parsedim("cumsum(x)")) isa Vector{Pair{String,String}}
 end
 
 @testset "aggr hint" begin
@@ -280,12 +192,31 @@ if session_ok
         @testset "constructor: coltypes drives choices + validation" begin
             df = DataFrame(region = ["E"], sales = [1])
             e = newTwSpecEntry(rootTwScreen, :aggr; key = :m, coltypes = df)
-            # type-sensitive dropdown
-            @test "sum(sales)" in e.data.choices
-            @test "uniqvalue(region)" in e.data.choices
             # columns were derived from coltypes → hint validates them
             @test startswith(e.data.hintfn("sum(sales)"), "✓")
             @test occursin("did you mean 'sales'", e.data.hintfn("sum(salse)"))
+        end
+
+        @testset "constructor: target/targetdata narrow the dropdown" begin
+            df = DataFrame(region = ["E", "W"], sales = [1, 2])
+            e = newTwSpecEntry(rootTwScreen, :aggr; key = :m, coltypes = df,
+                               target = :region, targetdata = df.region)
+            @test e.data.choices ==
+                  spec_templates(:aggr; coltypes = df, target = :region,
+                                 targetdata = df.region)
+            @test "uniqvalue(_)" in e.data.choices
+            @test !("sum(_)" in e.data.choices)      # text target, no numeric reducers
+            # the empty-buffer hint spells out what `_` stands for
+            @test occursin("_ = region", e.data.hintfn(""))
+            # …and F6 repeats it, with the same (narrowed) template list
+            d = e.data.detailfn("")
+            @test occursin("_  =  region::String", d)
+            @test occursin("uniqvalue(_)", d) && !occursin("\n  sum(_)", d)
+
+            # a :dim entry ignores the aggr-only target context
+            d2 = newTwSpecEntry(rootTwScreen, :dim; key = :d, coltypes = df,
+                                target = :region, targetdata = df.region)
+            @test d2.data.choices == spec_templates(:dim; coltypes = df)
         end
 
         @testset "Tab completion is on by default and routes through inject" begin

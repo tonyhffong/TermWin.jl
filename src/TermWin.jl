@@ -96,7 +96,7 @@ export TableConfig, table_config
 export newTwEditTable, TwEditTableCol
 export newTwDictTree
 export newTwSpacer, newTwLabel, newTwSeparator
-export newTwSpecEntry, spec_templates
+export newTwSpecEntry
 export newTwStatusBar
 export Observable, set!, on, off, subscribe!
 export exprstring
@@ -105,6 +105,11 @@ export uniqvalue, unionall
 export dimspec, discretize, topnames
 # untrusted safe-grammar parsers for user-typed specs (no eval)
 export parsedim, parseaggr, @dim_str, @aggr_str
+# spec suggestion (DataFrameAggrSpec/src/templates.jl) — the `?` dropdown and Tab
+# vocabulary newTwSpecEntry is built on, re-exported so a host that has TermWin
+# can reach them without a second `using`
+export spec_templates, spec_vocabulary, spec_columns, spec_coltype
+export specsummary, specfields
 export FormatHints
 export COLOR_PAIR, A_BOLD, A_UNDERLINE, A_REVERSE
 

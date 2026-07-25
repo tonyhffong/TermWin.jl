@@ -70,6 +70,59 @@ if session_ok
                 TermWin.unregisterTwObj(rootTwScreen, obj)
             end
 
+            @testset "cursor context: the group under the cursor, not the frame" begin
+                obj = TermWin.newTwDfTable(rootTwScreen, _ADF; pivots = [:region])
+                TermWin._dt_rebuild_tree!(obj)
+
+                # line 1 is the root summary row -> the whole frame
+                obj.data.currentLine = 1
+                @test collect(TermWin._dt_cursor_colvalues(obj, :score)) == _ADF.score
+
+                # a pivot row scopes to that group's rows
+                line = findfirst(r -> r[5] isa TermWin.TwDfTableNode &&
+                                      r[5].pivotvals == ("E",), obj.data.datalist)
+                @test line !== nothing
+                obj.data.currentLine = line
+                @test collect(TermWin._dt_cursor_colvalues(obj, :score)) == [10.0, 20.0]
+
+                # …and those values are what shapes the `?` templates: this group
+                # has no missing, so the plain spellings lead
+                t = spec_templates(:aggr; coltypes = _ADF, target = :score,
+                                   targetdata = TermWin._dt_cursor_colvalues(obj, :score))
+                @test t[1] == "sum(_)"
+                @test !any(s -> occursin("skipmissing", s), t)
+
+                # a column that is not on the frame (a calculated pivot) has no
+                # values to look at -- callers fall back to the type alone
+                @test TermWin._dt_cursor_colvalues(obj, :nosuchcol) === nothing
+
+                TermWin.unregisterTwObj(rootTwScreen, obj)
+            end
+
+            @testset "cursor context: missings in the group steer the templates" begin
+                dfm = DataFrame(region = ["E", "E", "W"],
+                                score  = Union{Missing,Float64}[1.0, missing, 3.0])
+                obj = TermWin.newTwDfTable(rootTwScreen, dfm; pivots = [:region])
+                TermWin._dt_rebuild_tree!(obj)
+
+                eline = findfirst(r -> r[5] isa TermWin.TwDfTableNode &&
+                                       r[5].pivotvals == ("E",), obj.data.datalist)
+                obj.data.currentLine = eline
+                te = spec_templates(:aggr; coltypes = dfm, target = :score,
+                                    targetdata = TermWin._dt_cursor_colvalues(obj, :score))
+                @test te[1] == "sum(skipmissing(_))"            # E group HAS a missing
+
+                wline = findfirst(r -> r[5] isa TermWin.TwDfTableNode &&
+                                       r[5].pivotvals == ("W",), obj.data.datalist)
+                obj.data.currentLine = wline
+                tw = spec_templates(:aggr; coltypes = dfm, target = :score,
+                                    targetdata = TermWin._dt_cursor_colvalues(obj, :score))
+                @test tw[1] == "uniqvalue(_)"                   # W group: a single row
+                @test !any(s -> occursin("skipmissing", s), tw) # …and no missing in it
+
+                TermWin.unregisterTwObj(rootTwScreen, obj)
+            end
+
             @testset "safety: invalid / eval-shaped specs are rejected" begin
                 obj = TermWin.newTwDfTable(rootTwScreen, _ADF)
                 @test_throws Exception TermWin._dt_set_aggr!(obj, :score, "maen(_)")      # typo op

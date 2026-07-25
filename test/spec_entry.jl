@@ -60,13 +60,18 @@ df = DataFrame(
 cols = propertynames(df)
 
 println("Columns available to the specs: ", join(string.(cols), ", "))
-println("Aggr templates (type-sensitive):")
+println("Aggr templates with no target (every family, all gates open):")
 foreach(t -> println("   ", t), spec_templates(:aggr; coltypes=df))
 println()
+println("…and narrowed to the `score` column (what the DfTable `a` binding does):")
+foreach(t -> println("   ", t),
+        spec_templates(:aggr; coltypes=df, target=:score, targetdata=df.score))
+println()
 
-# Passing `coltypes=df` makes the `?` dropdown type-sensitive (numeric columns →
-# sum/median/…, text columns → uniqvalue/strjoinuniq/…) and also supplies the
-# column list for live validation — no separate `columns=` needed.
+# Passing `coltypes=df` supplies the column list for live validation (no separate
+# `columns=` needed) and, for a :dim entry, makes the `?` dropdown type-sensitive
+# per column. For :aggr, `target`/`targetdata` narrow the dropdown to the one
+# column being reduced — the templates stay written against `_`.
 result = withsession() do
     @twlayout (form=true, width=0.8,
                title="spec entry demo  —  type a spec, watch the parser echo below  (?: type-aware templates)") begin
@@ -74,6 +79,9 @@ result = withsession() do
               style=:divider)
         specentry(:aggr; key=:measure, coltypes=df, titlewidth=14,
                   title="Aggr spec: ")
+        specentry(:aggr; key=:scoreaggr, coltypes=df, titlewidth=14,
+                  target=:score, targetdata=df.score,
+                  title="Aggr (_=score): ")
         specentry(:dim;  key=:bucket,  coltypes=df, titlewidth=14,
                   title="Dim spec: ")
         specentry(:dim;  key=:running, coltypes=df, titlewidth=14,

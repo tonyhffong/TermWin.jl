@@ -1,7 +1,7 @@
 # twspecentry.jl — a spec-string entry field for the untrusted DataFrameAggrSpec
 # grammar (`parseaggr` / `parsedim`).
 #
-# This is a thin, opinionated host over `newTwEntry(String; ...)` that wires two
+# This is a thin, opinionated host over `newTwEntry(String; ...)` that wires the
 # things the raw entry leaves to the caller:
 #
 #   * a live `hintfn` that runs the *untrusted* safe-grammar parser on every
@@ -19,8 +19,8 @@
 #     using Julia's own REPL symbol table. Tab only completes when a `\name` sits
 #     before the cursor; otherwise it falls through to focus navigation.
 #   * identifier Tab completion: after the `\name` check, Tab completes a partial
-#     column or function name against the frame's columns + the operator
-#     whitelist (`listops()`), advancing to the longest common prefix and opening
+#     column or function name against `spec_vocabulary` (the frame's columns +
+#     the operator whitelist), advancing to the longest common prefix and opening
 #     a picker when still ambiguous. Proactive counterpart to the hint's
 #     after-the-fact did-you-mean.
 #   * commit gating: the field's `validator` refuses Enter/blur unless the spec
@@ -28,6 +28,16 @@
 #   * F6 details: pops the full, untruncated parse diagnostic (or a structural
 #     summary of a valid spec) plus the available columns and operator whitelist
 #     in a scrollable viewer — the reference the one-row hint can't fit.
+#
+# WHAT LIVES WHERE. The *content* of the suggestions — which templates exist for
+# a given target/frame/data, the completion vocabulary, and the structural
+# rendition of a parsed spec — belongs to DataFrameAggrSpec (`src/templates.jl`:
+# `spec_templates`, `spec_vocabulary`, `specsummary`/`specfields`), because it is
+# knowledge of the grammar and its registry, not of terminals. That package also
+# owns the reverse direction (the did-you-mean repair in `suggest.jl`), so both
+# halves of "help the user get the spec right" sit next to the vocabulary they
+# read. This file owns only the *presentation*: the ✓/✗ glyphs, the one-row hint
+# budget, the F6 pane layout, and the widget wiring.
 #
 # `kind` selects the grammar:
 #   :aggr — an aggregation spec (reduces a column: `sum(_ * wt) / sum(wt)`).
@@ -43,223 +53,28 @@
 # `parsedim`/`parseaggr` at use time — the safe grammar is eval-free, so a string
 # harvested from this field is safe to accept.
 
-# Generic starter templates offered by the `?` dropdown when the caller gives no
-# column-type information. `_` is the aggregation target placeholder (aggr specs
-# only); the sample column names are meant to be edited to the real columns.
-const _AGGR_TEMPLATES = String[
-    "sum(_)",
-    "sum(skipmissing(_))",
-    "sum(coalesce(_,0))",
-    "mean(_)",
-    "median(_)",
-    "minimum(_)",
-    "maximum(_)",
-    "std(_)",
-    "sum(_ * wt) / sum(wt)",   # weighted mean
-    "wmeanfallback(_, [wt1, wt2, 1])",  # weighted mean, cascading weights (1 = unweighted fallback)
-    "mean(sum(_) |> groupby(year))",  # composite: per-year totals, then averaged
-    "last(sum(_) |> groupby(year))",  # composite: the latest year's total
-    "uniqvalue(_)",
-    "strjoinuniq(_)",
-    "quantile(_,.25)",
-    "countuniq",
-    "count(_ > 0)",
-    "count(_ in [1, 2, 5])",   # membership: `in`/`∈`/`∉` beat a chain of `||`
-    "any(_ > 0)",              # group-level flag: at least one row clears the bar
-    "all(_ > 0)",              # group-level flag: every row does
-    "nrow",
-    "first(_) |> orderby(date)",   # earliest value — `orderby` sorts the group first
-    "last(_) |> orderby(date)",    # latest value (the arg-max spelling)
-]
-
-const _DIM_TEMPLATES = String[
-    "cumsum(sales) |> orderby(date)",       # running total within a partition
-    "cumsum(sales) |> groupby(yyyymm(date))",  # computed groupby key: reset each month
-    "lag(sales) |> orderby(date)",          # previous row's value
-    "lead(sales) |> orderby(date)",         # next row's value
-    "discretize(score, [0, 20, 40, 60, 80, 100])",  # labeled bins
-    "topnames(name, sales, 5)",             # top-5 by measure, rest → "Others"
-    "quantiles(score, ngroups=4)",                  # quartile bucket
-    "rank(sales, rev = true)",              # 1 = biggest; ties share, then skip
-    "denserank(sales)",                     # ties share, no gaps
-    "tiedrank(sales)",                      # ties share their average rank
-    "ordinalrank(sales) |> orderby(date)",  # no ties — needs an order to be defined
-    "rank(sales) |> groupby(district)",     # rank the GROUPS by their total
-    "where(profit > 0) |> groupby(business)",  # per-group predicate flag
-    "where(district in [\"d1\", \"d2\"])",  # membership flag (`∈`/`∉` also accepted)
-    "yyyymm(date)",                         # date → "YYYYMM" period bucket
-    "yyyy(date)",                           # date → "YYYY" year bucket
-    "yyyyq(date)",                          # date → "YYYYQn" quarter bucket
-    "yymm(date)",                           # date → "YYMM" period bucket
-    "yyq(date)",                            # date → "YYQn" quarter bucket
-]
-
-# Coarse column families that drive which reducers/verbs are worth suggesting.
-# `nonmissingtype` peels `Union{Missing,T}` so a nullable numeric still reads as
-# numeric.
-function _type_family(T::Type)
-    U = nonmissingtype(T)
-    U === Bool                               ? :bool :   # before :numeric (Bool <: Number)
-    U <: Number                              ? :numeric :
-    U <: Union{AbstractString,Symbol,AbstractChar} ? :text :
-    U <: Dates.TimeType                      ? :date :
-    :other
-end
-
-# Normalise the many ways a caller can hand us column types into an *ordered*
-# vector of `Symbol => Type` pairs (order preserved so the dropdown follows the
-# frame's column order). Accepts a DataFrame, a Dict, or any iterable of pairs.
-_normalize_coltypes(::Nothing) = nothing
-_normalize_coltypes(df::AbstractDataFrame) =
-    Pair{Symbol,Type}[n => eltype(df[!, n]) for n in propertynames(df)]
-_normalize_coltypes(d::AbstractDict) =
-    Pair{Symbol,Type}[Symbol(k) => v for (k, v) in d]
-_normalize_coltypes(v) =
-    Pair{Symbol,Type}[Symbol(first(p)) => last(p) for p in v]
-
-# Per-column, type-appropriate AGGR reducers: numeric columns get sum/mean/…,
-# text columns get uniqvalue/strjoinuniq/…, dates get min/max/first/last, and a
-# `Bool` column gets the group-level flags (`any`/`all`/`count`) rather than the
-# nonsensical `sum`/`std` a plain `Bool <: Number` test would suggest. When the
-# frame has a date column, order-sensitive `first`/`last` gain the
-# `|> orderby(date)` spelling — the direct "value at the latest date" form.
-# Falls back to the generic `_` list when nothing typed is recognised.
-function _aggr_templates_for(coltypes)
-    order = nothing
-    for (c, T) in coltypes
-        _type_family(T) === :date && (order = c; break)
-    end
-    out = String[]
-    for (c, T) in coltypes
-        fam = _type_family(T)
-        if fam === :numeric
-            append!(out, ["sum($c)", "mean($c)", "median($c)",
-                          "maximum($c)", "minimum($c)", "std($c)"])
-            order === nothing || push!(out, "last($c) |> orderby($order)")
-        elseif fam === :bool
-            append!(out, ["any($c)", "all($c)", "count($c)"])
-        elseif fam === :text
-            append!(out, ["uniqvalue($c)", "strjoinuniq($c)",
-                          "first($c)", "last($c)"])
-            order === nothing || push!(out, "last($c) |> orderby($order)")
-        elseif fam === :date
-            append!(out, ["minimum($c)", "maximum($c)", "first($c)", "last($c)"])
-        end
-    end
-    # generic fallbacks that don't depend on a specific column, kept last so the
-    # type-matched suggestions lead
-    append!(out, ["sum(_)", "mean(_)", "sum(_ * wt) / sum(wt)",
-                  "any(_ > 0)", "count(_ in [1, 2, 5])"])
-    isempty(out) ? copy(_AGGR_TEMPLATES) : unique!(out)
-end
-
-# Per-column, type-appropriate DIM verbs: numeric columns get binning, ranking
-# and running windows (ordered by the first date/other column), text columns get
-# top-N and grouped means (measured by the first numeric column, when there is
-# one), date columns get the calendar buckets, `Bool` columns get `where`. The
-# tie-shape variants of ranking (`denserank`/`tiedrank`/`ordinalrank`) and the
-# grouped rank are demonstrated once on the measure column rather than repeated
-# per column — the dropdown is a starting point, not a catalogue.
-function _dim_templates_for(coltypes)
-    nums  = Symbol[c for (c, T) in coltypes if _type_family(T) === :numeric]
-    texts = Symbol[c for (c, T) in coltypes if _type_family(T) === :text]
-    dates = Symbol[c for (c, T) in coltypes if _type_family(T) === :date]
-    bools = Symbol[c for (c, T) in coltypes if _type_family(T) === :bool]
-    order = !isempty(dates) ? first(dates) : (length(nums) > 1 ? nums[1] : nothing)
-    measure = isempty(nums) ? nothing : first(nums)
-    out = String[]
-    for c in nums
-        push!(out, "discretize($c, [0, 20, 40, 60, 80, 100])")
-        push!(out, "quantiles($c, 4)")
-        push!(out, "rank($c, rev = true)")          # 1 = biggest
-        if order !== nothing && order != c
-            push!(out, "cumsum($c) |> orderby($order)")
-            push!(out, "lag($c) |> orderby($order)")
-        end
-    end
-    for c in texts
-        measure !== nothing && push!(out, "topnames($c, $measure, 5)")
-        measure !== nothing && push!(out, "mean($measure) |> groupby($c)")
-        measure !== nothing && push!(out, "rank($measure) |> groupby($c)")  # rank the groups
-    end
-    for c in dates
-        append!(out, ["yyyymm($c)", "yyyy($c)", "yyyyq($c)", "yymm($c)"])
-        measure !== nothing && push!(out, "cumsum($measure) |> groupby(yyyymm($c))")
-    end
-    for c in bools
-        push!(out, "where($c)")
-        isempty(texts) || push!(out, "where(any($c)) |> groupby($(first(texts)))")
-    end
-    if measure !== nothing
-        # the tie shapes, once — `ordinalrank` is the one that needs an order
-        append!(out, ["denserank($measure)", "tiedrank($measure)"])
-        order !== nothing && order != measure &&
-            push!(out, "ordinalrank($measure) |> orderby($order)")
-    end
-    isempty(out) ? copy(_DIM_TEMPLATES) : unique!(out)
-end
-
-"""
-    spec_templates(kind::Symbol; coltypes=nothing) -> Vector{String}
-
-Starter templates for a spec-entry `kind` (`:aggr` or `:dim`) — the same list the
-`?` dropdown of [`newTwSpecEntry`](@ref) offers.
-
-When `coltypes` is given the suggestions become **type-sensitive** and concrete:
-each numeric column gets `sum`/`mean`/`median`/… , each string/symbol column gets
-`uniqvalue`/`strjoinuniq`/… , each date column gets `minimum`/`maximum`/… (aggr);
-dim mode binning/window verbs go to numeric columns and top-N/grouped means to
-text columns. Without `coltypes` the generic `_`-placeholder list is returned.
-
-`coltypes` may be an `AbstractDataFrame` (column → `eltype`), a `Dict{Symbol,Type}`,
-or any iterable of `Symbol => Type` pairs; order is preserved.
-"""
-function spec_templates(kind::Symbol; coltypes = nothing)
-    ct = _normalize_coltypes(coltypes)
-    if kind === :aggr
-        ct === nothing ? copy(_AGGR_TEMPLATES) : _aggr_templates_for(ct)
-    elseif kind === :dim
-        ct === nothing ? copy(_DIM_TEMPLATES) : _dim_templates_for(ct)
-    else
-        error("spec_templates: kind must be :aggr or :dim, got $(repr(kind))")
-    end
-end
-
 # Strip the parser's "parseaggr: " / "parsedim: " / "checkcols: " prefix so the
 # one-row hint spends its width on the message, not the bookkeeping.
 _strip_spec_prefix(msg::AbstractString) =
     replace(msg, r"^(parseaggr|parsedim|checkcols):\s*" => "")
 
-# One-line ✓ summary of a spec that parsed. Both spec structs carry `.fname` and
-# `.cols`; a dim spec additionally reports its inferred kind (pivot when it has a
-# `groupby`, window when it has an `orderby`).
-function _spec_summary(spec)
-    if spec isa SafeAggrSpec
-        cols = join(string.(spec.cols), ", ")
-        return "✓ reduce via $(spec.fname)   [cols: $(isempty(cols) ? "—" : cols)]"
-    else # SafeDimSpec
-        tags = String[]
-        isempty(spec.by)    || push!(tags, "pivot by " * join(string.(spec.by), ", "))
-        isempty(spec.order) || push!(tags, "ordered by " *
-                                     join(string.(first.(spec.order)), ", "))
-        isempty(tags) && push!(tags, "window")
-        return "✓ $(spec.fname)   [" * join(tags, "; ") * "]"
-    end
-end
-
 # The live hint closure body: empty → a prompt with a nudge toward `?`; parses →
-# summary; throws → the parser's own rich diagnostic (kept intact bar the prefix).
-function _spec_hint(kind::Symbol, columns, buf::AbstractString)
+# `specsummary` behind a ✓; throws → the parser's own rich diagnostic (kept
+# intact bar the prefix). When the host named the aggregation target, the empty
+# prompt spells out what `_` stands for — the one thing about an aggr spec that
+# isn't in the text.
+function _spec_hint(kind::Symbol, columns, buf::AbstractString; target = nothing)
     s = strip(buf)
     if isempty(s)
-        return kind === :aggr ?
+        kind === :aggr || return "→ e.g. cumsum(sales) |> orderby(date)      (?: templates)"
+        return target === nothing ?
             "→ e.g. sum(_ * wt) / sum(wt)      (?: templates)" :
-            "→ e.g. cumsum(sales) |> orderby(date)      (?: templates)"
+            "→ _ = $(target)   e.g. sum(_)      (?: templates)"
     end
     try
         spec = kind === :aggr ? parseaggr(s; columns=columns) :
                                 parsedim(s;  columns=columns)
-        return _spec_summary(spec)
+        return "✓ " * specsummary(spec)
     catch err
         msg = err isa ErrorException ? err.msg : sprint(showerror, err)
         return "✗ " * _strip_spec_prefix(msg)
@@ -279,41 +94,43 @@ function _spec_valid(kind::Symbol, columns, v::AbstractString)
     end
 end
 
-# Tab identifier completion vocabulary: the frame's columns plus the whitelisted
-# function names (`listops()`), plus the two dim modifiers. Operator glyphs like
-# `+`/`==` are dropped (not identifier-completable — `\name`+Tab handles those).
+# Tab identifier completion: the vocabulary is built once and closed over, so
+# each keystroke only does the prefix scan.
 function _spec_wordlist(kind::Symbol, columns)
-    ops = String[string(o) for o in listops() if isletter(first(string(o)))]
-    kind === :dim && append!(ops, ["orderby", "groupby"])
-    cols = columns === nothing ? String[] : String[string(c) for c in columns]
-    vocab = sort!(unique!(vcat(cols, ops)))
+    vocab = spec_vocabulary(kind; columns = columns)
     prefix -> String[c for c in vocab if startswith(c, prefix)]
 end
 
-# F6 detail text: the full (untruncated) parse diagnostic or a structural summary
-# of a valid spec, plus the available columns and operator whitelist — the
-# reference the one-row hint can't fit.
-function _spec_detail(kind::Symbol, columns, buf::AbstractString)
+# F6 detail text: the full (untruncated) parse diagnostic or the spec's structure
+# (`specfields`, laid out here with aligned labels), plus the available columns
+# and operator whitelist — the reference the one-row hint can't fit. `templates`
+# is the entry's own (already context-narrowed) `?` list, so F6 and `?` never
+# disagree.
+function _spec_detail(kind::Symbol, columns, buf::AbstractString;
+                      templates = nothing, target = nothing, targettype = nothing)
     s = strip(buf)
     lines = String[]
     if isempty(s)
         push!(lines, kind === :aggr ?
             "Aggregation spec — reduces a column to a single value (`_` is the target)." :
             "Dimension spec — computes a new column from partition-mates.")
+        if target !== nothing
+            push!(lines, "", "  _  =  " * string(target) *
+                (targettype === nothing ? "" : "::" * string(targettype)))
+        end
         push!(lines, "", "Templates:")
-        append!(lines, ["  " * t for t in spec_templates(kind; coltypes=nothing)])
+        append!(lines, ["  " * t for t in
+                        (templates === nothing ?
+                         spec_templates(kind; coltypes=nothing) : templates)])
     else
         try
             spec = kind === :aggr ? parseaggr(s; columns=columns) :
                                     parsedim(s;  columns=columns)
             push!(lines, "✓ parses")
-            push!(lines, "  function : $(spec.fname)")
-            push!(lines, "  columns  : " * join(string.(spec.cols), ", "))
-            if spec isa SafeDimSpec
-                isempty(spec.by)    || push!(lines, "  group by : " *
-                    join(string.(spec.by), ", ") * "   (pivot kind)")
-                isempty(spec.order) || push!(lines, "  order by : " *
-                    join(string.(first.(spec.order)), ", ") * "   (window kind)")
+            fields = specfields(spec)
+            pad = maximum(length(first(f)) for f in fields)
+            for (label, value) in fields
+                push!(lines, "  " * rpad(label, pad) * " : " * value)
             end
         catch err
             push!(lines, "✗ " *
@@ -335,11 +152,15 @@ and a `?` template dropdown.
 * `kind` — `:aggr` (aggregation spec) or `:dim` (dimension spec); selects the
   grammar the live hint parses against and the template list `?` offers.
 * `coltypes` — optional column-type information (an `AbstractDataFrame`, a
-  `Dict{Symbol,Type}`, or an iterable of `Symbol => Type` pairs). When given, the
-  `?` dropdown becomes **type-sensitive**: numeric columns are offered
-  `sum`/`median`/…, string/symbol columns `uniqvalue`/`strjoinuniq`/…, etc. (see
-  [`spec_templates`](@ref)). It also supplies `columns` for validation when
-  `columns` is not passed explicitly.
+  `Dict{Symbol,Type}`, or an iterable of `Symbol => Type` pairs). For `:dim` this
+  makes the `?` dropdown **type-sensitive** per column; for `:aggr` it gates the
+  templates that need a second column (weights, an ordering key). It also
+  supplies `columns` for validation when `columns` is not passed explicitly.
+* `target` / `targetdata` (`:aggr` only) — the column being aggregated and its
+  values in the group the user is looking at. `target`'s type picks the reducer
+  set the `?` dropdown offers, and `targetdata` promotes the specs that match
+  what the values actually look like (see `spec_templates`). The templates are
+  written against `_`, so they never name the target.
 * `columns` — optional `AbstractVector{Symbol}` (e.g. `propertynames(df)`); when
   given (or derived from `coltypes`), column references are validated against it
   as the user types, with did-you-mean repair on a misspelling.
@@ -354,6 +175,9 @@ function newTwSpecEntry(
     kind::Symbol;
     columns::Union{Nothing,AbstractVector{Symbol}} = nothing,
     coltypes = nothing,
+    target::Union{Nothing,Symbol} = nothing,
+    targettype = nothing,
+    targetdata = nothing,
     title::AbstractString = (kind === :aggr ? "Aggr spec: " : "Dim spec: "),
     width::SizeSpec = 64,
     choices::Union{Nothing,Vector{String}} = nothing,
@@ -363,19 +187,28 @@ function newTwSpecEntry(
 )
     kind in (:aggr, :dim) ||
         error("newTwSpecEntry: kind must be :aggr or :dim, got $(repr(kind))")
-    ct = _normalize_coltypes(coltypes)
     # a df/dict/pairs `coltypes` also names the columns, so validation comes free
-    cols = columns !== nothing ? columns :
-           ct !== nothing ? Symbol[first(p) for p in ct] : nothing
-    hf = hintfn === nothing ? (buf -> _spec_hint(kind, cols, buf)) : hintfn
-    ch = choices === nothing ? spec_templates(kind; coltypes = ct) : choices
+    cols = columns !== nothing ? columns : spec_columns(coltypes)
+    # target context is aggr-only: a dim spec reads columns by name and has no `_`
+    tgt  = kind === :aggr ? target : nothing
+    tdat = kind === :aggr ? targetdata : nothing
+    tt   = kind !== :aggr ? nothing :
+           targettype !== nothing ? targettype :
+           tgt !== nothing && spec_coltype(coltypes, tgt) !== nothing ?
+               spec_coltype(coltypes, tgt) :
+           tdat !== nothing ? eltype(tdat) : nothing
+    hf = hintfn === nothing ? (buf -> _spec_hint(kind, cols, buf; target = tgt)) : hintfn
+    ch = choices === nothing ?
+         spec_templates(kind; coltypes = coltypes, target = tgt,
+                        targettype = tt, targetdata = tdat) : choices
     # Tab expands `\circ`→∘, `\ne`→≠, `\le`→≤, `\ge`→≥ — all meaningful in the
     # spec grammar (∘ is the modifier combinator; ≠/≤/≥ are registered operators).
     newTwEntry(parent, String; width = width, title = title, hintfn = hf,
         choices = ch, latex_complete = latex_complete,
-        word_complete = (prefix -> _spec_wordlist(kind, cols)(prefix)),  # Tab: column/op names
+        word_complete = _spec_wordlist(kind, cols),                      # Tab: column/op names
         validator     = (v -> _spec_valid(kind, cols, v)),               # block invalid commit
-        detailfn      = (buf -> _spec_detail(kind, cols, buf)),           # F6: full diagnostic
+        detailfn      = (buf -> _spec_detail(kind, cols, buf;            # F6: full diagnostic
+                                             templates = ch, target = tgt, targettype = tt)),
         kwargs...)
 end
 
