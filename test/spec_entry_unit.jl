@@ -62,7 +62,9 @@ end
     @test startswith(win, "✓")
     @test occursin("ordered by date", win)
 
-    piv = hint("mean(sales) |> groupby(region)")
+    # a pivot dim CLASSIFIES groups, so the verb must give one label per
+    # group -- a reducer like `mean` is rejected at parse time upstream
+    piv = hint("rank(sales) |> groupby(region)")
     @test occursin("pivot by region", piv)
 
     # a bare column is a chain key, not a dim spec — parser says so
@@ -101,9 +103,14 @@ end
     @test "mean"   in wl("me")       # operator from listops()
     @test "median" in wl("me")
     @test isempty(wl("zzz"))
-    # dim adds the two modifiers; aggr does not
+    # both modifiers complete in BOTH kinds: an aggr spec takes a top-level
+    # `orderby` (sort the group, then reduce) and a nested `groupby` (the
+    # composite reduction), and the `?` templates for :aggr hand out text
+    # containing each -- a vocabulary omitting them could not finish a spec
+    # this very widget had just suggested
     @test "groupby" in TW._spec_wordlist(:dim, nothing)("gr")
-    @test !("orderby" in TW._spec_wordlist(:aggr, nothing)("or"))
+    @test "orderby" in TW._spec_wordlist(:aggr, nothing)("or")
+    @test "groupby" in TW._spec_wordlist(:aggr, nothing)("gr")
 
     # editor-level completion mechanics: single candidate fills in
     ed = TW.InlineEditor(String; width = 40)

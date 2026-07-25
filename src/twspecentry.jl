@@ -42,7 +42,7 @@
 # `kind` selects the grammar:
 #   :aggr — an aggregation spec (reduces a column: `sum(_ * wt) / sum(wt)`).
 #   :dim  — a dimension spec (a new column from partition-mates:
-#           `cumsum(sales) |> orderby(date)`, `mean(x) |> groupby(region)`).
+#           `cumsum(sales) |> orderby(date)`, `rank(sales) |> groupby(region)`).
 #
 # Pass `columns = propertynames(df)` to have the parser validate every column
 # reference in the spec against the frame (with did-you-mean repair) as the user
