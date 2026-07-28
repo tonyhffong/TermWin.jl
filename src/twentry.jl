@@ -5,11 +5,31 @@
 # to `editor_handle`, keeping only the entry-specific keys (Enter/Esc/focus_off,
 # shift-↑/↓ tick, `m` ×1000, `?`→calendar or preset popup).
 #
-# Optional guidance features (both off by default):
-#   hintfn  : buffer -> String, rendered dimmed on an extra line under the field
+# Optional guidance features (all off by default):
+#   hintfn  : buffer -> String, rendered dimmed on ONE extra line under the field
 #             and recomputed per keystroke — e.g. a live parse echo for DSL text.
+#   panelfn : buffer, width, height -> Vector{Pair{String,TwAttr}}, the multi-row
+#             counterpart of `hintfn` for guidance a single row cannot hold (a
+#             parser diagnostic runs to 156 characters on average). Each row
+#             carries its own attribute, so severity can be coloured per line.
+#             Takes `hintheight` rows; wins over `hintfn` when both are given.
+#   markfn  : buffer -> Union{Nothing,UnitRange{Int}}, a CHARACTER range of the
+#             buffer to mark in the field itself (`InlineEditor.highlight`) —
+#             pointing at the offending text of whatever `panelfn` is reporting.
+#   fixfn   : buffer -> Union{Nothing,Tuple{UnitRange{Int},String}}, a one-key
+#             repair offered on Ctrl-F: replace that character range with that
+#             string. Only offer one that is known to produce a valid value —
+#             the user will apply it without checking.
 #   choices : preset strings; `?` opens an allownew popup whose pick (or typed
 #             free text) is written into the buffer for the user to confirm.
+#
+# Captions. `title` labels the FIELD and is subtracted from the input width, so
+# a long one is paid for in typing room; `boxtitle` captions the WIDGET on the
+# top border, which is free. Use `title` for what the field is ("Aggr spec:")
+# and `boxtitle` for what it is about (the column being aggregated).
+# `titleLeft = false` is the older way to reach the border: it moves `title`
+# there instead of inline, for a label too long to sit beside the input. Both
+# land in the same border slot — `boxtitle` wins if both are set — so pick one.
 
 mutable struct TwEntryData
     editor::InlineEditor       # the unified inline editor (state + parse/format)
@@ -24,7 +44,13 @@ mutable struct TwEntryData
     word_complete::Union{Nothing,Function} # prefix -> Vector{String}: Tab (after latex) completes the identifier before the cursor against these candidates
     validator::Union{Nothing,Function} # value -> Bool: commit (Enter / blur) is refused unless this passes, so a form never harvests an invalid value
     detailfn::Union{Nothing,Function} # buffer -> String: F6 shows the full text in a scrollable popup (untruncated errors / help)
-    TwEntryData(dt::DataType) = new(InlineEditor(dt), false, true, -1, false, false, nothing, nothing, false, nothing, nothing, nothing)
+    panelfn::Union{Nothing,Function}  # buffer,width,height -> Vector{Pair{String,TwAttr}}: multi-row hint area
+    hintheight::Int                   # rows reserved for panelfn (hintfn always takes 1)
+    boxtitle::String                  # caption on the TOP BORDER (needs box=true); what this field is about, as opposed to `title`, which labels the field itself. `titleLeft=false` feeds the same slot with `title`
+    markfn::Union{Nothing,Function}   # buffer -> Union{Nothing,UnitRange{Int}}: character range to mark in the field
+    fixfn::Union{Nothing,Function}    # buffer -> Union{Nothing,Tuple{UnitRange{Int},String}}: Ctrl-F one-key repair
+    TwEntryData(dt::DataType) = new(InlineEditor(dt), false, true, -1, false, false, nothing, nothing, false, nothing, nothing, nothing,
+                                    nothing, 1, "", nothing, nothing)
 end
 
 # The editor-state fields moved into `editor`, but `inputText`/`cursorPos`/etc.
@@ -77,6 +103,11 @@ function newTwEntry(
     word_complete::Union{Nothing,Function} = nothing,
     validator::Union{Nothing,Function} = nothing,
     detailfn::Union{Nothing,Function} = nothing,
+    panelfn::Union{Nothing,Function} = nothing,
+    hintheight::Int = 1,
+    boxtitle::AbstractString = "",
+    markfn::Union{Nothing,Function} = nothing,
+    fixfn::Union{Nothing,Function} = nothing,
     key::Union{Nothing,Symbol} = nothing,
 )
 
@@ -97,6 +128,11 @@ function newTwEntry(
     data.word_complete = word_complete   # Tab (after latex) completes an identifier prefix
     data.validator = validator           # commit refused unless this passes
     data.detailfn = detailfn             # F6 → full-text popup
+    data.panelfn = panelfn               # multi-row hint area (wins over hintfn)
+    data.hintheight = max(hintheight, 1) # rows the panel gets
+    data.boxtitle = String(boxtitle)     # caption on the top border
+    data.markfn = markfn                 # character range to mark in the field
+    data.fixfn = fixfn                   # Ctrl-F one-key repair
 
     obj = TwObj(data, Val{:Entry})
 
@@ -106,8 +142,10 @@ function newTwEntry(
     obj.borderSizeV = box ? 1 : 0
     obj.borderSizeH = box ? 1 : 0
 
-    # hintfn takes one extra row under the input field
-    h = (box ? 3 : 1) + (hintfn === nothing ? 0 : 1)
+    # the guidance area takes extra rows under the input field: one for a
+    # `hintfn`, `hintheight` for the multi-row `panelfn`
+    h = (box ? 3 : 1) + (panelfn !== nothing ? max(hintheight, 1) :
+                         hintfn !== nothing  ? 1 : 0)
     link_parent_child(parent, obj, h, width, posy, posx)
     obj
 end
@@ -136,8 +174,19 @@ function draw(o::TwObj{TwEntryData})
     if o.box
         box(o.window, 0, 0)
     end
-    if !isempty(o.title) && !o.data.titleLeft && o.box
-        mvwprintw(o.window, 0, round(Int, (o.width - length(o.title))/2), "%s", o.title)
+    # ONE writer to the top border. Two kwargs feed it, because they are the
+    # same idea found twice: `boxtitle` is the caption proper (a second label,
+    # coexisting with an inline one), and `titleLeft = false` is the older
+    # spelling — it *relocates* the field's own label there, for a title too
+    # long to sit inline without squeezing the input to nothing. They used to
+    # draw separately and would silently overwrite each other on row 0; now the
+    # explicit `boxtitle` simply wins. Column 2 matches where TwList puts its
+    # title, and the text is truncated to stop short of the corners.
+    if o.box
+        cap = !isempty(getfield(o.data, :boxtitle)) ? getfield(o.data, :boxtitle) :
+              !o.data.titleLeft ? o.title : ""
+        isempty(cap) ||
+            mvwprintw(o.window, 0, 2, "%s", ensure_length(cap, o.width - 4, false))
     end
     starty = o.borderSizeV
     startx = o.borderSizeH
@@ -153,21 +202,52 @@ function draw(o::TwObj{TwEntryData})
         end
     end
     # Field rendering (right-justified numbers/dates, cursor, boundary
-    # indicators) is the shared InlineEditor renderer.
+    # indicators) is the shared InlineEditor renderer. A `markfn` points it at
+    # the offending characters of whatever the guidance area is reporting; like
+    # `hintfn` it must not be able to take the widget down.
     o.data.editor.width = fieldcount
+    o.data.editor.highlight = if getfield(o.data, :markfn) === nothing
+        nothing
+    else
+        try
+            getfield(o.data, :markfn)(o.data.editor.buffer)
+        catch
+            nothing
+        end
+    end
     draw_editor!(o.window, starty, startx, o.data.editor, o.hasFocus)
-    # Live hint line: hintfn(buffer) rendered dimmed under the field, recomputed
-    # on every draw (inject refreshes after each handled key). A throwing hintfn
-    # must not take the widget down — show the error text instead.
-    if o.data.hintfn !== nothing
+
+    avail = o.width - 2 * o.borderSizeH
+    if getfield(o.data, :panelfn) !== nothing
+        # Multi-row guidance area. panelfn owns the wrapping (it is told the
+        # width) and the per-row attribute; we only clip to the reserved rows.
+        rows = try
+            getfield(o.data, :panelfn)(o.data.editor.buffer, avail,
+                                       getfield(o.data, :hintheight))
+        catch err
+            Pair{String,TwAttr}[sprint(showerror, err) => theme(:negative)]
+        end
+        for (i, row) in enumerate(rows)
+            i > getfield(o.data, :hintheight) && break
+            (txt, attr) = row isa Pair ? (first(row), last(row)) :
+                                         (string(row), theme(:divider))
+            isempty(txt) && continue
+            wattron(o.window, attr)
+            mvwprintw(o.window, starty + i, o.borderSizeH, "%s",
+                      ensure_length(txt, avail))
+            wattroff(o.window, attr)
+        end
+    elseif o.data.hintfn !== nothing
+        # Live hint line: hintfn(buffer) rendered dimmed under the field,
+        # recomputed on every draw (inject refreshes after each handled key). A
+        # throwing hintfn must not take the widget down — show the error instead.
         hint = try
             string(o.data.hintfn(o.data.editor.buffer))
         catch err
             sprint(showerror, err)
         end
         wattron(o.window, theme(:divider))
-        mvwprintw(o.window, starty + 1, o.borderSizeH, "%s",
-                  ensure_length(hint, o.width - 2 * o.borderSizeH))
+        mvwprintw(o.window, starty + 1, o.borderSizeH, "%s", ensure_length(hint, avail))
         wattroff(o.window, theme(:divider))
     end
 end
@@ -232,6 +312,13 @@ function _entry_commit(o::TwObj{TwEntryData})
     (v, ok) = editor_commit(ed)
     vfn = getfield(o.data, :validator)
     if ok && vfn !== nothing && !(vfn(v)::Bool)
+        # `editor_commit` cleared the flag on its way out (the text parsed as the
+        # field's type); a validator rejection has to raise it again, or the
+        # field renders as clean while holding a value it just refused. That
+        # flag is `incomplete`'s stated meaning -- "last commit/validate failed"
+        # -- and guidance keyed on it (twspecentry's quiet rule) reads it to know
+        # the user has said they are done.
+        ed.incomplete = true
         ok = false
     end
     (v, ok)
@@ -275,6 +362,24 @@ function _entry_word_complete!(o::TwObj{TwEntryData})
     return true
 end
 
+# The repair `fixfn` currently offers for the buffer, or `nothing`. Validated
+# here rather than in the binding so a provider that returns a stale or
+# out-of-range span can only cost us the key, not corrupt the buffer.
+function _entry_pending_fix(o::TwObj{TwEntryData})
+    f = getfield(o.data, :fixfn)
+    f === nothing && return nothing
+    fx = try
+        f(o.data.editor.buffer)
+    catch
+        nothing
+    end
+    fx === nothing && return nothing
+    (r, repl) = fx
+    n = length(o.data.editor.buffer)
+    (first(r) >= 1 && last(r) <= n && first(r) <= last(r)) || return nothing
+    (r, string(repl))
+end
+
 function bindings(o::TwObj{TwEntryData})
     ed = o.data.editor
     [
@@ -287,6 +392,23 @@ function bindings(o::TwObj{TwEntryData})
                 action = _->begin
                     (v, ok) = _entry_commit(o)
                     ok ? (o.value = v; Accept) : (beep(); Handled)
+                end),
+        # One-key repair. `fixfn` returns the character range to replace and the
+        # replacement; the contract is that applying it yields a valid value, so
+        # this does not second-guess it. `when` runs the provider, so the key is
+        # absent from the footer/F1 help until there is something to fix.
+        Binding(:ctrl_f, "fix",
+                when   = _-> getfield(o.data, :fixfn) !== nothing &&
+                             _entry_pending_fix(o) !== nothing,
+                action = _->begin
+                    fx = _entry_pending_fix(o)
+                    if fx === nothing
+                        beep()
+                    else
+                        (r, repl) = fx
+                        editor_replace_range!(ed, first(r), last(r), repl)
+                    end
+                    Handled
                 end),
         Binding(:F6, "details",
                 when   = _-> getfield(o.data, :detailfn) !== nothing,

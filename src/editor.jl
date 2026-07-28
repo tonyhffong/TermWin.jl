@@ -27,6 +27,12 @@ mutable struct InlineEditor
     commas::Bool
     stripzeros::Bool
     conversion::String
+    # Optional marked range (1-based CHARACTER positions into `buffer`, matching
+    # `cursorPos`), rendered by `draw_editor!` in `highlightattr`. Used to point
+    # at the offending text of a diagnostic — e.g. the byte `span` a
+    # DataFrameAggrSpec `SpecError` carries, converted to characters by the host.
+    # `nothing` = no mark, which is every widget that has not asked for one.
+    highlight::Union{Nothing,UnitRange{Int}}
 end
 
 function InlineEditor(
@@ -51,6 +57,7 @@ function InlineEditor(
     InlineEditor(
         valuetype, "", 1, 1, width, false, false, false,
         enumvalues, missingok, tickSize, precision, commas, stripzeros, conversion,
+        nothing,
     )
 end
 
@@ -607,11 +614,22 @@ Render the active field onto `win`. The only window-touching editor function; it
 delegates the layout math to `editor_render`. `showcursor=false` suppresses the
 cursor (e.g. enum cells in the edit table).
 """
+# Where a CHARACTER range of the buffer lands in the rendered field, or `nothing`
+# when it has scrolled out of view. Uses the same `pos - fieldLeftPos + 1`
+# arithmetic `editor_render` applies to the cursor, so a mark and the cursor can
+# never disagree about where a given character is.
+function editor_visible_range(ie::InlineEditor, r::UnitRange{Int})
+    lo = max(first(r) - ie.fieldLeftPos + 1, 1)
+    hi = min(last(r) - ie.fieldLeftPos + 1, ie.width)
+    lo > hi ? nothing : (lo:hi)
+end
+
 function draw_editor!(
     win, y::Int, x::Int, ie::InlineEditor, hasFocus::Bool;
     focusattr = theme(:selection_focused),
     incompleteattr = COLOR_PAIR(12),
     unfocusattr = theme(:selection_unfocused),
+    highlightattr = theme(:negative),
     showcursor::Bool = true,
     incomplete_priority::Bool = false,   # true: show incomplete color even while focused (dict tree)
 )
@@ -623,6 +641,18 @@ function draw_editor!(
 
     wattron(win, inputflag)
     mvwprintw(win, y, x, "%s", outstr)
+
+    # Marked range, over the plain text but UNDER the cursor: a diagnostic must
+    # never hide where the user is typing.
+    if ie.highlight !== nothing
+        vr = editor_visible_range(ie, ie.highlight)
+        if vr !== nothing
+            seg = substr_by_width(outstr, first(vr) - 1, length(vr))
+            wattron(win, highlightattr)
+            mvwprintw(win, y, x + first(vr) - 1, "%s", seg)
+            wattroff(win, highlightattr)
+        end
+    end
 
     firstflag = inputflag
     lastflag = inputflag

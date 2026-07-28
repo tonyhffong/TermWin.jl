@@ -1680,9 +1680,14 @@ function bindings(o::TwObj{TwDfTableData})
                     if get(kinds, nm, :safe) == :func
                         beep(); return nothing            # non-safe dims are read-only
                     end
+                    # short field label; the dimension being edited rides the
+                    # top border, the same way the `a` binding puts its column
+                    # there -- otherwise nothing on screen says which row of the
+                    # manager this popup came from
                     entry = newTwSpecEntry(scr, :dim;
                         coltypes = o.data.rootnode.subdataframe,
-                        width=64, posy=:center, posx=:center, title="Dim spec: ")
+                        width=.9, posy=:center, posx=:center, title="Dim spec: ",
+                        boxtitle = isempty(nm) ? "new dimension" : nm)
                     apply_default!(entry, cur)
                     res = activateTwObj(entry)
                     unregisterTwObj(scr, entry)
@@ -1726,12 +1731,16 @@ function bindings(o::TwObj{TwDfTableData})
                 # instead of listing every column in the frame.
                 ci  = clamp(o.data.currentCol, 1, length(o.data.colInfo))
                 col = o.data.colInfo[ci].name
+                # The field label stays short ("Aggr spec: ") because it eats
+                # input width; the column and the blank-reverts rule ride the
+                # top border, where they cost nothing. `target` already defaults
+                # boxtitle to the column -- this only adds the reminder.
                 entry = newTwSpecEntry(_dt_screen(o), :aggr;
-                    width=60, posy=:center, posx=:center,
+                    width=.9, posy=:center, posx=:center,
                     coltypes   = o.data.rootnode.subdataframe,
                     target     = col,
                     targetdata = _dt_cursor_colvalues(o, col),
-                    title="Aggr for $(col) (blank=default): ")
+                    boxtitle   = "$(col)   (blank = default)")
                 apply_default!(entry, _dt_aggr_source(o.data.allcolInfo[col].aggr))
                 spec = activateTwObj(entry)
                 unregisterTwObj(_dt_screen(o), entry)

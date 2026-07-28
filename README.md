@@ -636,7 +636,7 @@ julia --project=. test/formlayout_test.jl       # composable data-entry form
 julia --project=. test/formlayout_test2.jl      # form with divider labels
 julia --project=. test/buildertest.jl           # @twlayout with DataFrame + viewer
 julia --project=. test/dataframe.jl             # DataFrame pivot viewer
-julia --project=. test/spec_entry.jl            # dim/aggr spec entry: live parse, templates, Tab completion
+julia --project=. test/spec_entry.jl            # dim/aggr spec entry: live parse panel, marked errors, Ctrl-F repair, templates
 julia --project=. test/entry_listofthings.jl    # manual layout with newTwList
 julia --project=. test/keystrokes.jl            # interactive key/mouse/unicode tester
 ```

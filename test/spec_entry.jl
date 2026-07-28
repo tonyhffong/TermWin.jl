@@ -5,13 +5,26 @@
 #
 # newTwSpecEntry(scr, kind; columns=…) is a `newTwEntry(String)` wired to the
 # UNTRUSTED DataFrameAggrSpec grammar. As you type it runs the real parser
-# (`parseaggr` for :aggr, `parsedim` for :dim) on every keystroke and echoes the
-# result on the dimmed hint line below the field:
+# (`parseaggr` for :aggr, `parsedim` for :dim) on every keystroke and reports in
+# the four-row diagnostic panel below the field:
 #
 #   * a ✓ summary when the spec parses (naming the reducer, or a dim's inferred
 #     window/pivot kind),
 #   * the parser's own rich rejection otherwise — including "did you mean 'mean'?"
 #     repairs and, because we pass `columns`, did-you-mean on a misspelled column.
+#
+# THE OFFENDING TEXT IS MARKED IN THE FIELD. Every rejection carries a byte span,
+# so the widget colours exactly the token at fault rather than leaving you to
+# find it in the message. When the parser also supplies a drop-in repair, Ctrl-F
+# applies it: `maen(_)` + Ctrl-F → `mean(_)`, `sum(:sales)` → `sum(sales)`.
+#
+# IT STAYS QUIET WHILE YOU TYPE. Typing one correct 21-character spec passes
+# through 17 rejected intermediate states — `sum(`, `su`, `sum(_ * wt) / s` are
+# all errors on the way to something right. Two classes are reported dimly and
+# without the ✗, the mark or the Ctrl-F offer: an incomplete parse, and any
+# diagnostic whose span sits under the caret (the token you are mid-way through).
+# Press Enter on a spec that does not parse and the politeness ends — the field
+# is marked, the message goes red, and the repair is offered.
 #
 # Press `?` in any field to open the standard-template dropdown; pick one and edit
 # it. The field stays free-text (templates are presets, not an enum).
@@ -22,7 +35,9 @@
 # the cursor; otherwise it still moves focus.
 #
 # Things to try:
-#   Aggr field    sum(_ * wt) / sum(wt)      then break it: maen(_)
+#   Aggr field    sum(_ * wt) / sum(wt)      then break it: maen(_) + Ctrl-F
+#   Aggr field    sum(:sales)   — the colon flip; Ctrl-F strips the colon too
+#   Aggr field    avg(sales)    — a foreign spelling: named, but no auto-repair
 #   Dim  field    cumsum(sales) |> orderby(date)   then a typo: cumsum(salse)
 #   Dim  field    cumsum(sales) \circ<Tab> orderby(date)   → cumsum(sales) ∘ orderby(date)
 #   Aggr field    mean(score) \ge<Tab> 50                  → mean(score) ≥ 50
@@ -33,14 +48,17 @@
 #     check): type `sum(sal` + Tab → `sum(sales`; ambiguous prefixes open a picker.
 #   * Commit is GATED — Enter/blur is refused unless the spec parses, so a broken
 #     spec can't be submitted (it beeps and stays; the ✗ hint tells you why).
-#   * F6 pops the FULL parse diagnostic (untruncated) or a structural summary,
-#     plus the available columns and the operator whitelist, in a scroll viewer.
+#   * F6 pops the FULL parse diagnostic (untruncated — the panel trims the
+#     host-facing asides to fit) or a structural summary, plus the diagnostic's
+#     machine channel (code / token / fix), the available columns and the
+#     operator whitelist, in a scroll viewer.
 #
 # Controls:
 #   \name + Tab     : complete to the unicode char (∘, ≠, ≤, ≥, …)
 #   <prefix> + Tab  : complete a column / function name (picker if ambiguous)
 #   Tab / Shift-Tab : move focus between fields (when nothing to complete)
 #   ? (in a field)  : open the template dropdown
+#   Ctrl-F          : apply the parser's repair to the marked token
 #   F6              : show full details / errors / operator whitelist
 #   Enter           : validate current field and advance (refused if invalid)
 #   F10             : submit → returns Dict{Symbol,Any} of the spec strings
